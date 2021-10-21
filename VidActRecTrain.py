@@ -77,7 +77,7 @@ parser.add_argument(
     '--evaluate',
     type=str,
     required=False,
-    default=False,
+    default=None,
     help='Evaluate with the given dataset.')
 
 args = parser.parse_args()
@@ -111,7 +111,7 @@ dataset = (
 
 dataloader = torch.utils.data.DataLoader(dataset, num_workers=0, batch_size=32)
 
-if args.evaluate is not None:
+if args.evaluate:
     eval_dataset = (
         wds.WebDataset(args.evaluate)
         .decode("l")
@@ -124,7 +124,7 @@ if args.evaluate is not None:
 # TODO Also hard coding the input and output sizes
 if 'alexnet' == args.modeltype:
     net = AlexLikeNet(in_dimensions=(in_frames, 400, 400), out_classes=3, linear_size=512).cuda()
-    optimizer = torch.optim.SGD(net.parameters(), lr=10e-5)
+    optimizer = torch.optim.SGD(net.parameters(), lr=10e-4)
 elif 'resnet18' == args.modeltype:
     net = ResNet18(in_dimensions=(in_frames, 400, 400), out_classes=3, expanded_linear=True).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-5)
@@ -148,7 +148,7 @@ else:
     #loss_fn = torch.nn.L1Loss()
     loss_fn = torch.nn.MSELoss()
 
-if args.no_train:
+if not args.no_train:
     for epoch in range(args.epochs):
         # Make a confusion matrix, x is item, y is classification
         totals=[[0,0,0],
