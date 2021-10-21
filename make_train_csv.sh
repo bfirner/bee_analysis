@@ -28,6 +28,7 @@ readarray -t all_state_switches < <( cat $target/*.txt | sort -n )
 #declare -p all_state_switches
 
 #echo -e "all switches are:\n${all_state_switches[@]}\n\n"
+echo "file, class, begin frame, end frame"
 
 for video in $target/*.h264; do
     # Reformat the video date to the same date format as in the magnetic switching logs
