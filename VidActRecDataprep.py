@@ -18,6 +18,7 @@ import numpy
 import os
 import random
 import sys
+import time
 import torch
 import webdataset as wds
 # Helper function to convert to images
@@ -193,8 +194,8 @@ class VideoSampler:
             (image, path, (frames))
         """
         # Determine where frames to sample.
-        target_samples = sorted(random.sample(
-            population=range(self.available_samples), k=self.num_samples))
+        target_samples = [self.begin_frame + x for x in sorted(random.sample(
+            population=range(self.available_samples), k=self.num_samples))]
         # Open the video
         # It is a bit unfortunate the we decode what is probably a YUV stream into rgb24, but this
         # is what PIL supports easily. It is only really detrimental when we want just the Y
@@ -209,6 +210,7 @@ class VideoSampler:
             # The crop is automatically centered if the x and y parameters are not used.
             .filter('crop', out_w=self.out_width, out_h=self.out_height)
             # Full indepenence between color channels. The bee videos are basically a single color.
+            # Otherwise normalizing the channels independently may not be a good choice.
             .filter('normalize', independence=1.0)
             #.filter('reverse')
             # YUV444p is the alternative to rgb24, but the pretrained network expects rgb images.
@@ -220,46 +222,49 @@ class VideoSampler:
         # TODO FIXME Use the sampling options
         # The first frame will be frame number 1
         frame = 0
-        target_idx = 0
-        partial_sample = []
-        sample_frames = []
         # Need to read in all frames.
         while True:
-            in_bytes = process1.stdout.read(self.out_width * self.out_height * self.channels)
-            if in_bytes:
-                frame += 1
-                # Check if this frame will be sampled.
-                # The sample number is from the list of available samples, starting from 0. Add the
-                # begin frame to get the actual desired frame number.
-                # Making some variables here for clarity below
-                sample_in_progress = 1 < self.frames_per_sample and 0 < len(partial_sample)
-                if (target_idx < len(target_samples) and
-                    (self.begin_frame + frame == target_samples[target_idx] * self.sample_span or
-                    (sample_in_progress and (self.begin_frame + frame - target_samples[target_idx] * self.sample_span) %
-                    (self.frame_interval + 1) == 0))):
-                    # Convert to numpy, and then to torch.
-                    np_frame = numpy.frombuffer(in_bytes, numpy.uint8)
-                    in_frame = torch.tensor(data=np_frame, dtype=torch.uint8,
-                        ).reshape([1, self.out_height, self.out_width, self.channels])
-                    in_frame = in_frame.permute(0, 3, 1, 2).to(dtype=torch.float)
-                    partial_sample.append(in_frame)
-                    sample_frames.append(str(frame))
-                if len(partial_sample) == self.frames_per_sample:
-                    # If multiple frames are being returned then concat them along the channel
-                    # dimension
-                    if 1 == self.frames_per_sample:
-                        yield partial_sample[0], self.path, sample_frames
+            for target_idx, target_frame in enumerate(target_samples):
+                # Get ready to fetch the next frame
+                partial_sample = []
+                sample_frames = []
+                while len(partial_sample) < self.frames_per_sample:
+                    in_bytes = process1.stdout.read(self.out_width * self.out_height * self.channels)
+                    if in_bytes:
+                        # Check if this frame will be sampled.
+                        # The sample number is from the list of available samples, starting from 0. Add the
+                        # begin frame to get the actual desired frame number.
+                        # Making some variables here for clarity below
+                        sample_in_progress = 0 < len(partial_sample)
+                        if ((frame == target_frame * self.sample_span or
+                            (sample_in_progress and (frame - target_frame * self.sample_span) %
+                            (self.frame_interval + 1) == 0))):
+                            # Convert to numpy, and then to torch.
+                            np_frame = numpy.frombuffer(in_bytes, numpy.uint8)
+                            in_frame = torch.tensor(data=np_frame, dtype=torch.uint8,
+                                ).reshape([1, self.out_height, self.out_width, self.channels])
+                            in_frame = in_frame.permute(0, 3, 1, 2).to(dtype=torch.float)
+                            partial_sample.append(in_frame)
+                            sample_frames.append(str(frame))
+                        frame += 1
                     else:
-                        yield torch.cat(partial_sample), self.path, sample_frames
-                    # Get ready to fetch the next frame
-                    target_idx += 1
-                    # Reset the sample state variables
-                    partial_sample = []
-                    sample_frames = []
-            else:
-                print(f"The final frame was {frame}")
-                process1.wait()
-                return
+                        # Somehow we reached the end of the video without collected all of the samples.
+                        print(f"Warning: reached the end of the video but only collected {target_idx}/{self.num_samples} samples")
+                        process1.wait()
+                        return
+                # If multiple frames are being returned then concat them along the channel
+                # dimension. Otherwise just return the single frame.
+                if 1 == self.frames_per_sample:
+                    yield partial_sample[0], self.path, sample_frames
+                else:
+                    yield torch.cat(partial_sample), self.path, sample_frames
+            print(f"Collected {target_idx + 1} frames.")
+            print(f"The final frame was {frame}")
+            # Read any remaining samples
+            while in_bytes:
+                in_bytes = process1.stdout.read(self.out_width * self.out_height * self.channels)
+            process1.wait()
+            return
 
 # Create a writer for the WebDataset
 datawriter = wds.TarWriter(args.outpath, encoder=False)
@@ -284,8 +289,13 @@ with open(args.datalist, newline='') as datacsv:
         for sample_num, frame_data in enumerate(sampler):
             frame, video_path, frame_num = frame_data
             base_name = os.path.basename(video_path).replace(' ', '_').replace('.', '_')
-            time = os.path.basename(video_path).split('.')[0]
-            metadata = f"{video_path},{frame},{time}"
+            video_time = os.path.basename(video_path).split('.')[0]
+            # TODO FIXME Convert the time from the video to the current frame time.
+            # TODO Assuming 3fps bee videos
+            time_sec = time.mktime(time.strptime(video_time, "%Y-%m-%d %H:%M:%S"))
+            time_struct = time.localtime(time_sec + int(frame_num[0]) // 3)
+            curtime = time.strftime("%Y-%m-%d %H:%M:%S", time_struct)
+            metadata = f"{video_path},{frame_num[0]},{curtime}"
             height, width = frame.size(2), frame.size(3)
             # Now crop to args.width by args.height.
             #ybegin = (height - args.height)//2

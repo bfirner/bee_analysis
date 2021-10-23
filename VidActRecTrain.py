@@ -61,6 +61,13 @@ parser.add_argument(
     default='0',
     help="Seed to use for RNG initialization.")
 parser.add_argument(
+    '--normalize',
+    required=False,
+    default=False,
+    action="store_true",
+    help=("Normalize inputs: input = (input - mean) / stddev. "
+        "Note that VidActRecDataprep is already normalizing so this may not be required."))
+parser.add_argument(
     '--modeltype',
     type=str,
     required=False,
@@ -168,6 +175,10 @@ if not args.no_train:
                 for i in range(in_frames):
                     raw_input.append(dl_tuple[i].unsqueeze(1).cuda())
                 net_input = torch.cat(*(raw_input), dim=1)
+            # Normalize inputs: input = (input - mean)/stddev
+            if args.normalize:
+                v, m = torch.var_mean(net_input)
+                net_input = (net_input - m) / v
 
             out = net.forward(net_input)
 
@@ -212,6 +223,11 @@ if not args.no_train:
                         for i in range(in_frames):
                             raw_input.append(dl_tuple[i].unsqueeze(1).cuda())
                         net_input = torch.cat(*(raw_input), dim=1)
+                    # Normalize inputs: input = (input - mean)/stddev
+                    if args.normalize:
+                        v, m = torch.var_mean(net_input)
+                        net_input = (net_input - m) / v
+
                     out = net.forward(net_input)
                     labels = dl_tuple[-2]
                     # Convert the labels to a one hot encoding to serve at the DNN target.
@@ -250,33 +266,44 @@ if args.evaluate is not None:
         totals=[[0,0,0],
                 [0,0,0],
                 [0,0,0]]
-        for batch_num, dl_tuple in enumerate(eval_dataloader):
-            # Decoding only the luminance channel means that the channel dimension has gone away here.
-            if 1 == in_frames:
-                net_input = dl_tuple[0].unsqueeze(1).cuda()
-            else:
-                raw_input = []
-                for i in range(in_frames):
-                    raw_input.append(dl_tuple[i].unsqueeze(1).cuda())
-                net_input = torch.cat(*(raw_input), dim=1)
-            out = net.forward(net_input)
-            # Convert the labels to a one hot encoding to serve at the DNN target.
-            # The label class is 1 based, but need to be 0-based for the one_hot function.
-            labels = dl_tuple[-2]
-            if train_as_classifier:
-                loss = loss_fn(out, labels.cuda() - 1)
-            else:
-                labels = torch.nn.functional.one_hot(labels-1, num_classes=3)
-                loss = loss_fn(out, labels.cuda().float() - 1)
-            with torch.no_grad():
-                classes = torch.argmax(out, dim=1)
+        with open(args.outname.split('.')[0] + ".log", 'w') as logfile:
+            logfile.write('video_path,frame,time,label,prediction\n')
+            for batch_num, dl_tuple in enumerate(eval_dataloader):
+                metadata = dl_tuple[-1]
+                # Decoding only the luminance channel means that the channel dimension has gone away here.
+                if 1 == in_frames:
+                    net_input = dl_tuple[0].unsqueeze(1).cuda()
+                else:
+                    raw_input = []
+                    for i in range(in_frames):
+                        raw_input.append(dl_tuple[i].unsqueeze(1).cuda())
+                    net_input = torch.cat(*(raw_input), dim=1)
+                # Normalize inputs: input = (input - mean)/stddev
+                if args.normalize:
+                    v, m = torch.var_mean(net_input)
+                    net_input = (net_input - m) / v
+
+                out = net.forward(net_input)
+                # Convert the labels to a one hot encoding to serve at the DNN target.
+                # The label class is 1 based, but need to be 0-based for the one_hot function.
+                labels = dl_tuple[-2]
                 if train_as_classifier:
+                    loss = loss_fn(out, labels.cuda() - 1)
+                else:
                     labels = torch.nn.functional.one_hot(labels-1, num_classes=3)
-                for i in range(labels.size(0)):
-                    for j in range(3):
-                        # If this is the j'th class
-                            if 1 == labels[i][j]:
-                                totals[j][classes[i]] += 1
+                    loss = loss_fn(out, labels.cuda().float() - 1)
+                with torch.no_grad():
+                    classes = torch.argmax(out, dim=1)
+                    if train_as_classifier:
+                        labels = torch.nn.functional.one_hot(labels-1, num_classes=3)
+                    for i in range(labels.size(0)):
+                        for j in range(3):
+                            # If this is the j'th class
+                                if 1 == labels[i][j]:
+                                    totals[j][classes[i]] += 1
+                                    logfile.write(','.join((metadata[i], str(j), str(classes[i].item()))))
+                                    logfile.write('\n')
+
         # Print evaluation information
         print(f"Evaluation confusion matrix:")
         print(totals)
