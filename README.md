@@ -1,6 +1,16 @@
 # bee_analysis
 Analyze some bee videos. Could also work on other data too.
 
+## Dependencies
+
+Torch, torchvision, ffmpeg, and webdataset.
+
+In general, install through pip3 or conda:
+
+> pip3 install torch torchvission webdataset ffmpeg
+
+See https://pytorch.org/get-started/locally/ for additional installation instructions
+
 ## Creating a dataset
 
 First run `make_train.sh` to create a csv file with labels for each video.
