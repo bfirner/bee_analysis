@@ -9,6 +9,7 @@ This will train a model using a webdataset tar archive for data input.
 import argparse
 import csv
 import ffmpeg
+import heapq
 import io
 import math
 import numpy
@@ -22,9 +23,34 @@ from collections import namedtuple
 from torchvision import transforms
 
 from models.alexnet import AlexLikeNet
+from models.bennet import BenNet
 from models.resnet import (ResNet18, ResNet34)
 
 
+# Need a special comparison function that won't attempt to do something that tensors do not
+# support. Used if args.save_top_n or args.save_worst_n are used.
+class MaxNode:
+    def __init__(self, score, data, metadata, mask):
+        self.score = score
+        self.data = data
+        self.metadata = metadata
+        self.mask = mask
+
+    def __lt__(self, other):
+        return self.score < other.score
+
+# Turns the heapq from a max heap into a min heap by using greater than in the less than operator.
+class MinNode:
+    def __init__(self, score, data, metadata, mask):
+        self.score = score
+        self.data = data
+        self.metadata = metadata
+        self.mask = mask
+
+    def __lt__(self, other):
+        return self.score > other.score
+
+# Argument parser setup for the program.
 parser = argparse.ArgumentParser(
     description="Perform data preparation for DNN training on a video set.")
 parser.add_argument(
@@ -72,7 +98,7 @@ parser.add_argument(
     type=str,
     required=False,
     default="alexnet",
-    choices=["alexnet", "resnet18", "resnet34"],
+    choices=["alexnet", "resnet18", "resnet34", "bennet"],
     help="Model to use for training.")
 parser.add_argument(
     '--no_train',
@@ -86,6 +112,18 @@ parser.add_argument(
     required=False,
     default=None,
     help='Evaluate with the given dataset.')
+parser.add_argument(
+    '--save_top_n',
+    type=int,
+    required=False,
+    default=None,
+    help='Save N images for each class with the highest classification score. Works with --evaluate')
+parser.add_argument(
+    '--save_worst_n',
+    type=int,
+    required=False,
+    default=None,
+    help='Save N images for each class with the lowest classification score. Works with --evaluate')
 
 args = parser.parse_args()
 
@@ -137,6 +175,9 @@ elif 'resnet18' == args.modeltype:
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-5)
 elif 'resnet34' == args.modeltype:
     net = ResNet34(in_dimensions=(in_frames, 400, 400), out_classes=3, expanded_linear=True).cuda()
+    optimizer = torch.optim.Adam(net.parameters(), lr=10e-5)
+elif 'bennet' == args.modeltype:
+    net = BenNet(in_dimensions=(in_frames, 400, 400), out_classes=3).cuda()
     optimizer = torch.optim.Adam(net.parameters(), lr=10e-5)
 print(f"Model is {net}")
 
@@ -260,6 +301,27 @@ if not args.no_train:
 # Post-training evaluation
 if args.evaluate is not None:
     print("Evaluating model.")
+    if args.save_top_n is not None:
+        topn_path = args.outname.split('.')[0] + "-topN"
+        # Create the directory if it does not exist
+        try:
+            os.mkdir(topn_path)
+        except FileExistsError:
+            pass
+        print(f"Saving {args.save_top_n} highest confidence images to {topn_path}.")
+        # Save tuples of (class score, tensor)
+        topn = [[], [], []]
+    if args.save_worst_n is not None:
+        worstn_path = args.outname.split('.')[0] + "-worstN"
+        # Create the directory if it does not exist
+        try:
+            os.mkdir(worstn_path)
+        except FileExistsError:
+            pass
+        print(f"Saving {args.save_worst_n} lowest confidence images to {worstn_path}.")
+        # Save tuples of (class score, tensor)
+        worstn = [[], [], []]
+
     net.eval()
     with torch.no_grad():
         # Make a confusion matrix, x is item, y is classification
@@ -283,7 +345,12 @@ if args.evaluate is not None:
                     v, m = torch.var_mean(net_input)
                     net_input = (net_input - m) / v
 
-                out = net.forward(net_input)
+                # Visualization masks are not supported with all model types yet.
+                if 'bennet' == args.modeltype:
+                    out, mask = net.vis_forward(net_input)
+                else:
+                    out = net.forward(net_input)
+                    mask = None
                 # Convert the labels to a one hot encoding to serve at the DNN target.
                 # The label class is 1 based, but need to be 0-based for the one_hot function.
                 labels = dl_tuple[-2]
@@ -298,11 +365,57 @@ if args.evaluate is not None:
                         labels = torch.nn.functional.one_hot(labels-1, num_classes=3)
                     for i in range(labels.size(0)):
                         for j in range(3):
-                            # If this is the j'th class
+                            # If this is a member of the j'th class
+                            if 1 == labels[i][j]:
+                                totals[j][classes[i]] += 1
+                                logfile.write(','.join((metadata[i], str(j), str(classes[i].item()))))
+                                logfile.write('\n')
+                    if args.save_top_n is not None:
+                        for i in range(labels.size(0)):
+                            for j in range(3):
+                                # If the DNN predicted this image was a member of class j that
+                                # should be inserted into the top_n queue.
+                                if j == classes[i].item() and 1 == labels[i][j]:
+                                    # Insert into an empty heap or replace the smallest value and
+                                    # heapify. The smallest value is in the first position.
+                                    if len(topn[j]) < args.save_top_n:
+                                        heapq.heappush(topn[j], MaxNode(out[i][j].item(), dl_tuple[0][i], metadata[i], mask[i]))
+                                    elif out[i][j] > topn[j][0].score:
+                                        heapq.heapreplace(topn[j], MaxNode(out[i][j].item(), dl_tuple[0][i], metadata[i], mask[i]))
+                    if args.save_worst_n is not None:
+                        for i in range(labels.size(0)):
+                            for j in range(3):
+                                # If the DNN predicted this image was a member of class j that
+                                # should be inserted into the worst_n queue.
                                 if 1 == labels[i][j]:
-                                    totals[j][classes[i]] += 1
-                                    logfile.write(','.join((metadata[i], str(j), str(classes[i].item()))))
-                                    logfile.write('\n')
+                                    # Insert into an empty heap or replace the smallest value and
+                                    # heapify. The smallest value is in the first position.
+                                    if len(worstn[j]) < args.save_worst_n:
+                                        heapq.heappush(worstn[j], MinNode(out[i][j].item(), dl_tuple[0][i], metadata[i], mask[i]))
+                                    elif out[i][j] < worstn[j][0].score:
+                                        heapq.heapreplace(worstn[j], MinNode(out[i][j].item(), dl_tuple[0][i], metadata[i], mask[i]))
+
+        # The heap has tuples of (class score, tensor)
+        if args.save_top_n is not None:
+            for j in range(3):
+                for i, node in enumerate(topn[j]):
+                    img = transforms.ToPILImage()(node.data).convert('L')
+                    timestamp = node.metadata.split(',')[2].replace(' ', '_')
+                    img.save(f"{topn_path}/class-{j}_time-{timestamp}_score-{node.score}.png")
+                    if node.mask is not None:
+                        # Save the mask
+                        mask_img = transforms.ToPILImage()(node.mask.data).convert('L')
+                        mask_img.save(f"{topn_path}/class-{j}_time-{timestamp}_score-{node.score}_mask.png")
+        if args.save_worst_n is not None:
+            for j in range(3):
+                for i, node in enumerate(worstn[j]):
+                    img = transforms.ToPILImage()(node.data).convert('L')
+                    timestamp = node.metadata.split(',')[2].replace(' ', '_')
+                    img.save(f"{worstn_path}/class-{j}_time-{timestamp}_score-{node.score}.png")
+                    if node.mask is not None:
+                        # Save the mask
+                        mask_img = transforms.ToPILImage()(node.mask.data).convert('L')
+                        mask_img.save(f"{worstn_path}/class-{j}_time-{timestamp}_score-{node.score}_mask.png")
 
         # Print evaluation information
         print(f"Evaluation confusion matrix:")
