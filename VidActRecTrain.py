@@ -154,7 +154,8 @@ dataset = (
     .to_tuple(*decode_strs)
 )
 
-dataloader = torch.utils.data.DataLoader(dataset, num_workers=0, batch_size=32)
+batch_size = 32
+dataloader = torch.utils.data.DataLoader(dataset, num_workers=0, batch_size=batch_size)
 
 if args.evaluate:
     eval_dataset = (
@@ -162,7 +163,7 @@ if args.evaluate:
         .decode("l")
         .to_tuple(*decode_strs)
     )
-    eval_dataloader = torch.utils.data.DataLoader(eval_dataset, num_workers=0, batch_size=32)
+    eval_dataloader = torch.utils.data.DataLoader(eval_dataset, num_workers=0, batch_size=batch_size)
 
 
 # Hard coding the Alexnet like network for now.
@@ -346,11 +347,11 @@ if args.evaluate is not None:
                     net_input = (net_input - m) / v
 
                 # Visualization masks are not supported with all model types yet.
-                if 'bennet' == args.modeltype:
+                if args.modeltype in ['bennet', 'resnet18', 'resnet34']:
                     out, mask = net.vis_forward(net_input)
                 else:
                     out = net.forward(net_input)
-                    mask = None
+                    mask = [None] * batch_size
                 # Convert the labels to a one hot encoding to serve at the DNN target.
                 # The label class is 1 based, but need to be 0-based for the one_hot function.
                 labels = dl_tuple[-2]
