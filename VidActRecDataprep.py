@@ -59,6 +59,12 @@ parser.add_argument(
     choices=['crop', 'scale'],
     help='Strategy to match desired output size.')
 parser.add_argument(
+    '--crop_noise',
+    type=int,
+    required=False,
+    default=0,
+    help='The noise (in pixels) to randomly add to the crop location in both the x and y axis.')
+parser.add_argument(
     '--interval',
     type=int,
     required=False,
@@ -89,7 +95,8 @@ args = parser.parse_args()
 class VideoSampler:
 
     def __init__(self, video_path, num_samples, frames_per_sample, frame_interval,
-            out_width=None, out_height=None, channels=3, begin_frame=None, end_frame=None):
+            out_width=None, out_height=None, crop_noise=0, channels=3, begin_frame=None,
+            end_frame=None):
         """
         Samples have no overlaps. For example, a 10 second video at 30fps has 300 samples of 1
         frame, 150 samples of 2 frames with a frame interval of 0, or 100 samples of 2 frames with a
@@ -101,6 +108,7 @@ class VideoSampler:
             frame_interval    (int): Number of frames to skip between each sampled frame.
             out_width     (int): Width of output images, or the original width if None.
             out_height    (int): Height of output images, or the original height if None.
+            crop_noise    (int): Noise to add to the crop location (in both x and y dimensions)
             channels      (int): Numbers of channels (3 for RGB or 1 luminance/Y/grayscale/whatever)
             begin_frame   (int): First frame to possibly sample.
             end_frame     (int): Final frame to possibly sample.
@@ -126,6 +134,10 @@ class VideoSampler:
             self.out_height = out_height
         else:
             self.out_height = self.height
+        if out_width is None or out_height is None:
+            self.crop_noise = 0
+        else:
+            self.crop_noise = crop_noise
 
         if 'duration' in probe:
             numer, denom = probe['avg_frame_rate'].split('/')
@@ -204,11 +216,13 @@ class VideoSampler:
             pix_fmt='rgb24'
         else:
             pix_fmt='gray'
+        in_width = self.out_width + 2 * self.crop_noise
+        in_height = self.out_height + 2 * self.crop_noise
         process1 = (
             ffmpeg
             .input(self.path)
             # The crop is automatically centered if the x and y parameters are not used.
-            .filter('crop', out_w=self.out_width, out_h=self.out_height)
+            .filter('crop', out_w=in_width, out_h=in_height)
             # Full indepenence between color channels. The bee videos are basically a single color.
             # Otherwise normalizing the channels independently may not be a good choice.
             .filter('normalize', independence=1.0)
@@ -229,7 +243,10 @@ class VideoSampler:
                 partial_sample = []
                 sample_frames = []
                 while len(partial_sample) < self.frames_per_sample:
-                    in_bytes = process1.stdout.read(self.out_width * self.out_height * self.channels)
+                    # Use the same crop location for each sample in multiframe sequences.
+                    crop_x = random.choice(range(0, 2 * self.crop_noise + 1))
+                    crop_y = random.choice(range(0, 2 * self.crop_noise + 1))
+                    in_bytes = process1.stdout.read(in_width * in_height * self.channels)
                     if in_bytes:
                         # Check if this frame will be sampled.
                         # The sample number is from the list of available samples, starting from 0. Add the
@@ -242,7 +259,9 @@ class VideoSampler:
                             # Convert to numpy, and then to torch.
                             np_frame = numpy.frombuffer(in_bytes, numpy.uint8)
                             in_frame = torch.tensor(data=np_frame, dtype=torch.uint8,
-                                ).reshape([1, self.out_height, self.out_width, self.channels])
+                                ).reshape([1, in_height, in_width, self.channels])
+                            # Apply the random crop
+                            in_frame = in_frame[:, crop_y:crop_y+self.out_height, crop_x:crop_x+self.out_width, :]
                             in_frame = in_frame.permute(0, 3, 1, 2).to(dtype=torch.float)
                             partial_sample.append(in_frame)
                             sample_frames.append(str(frame))
@@ -284,7 +303,7 @@ with open(args.datalist, newline='') as datacsv:
         sampler = VideoSampler(
             video_path=path, num_samples=args.samples, frames_per_sample=args.frames_per_sample,
             frame_interval=args.interval, out_width=args.width, out_height=args.height,
-            channels=args.out_channels,
+            crop_noise=args.crop_noise, channels=args.out_channels,
             begin_frame=row[beginf_col], end_frame=row[endf_col])
         for sample_num, frame_data in enumerate(sampler):
             frame, video_path, frame_num = frame_data
