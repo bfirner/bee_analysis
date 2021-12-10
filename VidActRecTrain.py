@@ -183,7 +183,7 @@ if args.evaluate:
 
 # Hard coding the Alexnet like network for now.
 # TODO Also hard coding the input and output sizes
-lr_schedule = None
+lr_scheduler = None
 if 'alexnet' == args.modeltype:
     net = AlexLikeNet(in_dimensions=(in_frames, 400, 400), out_classes=3, linear_size=512).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-4)
