@@ -2,6 +2,9 @@
 
 """
 This will train a model using a webdataset tar archive for data input.
+If you use Cuda >= 10.2 then running in deterministic mode requires this environment variable to be
+set: CUBLAS_WORKSPACE_CONFIG=:4096:8
+To disable deterministic mode use the option --not_deterministic
 """
 
 # Not using video reading library from torchvision.
@@ -25,6 +28,7 @@ from torchvision import transforms
 from models.alexnet import AlexLikeNet
 from models.bennet import BenNet
 from models.resnet import (ResNet18, ResNet34)
+from models.resnext import (ResNext34, ResNext50)
 
 
 # Need a special comparison function that won't attempt to do something that tensors do not
@@ -78,7 +82,7 @@ parser.add_argument(
     '--epochs',
     type=int,
     required=False,
-    default=50,
+    default=15,
     help='Total epochs to train.')
 parser.add_argument(
     '--seed',
@@ -97,8 +101,8 @@ parser.add_argument(
     '--modeltype',
     type=str,
     required=False,
-    default="alexnet",
-    choices=["alexnet", "resnet18", "resnet34", "bennet"],
+    default="resnext34",
+    choices=["alexnet", "resnet18", "resnet34", "bennet", "resnext50", "resnext34"],
     help="Model to use for training.")
 parser.add_argument(
     '--no_train',
@@ -124,8 +128,19 @@ parser.add_argument(
     required=False,
     default=None,
     help='Save N images for each class with the lowest classification score. Works with --evaluate')
+parser.add_argument(
+    '--not_deterministic',
+    required=False,
+    default=True,
+    action='store_false',
+    help='Set this to disable deterministic training.')
 
 args = parser.parse_args()
+
+torch.use_deterministic_algorithms(not args.not_deterministic)
+torch.manual_seed(args.seed)
+random.seed(0)
+numpy.random.seed(0)
 
 in_frames = args.sample_frames
 decode_strs = []
@@ -168,6 +183,7 @@ if args.evaluate:
 
 # Hard coding the Alexnet like network for now.
 # TODO Also hard coding the input and output sizes
+lr_schedule = None
 if 'alexnet' == args.modeltype:
     net = AlexLikeNet(in_dimensions=(in_frames, 400, 400), out_classes=3, linear_size=512).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-4)
@@ -180,6 +196,15 @@ elif 'resnet34' == args.modeltype:
 elif 'bennet' == args.modeltype:
     net = BenNet(in_dimensions=(in_frames, 400, 400), out_classes=3).cuda()
     optimizer = torch.optim.Adam(net.parameters(), lr=10e-5)
+elif 'resnext50' == args.modeltype:
+    net = ResNext50(in_dimensions=(in_frames, 400, 400), out_classes=3, expanded_linear=True).cuda()
+    optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[1,2,3], gamma=0.1)
+elif 'resnext34' == args.modeltype:
+    # Learning parameters were tuned on a dataset with about 80,000 examples
+    net = ResNext34(in_dimensions=(in_frames, 400, 400), out_classes=3, expanded_linear=True).cuda()
+    optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,12], gamma=0.2)
 print(f"Model is {net}")
 
 # See if the model weights and optimizer state should be restored.
@@ -187,6 +212,10 @@ if args.resume_from is not None:
     checkpoint = torch.load(args.resume_from)
     net.load_state_dict(checkpoint["model_dict"])
     optimizer.load_state_dict(checkpoint["optim_dict"])
+    # Also restore the RNG states
+    random.setstate(checkpoint["py_random_state"])
+    numpy.random.set_state(checkpoint["np_random_state"])
+    torch.set_rng_state(checkpoint["torch_rng_state"])
 
 train_as_classifier = True
 if train_as_classifier:
@@ -294,10 +323,17 @@ if not args.no_train:
                 accuracy = (totals[0][0] + totals[1][1] + totals[2][2])/(sum(totals[0]) + sum(totals[1]) + sum(totals[2]))
                 print(f"Accuracy: {accuracy}")
             net.train()
+        # Adjust learning rate according to the learning rate schedule
+        if lr_scheduler is not None:
+            lr_scheduler.step()
 
     torch.save({
         "model_dict": net.state_dict(),
-        "optim_dict": optimizer.state_dict()}, args.outname)
+        "optim_dict": optimizer.state_dict(),
+        "py_random_state": random.getstate(),
+        "np_random_state": numpy.random.get_state(),
+        "torch_rng_state": torch.get_rng_state(),
+        }, args.outname)
 
 # Post-training evaluation
 if args.evaluate is not None:
