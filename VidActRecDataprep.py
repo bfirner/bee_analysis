@@ -182,7 +182,7 @@ class VideoSampler:
         # Remember that the frames in frame_interval aren't used but are still skipped along with
         # each sample.
         self.sample_span = self.frames_per_sample + (self.frames_per_sample - 1) * self.frame_interval
-        self.available_samples = (self.end_frame - self.begin_frame)//self.sample_span
+        self.available_samples = (self.end_frame - (self.sample_span - 1) - self.begin_frame)//self.sample_span
         self.num_samples = min(self.available_samples, self.num_samples)
         print(f"Video begin and end frames are {self.begin_frame} and {self.end_frame}")
         print(f"Video has {self.available_samples} available samples of size {self.sample_span} and {self.num_samples} will be sampled")
@@ -206,7 +206,7 @@ class VideoSampler:
             (image, path, (frames))
         """
         # Determine where frames to sample.
-        target_samples = [self.begin_frame + x for x in sorted(random.sample(
+        target_samples = [(self.begin_frame - 1) + x * self.sample_span for x in sorted(random.sample(
             population=range(self.available_samples), k=self.num_samples))]
         # Open the video
         # It is a bit unfortunate the we decode what is probably a YUV stream into rgb24, but this
@@ -242,10 +242,10 @@ class VideoSampler:
                 # Get ready to fetch the next frame
                 partial_sample = []
                 sample_frames = []
+                # Use the same crop location for each sample in multiframe sequences.
+                crop_x = random.choice(range(0, 2 * self.crop_noise + 1))
+                crop_y = random.choice(range(0, 2 * self.crop_noise + 1))
                 while len(partial_sample) < self.frames_per_sample:
-                    # Use the same crop location for each sample in multiframe sequences.
-                    crop_x = random.choice(range(0, 2 * self.crop_noise + 1))
-                    crop_y = random.choice(range(0, 2 * self.crop_noise + 1))
                     in_bytes = process1.stdout.read(in_width * in_height * self.channels)
                     if in_bytes:
                         # Check if this frame will be sampled.
@@ -253,8 +253,8 @@ class VideoSampler:
                         # begin frame to get the actual desired frame number.
                         # Making some variables here for clarity below
                         sample_in_progress = 0 < len(partial_sample)
-                        if ((frame == target_frame * self.sample_span or
-                            (sample_in_progress and (frame - target_frame * self.sample_span) %
+                        if ((frame == target_frame or
+                            (sample_in_progress and (frame - target_frame) %
                             (self.frame_interval + 1) == 0))):
                             # Convert to numpy, and then to torch.
                             np_frame = numpy.frombuffer(in_bytes, numpy.uint8)
@@ -269,6 +269,7 @@ class VideoSampler:
                     else:
                         # Somehow we reached the end of the video without collected all of the samples.
                         print(f"Warning: reached the end of the video but only collected {target_idx}/{self.num_samples} samples")
+                        print(f"Warning: ended during sample beginning with frame {target_frame} on frame {frame}")
                         process1.wait()
                         return
                 # If multiple frames are being returned then concat them along the channel
