@@ -20,6 +20,7 @@ import os
 import random
 import sys
 import torch
+import torch.cuda.amp
 import webdataset as wds
 from collections import namedtuple
 # Helper function to convert to images
@@ -29,7 +30,7 @@ from models.alexnet import AlexLikeNet
 from models.bennet import BenNet
 from models.resnet import (ResNet18, ResNet34)
 from models.resnext import (ResNext34, ResNext50)
-
+from models.convnext import (ConvNextExtraTiny, ConvNextTiny, ConvNextSmall, ConvNextBase)
 
 # Need a special comparison function that won't attempt to do something that tensors do not
 # support. Used if args.save_top_n or args.save_worst_n are used.
@@ -101,8 +102,9 @@ parser.add_argument(
     '--modeltype',
     type=str,
     required=False,
-    default="resnext34",
-    choices=["alexnet", "resnet18", "resnet34", "bennet", "resnext50", "resnext34"],
+    default="resnext18",
+    choices=["alexnet", "resnet18", "resnet34", "bennet", "resnext50", "resnext34", "resnext18",
+    "convnextxt", "convnextt", "convnexts", "convnextb"],
     help="Model to use for training.")
 parser.add_argument(
     '--no_train',
@@ -164,7 +166,7 @@ dl_tuple = LoopTuple(*([None] * len(decode_strs)))
 # tar file, shuffling after the dataset is created.
 dataset = (
     wds.WebDataset(args.dataset)
-    .shuffle(20000, initial=20000)
+    .shuffle(20000//in_frames, initial=20000//in_frames)
     .decode("l")
     .to_tuple(*decode_strs)
 )
@@ -184,9 +186,11 @@ if args.evaluate:
 # Hard coding the Alexnet like network for now.
 # TODO Also hard coding the input and output sizes
 lr_scheduler = None
+train_as_classifier = True
 if 'alexnet' == args.modeltype:
     net = AlexLikeNet(in_dimensions=(in_frames, 400, 400), out_classes=3, linear_size=512).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-4)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[3,5,7], gamma=0.2)
 elif 'resnet18' == args.modeltype:
     net = ResNet18(in_dimensions=(in_frames, 400, 400), out_classes=3, expanded_linear=True).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-5)
@@ -200,9 +204,34 @@ elif 'resnext50' == args.modeltype:
     net = ResNext50(in_dimensions=(in_frames, 400, 400), out_classes=3, expanded_linear=True).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[1,2,3], gamma=0.1)
+    batch_size = 64
 elif 'resnext34' == args.modeltype:
     # Learning parameters were tuned on a dataset with about 80,000 examples
-    net = ResNext34(in_dimensions=(in_frames, 400, 400), out_classes=3, expanded_linear=True).cuda()
+    net = ResNext34(in_dimensions=(in_frames, 400, 400), out_classes=3, expanded_linear=False,
+            use_dropout=False).cuda()
+    optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,12], gamma=0.2)
+elif 'resnext18' == args.modeltype:
+    # Learning parameters were tuned on a dataset with about 80,000 examples
+    net = ResNext18(in_dimensions=(in_frames, 400, 400), out_classes=3, expanded_linear=True,
+            use_dropout=False).cuda()
+    optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,12], gamma=0.2)
+elif 'convnextxt' == args.modeltype:
+    net = ConvNextExtraTiny(in_dimensions=(in_frames, 400, 400), out_classes=3).cuda()
+    optimizer = torch.optim.SGD(net.parameters(), lr=10e-4, weight_decay=10e-4, momentum=0.9,
+            nesterov=True)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[4,5,12], gamma=0.2)
+elif 'convnextt' == args.modeltype:
+    net = ConvNextTiny(in_dimensions=(in_frames, 400, 400), out_classes=3).cuda()
+    optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,12], gamma=0.2)
+elif 'convnexts' == args.modeltype:
+    net = ConvNextSmall(in_dimensions=(in_frames, 400, 400), out_classes=3).cuda()
+    optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,12], gamma=0.2)
+elif 'convnextb' == args.modeltype:
+    net = ConvNextBase(in_dimensions=(in_frames, 400, 400), out_classes=3).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,12], gamma=0.2)
 print(f"Model is {net}")
@@ -217,7 +246,6 @@ if args.resume_from is not None:
     numpy.random.set_state(checkpoint["np_random_state"])
     torch.set_rng_state(checkpoint["torch_rng_state"])
 
-train_as_classifier = True
 if train_as_classifier:
     #total = 11. + 16. + 12.
     #loss_fn = torch.nn.NLLLoss(weight=torch.tensor([total/11., total/16., total/12.]).cuda())
@@ -225,6 +253,9 @@ if train_as_classifier:
 else:
     #loss_fn = torch.nn.L1Loss()
     loss_fn = torch.nn.MSELoss()
+
+# Gradient scaler for mixed precision training
+scaler = torch.cuda.amp.GradScaler()
 
 if not args.no_train:
     for epoch in range(args.epochs):
@@ -251,18 +282,20 @@ if not args.no_train:
                 v, m = torch.var_mean(net_input)
                 net_input = (net_input - m) / v
 
-            out = net.forward(net_input)
+            with torch.cuda.amp.autocast():
+                out = net.forward(net_input.contiguous())
 
-            # Convert the labels to a one hot encoding to serve at the DNN target.
-            # The label class is 1 based, but need to be 0-based for the one_hot function.
-            labels = dl_tuple[-2]
-            if train_as_classifier:
-                loss = loss_fn(out, labels.cuda() - 1)
-            else:
-                labels = torch.nn.functional.one_hot(labels-1, num_classes=3)
-                loss = loss_fn(out, labels.cuda().float() - 1)
-            loss.backward()
-            optimizer.step()
+                # Convert the labels to a one hot encoding to serve at the DNN target.
+                # The label class is 1 based, but need to be 0-based for the one_hot function.
+                labels = dl_tuple[-2]
+                if train_as_classifier:
+                    loss = loss_fn(out, labels.cuda() - 1)
+                else:
+                    labels = torch.nn.functional.one_hot(labels-1, num_classes=3)
+                    loss = loss_fn(out, labels.cuda().float() - 1)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
             # Fill in the confusion matrix
             with torch.no_grad():
                 classes = torch.argmax(out, dim=1)
@@ -299,15 +332,16 @@ if not args.no_train:
                         v, m = torch.var_mean(net_input)
                         net_input = (net_input - m) / v
 
-                    out = net.forward(net_input)
-                    labels = dl_tuple[-2]
-                    # Convert the labels to a one hot encoding to serve at the DNN target.
-                    # The label class is 1 based, but need to be 0-based for the one_hot function.
-                    if train_as_classifier:
-                        loss = loss_fn(out, labels.cuda() - 1)
-                    else:
-                        labels = torch.nn.functional.one_hot(labels-1, num_classes=3)
-                        loss = loss_fn(out, labels.cuda().float() - 1)
+                    with torch.cuda.amp.autocast():
+                        out = net.forward(net_input)
+                        labels = dl_tuple[-2]
+                        # Convert the labels to a one hot encoding to serve at the DNN target.
+                        # The label class is 1 based, but need to be 0-based for the one_hot function.
+                        if train_as_classifier:
+                            loss = loss_fn(out, labels.cuda() - 1)
+                        else:
+                            labels = torch.nn.functional.one_hot(labels-1, num_classes=3)
+                            loss = loss_fn(out, labels.cuda().float() - 1)
                     with torch.no_grad():
                         classes = torch.argmax(out, dim=1)
                         if train_as_classifier:

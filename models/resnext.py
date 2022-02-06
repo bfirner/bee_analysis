@@ -132,6 +132,12 @@ class ResNext50(nn.Module):
             else:
                 self.shortcut_projections.append(nn.Identity())
             layer, out_size = self.createResLayer(i, out_size)
+
+            # Dropout was not in the original paper, but we can provide and option for it.
+            # TODO This should probably happen after the addition at the end of the shortcut though.
+            if self.use_dropout:
+                block.append(nn.Dropout2d(p=0.2))
+
             self.output_sizes.append(out_size)
             self.model.append(layer)
         return out_size
@@ -171,7 +177,7 @@ class ResNext50(nn.Module):
             self.vis_layers[-1].weight.requires_grad_(False)
             self.vis_layers[-1].weight.fill_(1.)
 
-    def __init__(self, in_dimensions, out_classes, expanded_linear=False):
+    def __init__(self, in_dimensions, out_classes, expanded_linear=False, use_dropout=False):
         """
         Arguments:
             in_dimensions (tuple(int)): Tuple of channels, height, and width.
@@ -179,9 +185,13 @@ class ResNext50(nn.Module):
             expanded_linear     (bool): True to expand the linear layers from the initial paper.
                                         Instead of global average pooling and a single linear layer
                                         there will be three linear layers of decreasing size.
+            use_dropout         (bool): Use dropout after the residual layers.
         """
         super(ResNext50, self).__init__()
         #self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # Dropout is not in the original ResNext paper
+        self.use_dropout = use_dropout
 
         self.in_dimensions = in_dimensions
         self.out_classes = out_classes
@@ -300,8 +310,8 @@ class ResNext50(nn.Module):
         return x, mask
 
 
-class ResNext34(ResNext50):
-    """ResNext34. A little closer to the internal layers of the 50 than the original ResNet 34."""
+class ResNext18(ResNext50):
+    """ResNext18. A little closer to the internal layers of the 50 than the original ResNet 18."""
 
     def initializeSizes(self):
         """
@@ -323,4 +333,30 @@ class ResNext34(ResNext50):
         # The first 7x7 kernel is followed by a 3x3 pooling layer, so the 7 needs to be
         # adjusted to a 9.
         self.vis_mask_sizes = (9, *([3] * (2+2+2+2)))
+        assert(len(self.kernels) == len(self.strides) == len(self.padding) == len(self.vis_mask_sizes))
+
+
+class ResNext34(ResNext50):
+    """ResNext34. A little closer to the internal layers of the 50 than the original ResNet 34."""
+
+    def initializeSizes(self):
+        """
+        Override this function to implement a different kind of residual network.
+        """
+        block1_channels = [64, 64, 64]
+        block2_channels = [128, 128, 128]
+        block3_channels = [256, 256, 256]
+        block4_channels = [512, 512, 512]
+        self.channels = ([self.in_dimensions[0]], [64], *([block1_channels] * 3), *([block2_channels] * 4),
+                *([block3_channels] * 6), *([block4_channels] * 3))
+        # The first layer quickly reduces the size of feature maps.
+        # The stride of 2 is used whenever the feature map size doubles to keep computation roughly
+        # the same.
+        self.kernels = (7, *([3] * (3+4+6+3)))
+        self.strides = (2, *([2] + [1]*2), *([2] + [1]*3), *([2] + [1]*5), *([2] + [1]*2))
+        self.padding = (3, *([1] * (3+4+6+3)))
+        self.groups = (1, *([32] * (3+4+6+3)))
+        # The first 7x7 kernel is followed by a 3x3 pooling layer, so the 7 needs to be
+        # adjusted to a 9.
+        self.vis_mask_sizes = (9, *([3] * (3+4+6+3)))
         assert(len(self.kernels) == len(self.strides) == len(self.padding) == len(self.vis_mask_sizes))
