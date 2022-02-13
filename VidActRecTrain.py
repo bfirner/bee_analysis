@@ -29,7 +29,7 @@ from torchvision import transforms
 from models.alexnet import AlexLikeNet
 from models.bennet import BenNet
 from models.resnet import (ResNet18, ResNet34)
-from models.resnext import (ResNext34, ResNext50)
+from models.resnext import (ResNext18, ResNext34, ResNext50)
 from models.convnext import (ConvNextExtraTiny, ConvNextTiny, ConvNextSmall, ConvNextBase)
 
 # Need a special comparison function that won't attempt to do something that tensors do not
@@ -54,6 +54,83 @@ class MinNode:
 
     def __lt__(self, other):
         return self.score > other.score
+
+def saveWorstN(worstn, worstn_path, classname):
+    """Saves samples from the priority queue worstn into the given path.
+
+    Arguments:
+        worstn (List[MaxNode or MinNode]): List of nodes with data to save.
+        worstn_path                 (str): Path to save outputs.
+        classname                   (str): Classname for these images.
+    """
+    for i, node in enumerate(worstn):
+        img = transforms.ToPILImage()(node.data).convert('L')
+        timestamp = node.metadata.split(',')[2].replace(' ', '_')
+        img.save(f"{worstn_path}/class-{classname}_time-{timestamp}_score-{node.score}.png")
+        if node.mask is not None:
+            # Save the mask
+            mask_img = transforms.ToPILImage()(node.mask.data).convert('L')
+            mask_img.save(f"{worstn_path}/class-{classname}_time-{timestamp}_score-{node.score}_mask.png")
+
+
+def updateWithScaler(net, net_input, labels, scaler, optimizer, train_as_classifier):
+    """
+    Arguments:
+        net    (torch.nn.Module): The network to train.
+        net_input (torch.tensor): Network input.
+        labels    (torch.tensor): Desired network output.
+        scaler (torch.cuda.amp.GradScaler): Scaler for automatic mixed precision training.
+        optimizer  (torch.optim): Optimizer
+        train_as_classifier (bool): True to compare output to labels directly, False if labels need
+                                    to be convert to a one hot vector.
+    """
+
+    with torch.cuda.amp.autocast():
+        out = net.forward(net_input.contiguous())
+
+        # Convert the labels to a one hot encoding to serve at the DNN target.
+        # The label class is 1 based, but need to be 0-based for the one_hot function.
+        if train_as_classifier:
+            loss = loss_fn(out, labels.cuda() - 1)
+        else:
+            labels = torch.nn.functional.one_hot(labels-1, num_classes=3)
+            loss = loss_fn(out, labels.cuda().float() - 1)
+    scaler.scale(loss).backward()
+    scaler.step(optimizer)
+    # Important Note: Sometimes the scaler starts off with a value that is too high. This
+    # causes the loss to be NaN and the batch loss is not actually propagated. The scaler
+    # will reduce the scaling factor, but if all of the batches are skipped then the
+    # lr_scheduler should not take a step. More importantly, the batch itself should
+    # actually be repeated, otherwise some batches will be skipped.
+    # TODO Implement batch repeat by checking scaler.get_scale() before and after the update
+    # and repeating if the scale has changed.
+    scaler.update()
+
+    return out, loss
+
+def updateWithoutScaler(net, net_input, labels, optimizer, train_as_classifier):
+    """
+    Arguments:
+        net    (torch.nn.Module): The network to train.
+        net_input (torch.tensor): Network input.
+        labels    (torch.tensor): Desired network output.
+        optimizer  (torch.optim): Optimizer
+        train_as_classifier (bool): True to compare output to labels directly, False if labels need
+                                    to be convert to a one hot vector.
+    """
+    out = net.forward(net_input.contiguous())
+
+    # Convert the labels to a one hot encoding to serve at the DNN target.
+    # The label class is 1 based, but need to be 0-based for the one_hot function.
+    if train_as_classifier:
+        loss = loss_fn(out, labels.cuda() - 1)
+    else:
+        labels = torch.nn.functional.one_hot(labels-1, num_classes=3)
+        loss = loss_fn(out, labels.cuda().float() - 1)
+    loss.backward()
+    optimizer.step()
+
+    return out, loss
 
 # Argument parser setup for the program.
 parser = argparse.ArgumentParser(
@@ -187,10 +264,14 @@ if args.evaluate:
 # TODO Also hard coding the input and output sizes
 lr_scheduler = None
 train_as_classifier = True
+# AMP doesn't seem to like all of the different model types, so disable it unless it has been
+# verified.
+use_amp = False
 if 'alexnet' == args.modeltype:
     net = AlexLikeNet(in_dimensions=(in_frames, 400, 400), out_classes=3, linear_size=512).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-4)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[3,5,7], gamma=0.2)
+    use_amp = True
 elif 'resnet18' == args.modeltype:
     net = ResNet18(in_dimensions=(in_frames, 400, 400), out_classes=3, expanded_linear=True).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-5)
@@ -222,6 +303,7 @@ elif 'convnextxt' == args.modeltype:
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-4, weight_decay=10e-4, momentum=0.9,
             nesterov=True)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[4,5,12], gamma=0.2)
+    use_amp = True
 elif 'convnextt' == args.modeltype:
     net = ConvNextTiny(in_dimensions=(in_frames, 400, 400), out_classes=3).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
@@ -255,10 +337,22 @@ else:
     loss_fn = torch.nn.MSELoss()
 
 # Gradient scaler for mixed precision training
-scaler = torch.cuda.amp.GradScaler()
+if use_amp:
+    scaler = torch.cuda.amp.GradScaler()
 
 if not args.no_train:
+    if args.save_worst_n is not None:
+        worstn_path = args.outname.split('.')[0] + "-worstN-train"
+        # Create the directory if it does not exist
+        try:
+            os.mkdir(worstn_path)
+        except FileExistsError:
+            pass
+        print(f"Saving {args.save_worst_n} highest error training images to {worstn_path}.")
     for epoch in range(args.epochs):
+        if args.save_worst_n is not None:
+            # Save worst examples for each of the classes.
+            worstn = [[], [], []]
         # Make a confusion matrix, x is item, y is classification
         totals=[[0,0,0],
                 [0,0,0],
@@ -282,20 +376,14 @@ if not args.no_train:
                 v, m = torch.var_mean(net_input)
                 net_input = (net_input - m) / v
 
-            with torch.cuda.amp.autocast():
-                out = net.forward(net_input.contiguous())
+            labels = dl_tuple[-2]
+            if use_amp:
+                out, loss = updateWithScaler(
+                    net, net_input, labels, scaler, optimizer, train_as_classifier)
+            else:
+                out, loss = updateWithoutScaler(
+                    net, net_input, labels, optimizer, train_as_classifier)
 
-                # Convert the labels to a one hot encoding to serve at the DNN target.
-                # The label class is 1 based, but need to be 0-based for the one_hot function.
-                labels = dl_tuple[-2]
-                if train_as_classifier:
-                    loss = loss_fn(out, labels.cuda() - 1)
-                else:
-                    labels = torch.nn.functional.one_hot(labels-1, num_classes=3)
-                    loss = loss_fn(out, labels.cuda().float() - 1)
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
             # Fill in the confusion matrix
             with torch.no_grad():
                 classes = torch.argmax(out, dim=1)
@@ -306,11 +394,29 @@ if not args.no_train:
                         # If this is the j'th class
                             if 1 == labels[i][j]:
                                 totals[j][classes[i]] += 1
+                if args.save_worst_n is not None:
+                    metadata = dl_tuple[-1]
+                    for i in range(labels.size(0)):
+                        for j in range(3):
+                            # If the DNN should have predicted this image was a member of class j
+                            # then see if this image should be inserted into the worst_n queue for
+                            # class j based upon the DNN output for this class.
+                            input_images = dl_tuple[0]
+                            if 1 == labels[i][j]:
+                                # Insert into an empty heap or replace the smallest value and
+                                # heapify. The smallest value is in the first position.
+                                if len(worstn[j]) < args.save_worst_n:
+                                    heapq.heappush(worstn[j], MinNode(out[i][j].item(), input_images[i], metadata[i], None))
+                                elif out[i][j] < worstn[j][0].score:
+                                    heapq.heapreplace(worstn[j], MinNode(out[i][j].item(), input_images[i], metadata[i], None))
         print(f"Finished epoch {epoch}, last loss was {loss}")
         print(f"Confusion matrix:")
         print(totals)
         accuracy = (totals[0][0] + totals[1][1] + totals[2][2])/(sum(totals[0]) + sum(totals[1]) + sum(totals[2]))
         print(f"Accuracy: {accuracy}")
+        if args.save_worst_n is not None:
+            for j in range(3):
+                saveWorstN(worstn=worstn[j], worstn_path=worstn_path, classname=f"{j}")
         # Validation set
         if args.evaluate is not None:
             net.eval()
@@ -444,8 +550,9 @@ if args.evaluate is not None:
                     if args.save_top_n is not None:
                         for i in range(labels.size(0)):
                             for j in range(3):
-                                # If the DNN predicted this image was a member of class j that
-                                # should be inserted into the top_n queue.
+                                # If the DNN should have predicted this image was a member of class j
+                                # then see if this image should be inserted into the worst_n queue for
+                                # class j based upon the DNN output for this class.
                                 if j == classes[i].item() and 1 == labels[i][j]:
                                     # Insert into an empty heap or replace the smallest value and
                                     # heapify. The smallest value is in the first position.
@@ -456,8 +563,9 @@ if args.evaluate is not None:
                     if args.save_worst_n is not None:
                         for i in range(labels.size(0)):
                             for j in range(3):
-                                # If the DNN predicted this image was a member of class j that
-                                # should be inserted into the worst_n queue.
+                                # If the DNN should have predicted this image was a member of class j
+                                # then see if this image should be inserted into the worst_n queue for
+                                # class j based upon the DNN output for this class.
                                 if 1 == labels[i][j]:
                                     # Insert into an empty heap or replace the smallest value and
                                     # heapify. The smallest value is in the first position.
@@ -469,24 +577,10 @@ if args.evaluate is not None:
         # The heap has tuples of (class score, tensor)
         if args.save_top_n is not None:
             for j in range(3):
-                for i, node in enumerate(topn[j]):
-                    img = transforms.ToPILImage()(node.data).convert('L')
-                    timestamp = node.metadata.split(',')[2].replace(' ', '_')
-                    img.save(f"{topn_path}/class-{j}_time-{timestamp}_score-{node.score}.png")
-                    if node.mask is not None:
-                        # Save the mask
-                        mask_img = transforms.ToPILImage()(node.mask.data).convert('L')
-                        mask_img.save(f"{topn_path}/class-{j}_time-{timestamp}_score-{node.score}_mask.png")
+                saveWorstN(worstn=topn[j], worstn_path=topn_path, classname=f"{j}")
         if args.save_worst_n is not None:
             for j in range(3):
-                for i, node in enumerate(worstn[j]):
-                    img = transforms.ToPILImage()(node.data).convert('L')
-                    timestamp = node.metadata.split(',')[2].replace(' ', '_')
-                    img.save(f"{worstn_path}/class-{j}_time-{timestamp}_score-{node.score}.png")
-                    if node.mask is not None:
-                        # Save the mask
-                        mask_img = transforms.ToPILImage()(node.mask.data).convert('L')
-                        mask_img.save(f"{worstn_path}/class-{j}_time-{timestamp}_score-{node.score}_mask.png")
+                saveWorstN(worstn=worstn[j], worstn_path=worstn_path, classname=f"{j}")
 
         # Print evaluation information
         print(f"Evaluation confusion matrix:")

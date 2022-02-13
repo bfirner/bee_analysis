@@ -3,7 +3,7 @@ Analyze some bee videos. Could also work on other data too.
 
 ## Dependencies
 
-Torch, torchvision, ffmpeg, and webdataset.
+Torch, torchvision, ffmpeg (or possibly ffmpeg-python), and webdataset.
 
 In general, install through pip3 or conda:
 
@@ -20,7 +20,7 @@ The file paths created by `make_train_csv.sh` are relative so it should be run f
 directory as the dataprep step will be run. 
 
 Next process that csv file with VidActRecDataprep.py. For example:
-> python3 python3 VidActRecDataprep.py --width 400 --height 400 --resizeestrategy crop --samples 500 --out_channels 1 --frames_per_sample 1 dataset.csv dataset.tar
+> python3 VidActRecDataprep.py --width 400 --height 400 --resizeestrategy crop --samples 500 --out_channels 1 --frames_per_sample 1 dataset.csv dataset.tar
 
 The script can also be run with `--help` for more details.
 
