@@ -291,7 +291,7 @@ elif 'resnext34' == args.modeltype:
     net = ResNext34(in_dimensions=(in_frames, 400, 400), out_classes=3, expanded_linear=False,
             use_dropout=False).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
-    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,12], gamma=0.2)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,9], gamma=0.2)
 elif 'resnext18' == args.modeltype:
     # Learning parameters were tuned on a dataset with about 80,000 examples
     net = ResNext18(in_dimensions=(in_frames, 400, 400), out_classes=3, expanded_linear=True,
@@ -370,7 +370,7 @@ if not args.no_train:
                 raw_input = []
                 for i in range(in_frames):
                     raw_input.append(dl_tuple[i].unsqueeze(1).cuda())
-                net_input = torch.cat(*(raw_input), dim=1)
+                net_input = torch.cat(raw_input, dim=1)
             # Normalize inputs: input = (input - mean)/stddev
             if args.normalize:
                 v, m = torch.var_mean(net_input)
@@ -432,7 +432,7 @@ if not args.no_train:
                         raw_input = []
                         for i in range(in_frames):
                             raw_input.append(dl_tuple[i].unsqueeze(1).cuda())
-                        net_input = torch.cat(*(raw_input), dim=1)
+                        net_input = torch.cat(raw_input, dim=1)
                     # Normalize inputs: input = (input - mean)/stddev
                     if args.normalize:
                         v, m = torch.var_mean(net_input)
