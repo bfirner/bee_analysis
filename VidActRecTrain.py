@@ -65,7 +65,10 @@ def saveWorstN(worstn, worstn_path, classname):
     """
     for i, node in enumerate(worstn):
         img = transforms.ToPILImage()(node.data).convert('L')
-        timestamp = node.metadata.split(',')[2].replace(' ', '_')
+        if 0 < len(metadata):
+            timestamp = node.metadata.split(',')[2].replace(' ', '_')
+        else:
+            timestamp = "unknown"
         img.save(f"{worstn_path}/class-{classname}_time-{timestamp}_score-{node.score}.png")
         if node.mask is not None:
             # Save the mask
@@ -213,6 +216,19 @@ parser.add_argument(
     default=True,
     action='store_false',
     help='Set this to disable deterministic training.')
+parser.add_argument(
+    '--labels',
+    # TODO Support an array of strings to have multiple different label targets.
+    type=str,
+    required=False,
+    default="cls",
+    help='File to decode from webdataset as the class labels.')
+parser.add_argument(
+    '--skip_metadata',
+    required=False,
+    default=False,
+    action='store_true',
+    help='Set to skip loading metadata.txt from the webdataset.')
 
 args = parser.parse_args()
 
@@ -227,9 +243,12 @@ decode_strs = []
 for i in range(in_frames):
     decode_strs.append(f"{i}.png")
 # The class label
-decode_strs.append("cls")
+label_index = len(decode_strs)
+decode_strs.append(args.labels)
 # Metadata for this sample. A string of format: f"{video_path},{frame},{time}"
-decode_strs.append("metadata.txt")
+if not args.skip_metadata:
+    metadata_index = len(decode_strs)
+    decode_strs.append("metadata.txt")
 
 # Decode the proper number of items for each sample from the dataloader
 # The field names are just being taken from the decode strings, but they cannot begin with a digit
@@ -376,7 +395,7 @@ if not args.no_train:
                 v, m = torch.var_mean(net_input)
                 net_input = (net_input - m) / v
 
-            labels = dl_tuple[-2]
+            labels = dl_tuple[label_index]
             if use_amp:
                 out, loss = updateWithScaler(
                     net, net_input, labels, scaler, optimizer, train_as_classifier)
@@ -395,7 +414,10 @@ if not args.no_train:
                             if 1 == labels[i][j]:
                                 totals[j][classes[i]] += 1
                 if args.save_worst_n is not None:
-                    metadata = dl_tuple[-1]
+                    if args.skip_metadata:
+                        metadata = [""] * labels.size(0)
+                    else:
+                        metadata = dl_tuple[metadata_index]
                     for i in range(labels.size(0)):
                         for j in range(3):
                             # If the DNN should have predicted this image was a member of class j
@@ -415,8 +437,14 @@ if not args.no_train:
         accuracy = (totals[0][0] + totals[1][1] + totals[2][2])/(sum(totals[0]) + sum(totals[1]) + sum(totals[2]))
         print(f"Accuracy: {accuracy}")
         if args.save_worst_n is not None:
+            worstn_path_epoch = os.path.join(worstn_path, f"epoch_{epoch}")
+            # Create the directory if it does not exist
+            try:
+                os.mkdir(worstn_path_epoch)
+            except FileExistsError:
+                pass
             for j in range(3):
-                saveWorstN(worstn=worstn[j], worstn_path=worstn_path, classname=f"{j}")
+                saveWorstN(worstn=worstn[j], worstn_path=worstn_path_epoch, classname=f"{j}")
         # Validation set
         if args.evaluate is not None:
             net.eval()
@@ -440,7 +468,7 @@ if not args.no_train:
 
                     with torch.cuda.amp.autocast():
                         out = net.forward(net_input)
-                        labels = dl_tuple[-2]
+                        labels = dl_tuple[label_index]
                         # Convert the labels to a one hot encoding to serve at the DNN target.
                         # The label class is 1 based, but need to be 0-based for the one_hot function.
                         if train_as_classifier:
@@ -508,7 +536,6 @@ if args.evaluate is not None:
         with open(args.outname.split('.')[0] + ".log", 'w') as logfile:
             logfile.write('video_path,frame,time,label,prediction\n')
             for batch_num, dl_tuple in enumerate(eval_dataloader):
-                metadata = dl_tuple[-1]
                 # Decoding only the luminance channel means that the channel dimension has gone away here.
                 if 1 == in_frames:
                     net_input = dl_tuple[0].unsqueeze(1).cuda()
@@ -516,7 +543,7 @@ if args.evaluate is not None:
                     raw_input = []
                     for i in range(in_frames):
                         raw_input.append(dl_tuple[i].unsqueeze(1).cuda())
-                    net_input = torch.cat(*(raw_input), dim=1)
+                    net_input = torch.cat(raw_input, dim=1)
                 # Normalize inputs: input = (input - mean)/stddev
                 if args.normalize:
                     v, m = torch.var_mean(net_input)
@@ -530,7 +557,11 @@ if args.evaluate is not None:
                     mask = [None] * batch_size
                 # Convert the labels to a one hot encoding to serve at the DNN target.
                 # The label class is 1 based, but need to be 0-based for the one_hot function.
-                labels = dl_tuple[-2]
+                labels = dl_tuple[label_index]
+                if args.skip_metadata:
+                    metadata = [""] * labels.size(0)
+                else:
+                    metadata = dl_tuple[metadata_index]
                 if train_as_classifier:
                     loss = loss_fn(out, labels.cuda() - 1)
                 else:

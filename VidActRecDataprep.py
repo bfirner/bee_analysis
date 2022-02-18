@@ -368,5 +368,3 @@ with open(args.datalist, newline='') as datacsv:
             #print(f"Outputs logits max is {outputs.logits.argmax(-1).item()}")
 
 datawriter.close()
-# TODO FIXME add some random placement to the crop that should mitigate the risk of some temporal
-# signals that may allow a DNN to cheat.
