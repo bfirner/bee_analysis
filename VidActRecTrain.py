@@ -135,6 +135,29 @@ def updateWithoutScaler(net, net_input, labels, optimizer, train_as_classifier):
 
     return out, loss
 
+def calculateRecallPrecision(confusion_matrix, class_idx):
+    """
+    Arguments:
+        confusion_matrix (List): NxN confusion matrix
+        class_idx         (int): Class index.
+    Return:
+        tuple (precision, recall): Precision and recall for the class_idx element.
+    """
+    all_positives = sum([totals[i][cidx] for i in range(3)])
+    true_positives = totals[cidx][cidx]
+    if 0 < all_positives:
+        precision = true_positives/all_positives
+    else:
+        precision = 0.
+
+    class_total = sum(totals[cidx])
+    if 0 < class_total:
+        recall = true_positives/class_total
+    else:
+        recall = 0.
+
+    return precision, recall
+
 # Argument parser setup for the program.
 parser = argparse.ArgumentParser(
     description="Perform data preparation for DNN training on a video set.")
@@ -436,6 +459,11 @@ if not args.no_train:
         print(totals)
         accuracy = (totals[0][0] + totals[1][1] + totals[2][2])/(sum(totals[0]) + sum(totals[1]) + sum(totals[2]))
         print(f"Accuracy: {accuracy}")
+        for cidx in range(3):
+            # Print out class statistics if this class was present in the data.
+            if 0 < sum(totals[cidx]):
+                precision, recall = calculateRecallPrecision(totals, cidx)
+                print(f"Class {cidx} precision={precision}, recall={recall}")
         if args.save_worst_n is not None:
             worstn_path_epoch = os.path.join(worstn_path, f"epoch_{epoch}")
             # Create the directory if it does not exist
@@ -483,13 +511,18 @@ if not args.no_train:
                         for i in range(labels.size(0)):
                             for j in range(3):
                                 # If this is the j'th class
-                                    if 1 == labels[i][j]:
-                                        totals[j][classes[i]] += 1
+                                if 1 == labels[i][j]:
+                                    totals[j][classes[i]] += 1
                 # Print evaluation information
                 print(f"Evaluation confusion matrix:")
                 print(totals)
                 accuracy = (totals[0][0] + totals[1][1] + totals[2][2])/(sum(totals[0]) + sum(totals[1]) + sum(totals[2]))
                 print(f"Accuracy: {accuracy}")
+                for cidx in range(3):
+                    # Print out class statistics if this class was present in the data.
+                    if 0 < sum(totals[cidx]):
+                        precision, recall = calculateRecallPrecision(totals, cidx)
+                        print(f"Class {cidx} precision={precision}, recall={recall}")
             net.train()
         # Adjust learning rate according to the learning rate schedule
         if lr_scheduler is not None:
@@ -618,3 +651,8 @@ if args.evaluate is not None:
         print(totals)
         accuracy = (totals[0][0] + totals[1][1] + totals[2][2])/(sum(totals[0]) + sum(totals[1]) + sum(totals[2]))
         print(f"Accuracy: {accuracy}")
+        for cidx in range(3):
+            # Print out class statistics if this class was present in the data.
+            if 0 < sum(totals[cidx]):
+                precision, recall = calculateRecallPrecision(totals, cidx)
+                print(f"Class {cidx} precision={precision}, recall={recall}")
