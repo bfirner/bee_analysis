@@ -141,9 +141,9 @@ class ResNet18(nn.Module):
                 output_sizes[i][0] - min_source[0], output_sizes[i][1] - min_source[1])
             # This awkward code is a quick fix for the output padding calculation being overly
             # large.
-            if stride < output_padding[0]:
+            if stride <= output_padding[0]:
                 output_padding = (output_padding[0] - stride, output_padding[1])
-            if stride < output_padding[1]:
+            if stride <= output_padding[1]:
                 output_padding = (output_padding[0], output_padding[1] - stride)
             padding = self.vis_mask_sizes[i] // 2
             self.vis_layers.append(nn.ConvTranspose2d(
