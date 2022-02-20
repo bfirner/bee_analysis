@@ -236,8 +236,8 @@ parser.add_argument(
 parser.add_argument(
     '--not_deterministic',
     required=False,
-    default=True,
-    action='store_false',
+    default=False,
+    action='store_true',
     help='Set this to disable deterministic training.')
 parser.add_argument(
     '--labels',
