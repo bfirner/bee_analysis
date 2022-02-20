@@ -583,7 +583,7 @@ if args.evaluate is not None:
                     net_input = (net_input - m) / v
 
                 # Visualization masks are not supported with all model types yet.
-                if args.modeltype in ['bennet', 'resnet18', 'resnet34']:
+                if args.modeltype in ['alexnet', 'bennet', 'resnet18', 'resnet34']:
                     out, mask = net.vis_forward(net_input)
                 else:
                     out = net.forward(net_input)

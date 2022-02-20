@@ -108,16 +108,20 @@ class AlexLikeNet(nn.Module):
         self.biases = (0., 1., 0., 1., 1.)
 
         out_size = in_dimensions[1:]
+        # Visualization setup requires the internal sizes of the feature outputs.
+        self.output_sizes = [out_size]
 
         # Initialize in a no_grad section so that we can fill in some initial values for the bias
         # tensors.
         with torch.no_grad():
             for i in range(len(self.kernels)):
                 layer, out_size = self.createConvLayer(i, out_size)
+                self.output_sizes.append(out_size)
                 self.model_a.append(layer)
                 # The parallel pathway
                 layer, _ = self.createConvLayer(i)
                 self.model_b.append(layer)
+
             # 3 Linear layers accept the flattened feature maps.
             self.flatten = nn.Flatten()
             # The original Alexnet splits the linear layers over two GPUs so that the first two
@@ -142,8 +146,49 @@ class AlexLikeNet(nn.Module):
             )
             self.classifier[0].bias.fill_(1.)
 
-    #TODO AMP
-    #@autocast()
+            self.createVisMaskLayers(self.output_sizes)
+
+    def createVisMaskLayers(self, output_sizes):
+        """
+        Arguments:
+            output_sizes (list[(int, int)]): Feature map dimensions.
+        """
+        self.vis_layers = nn.ModuleList()
+        for i in range(len(self.kernels)):
+            stride = self.strides[i]
+            ksize = self.kernels[i]
+            padding = self.padding[i]
+            if self.pooling[i]:
+                # Pooling has a kernel size of 3 with a stride of 2.
+                # TODO Make this a second upconv for simplicity? Nah, merge with this upconv
+                # Merge with this kernel. The effective stride is doubled
+                stride = stride * 2
+                # The kernel's perceptive field goes up by one pixel on each size
+                ksize += 2
+                # Pooling was done without padding
+            # The default output size of the ConvTranspose2d is the minimum dimension of the source
+            # but the source could have had a larger dimension.
+            # For example, if the dimension at layer i+1 is n with a stride of x then the source
+            # could have had a dimension as small as n*x-(x-1) or as large as n*x.
+            # To resolve this ambiguity we need to add in specific padding.
+            max_source = (
+                stride * output_sizes[i+1][0], stride * output_sizes[i+1][1])
+            min_source = (
+                max_source[0] - (stride - 1), max_source[1] - (stride - 1))
+            output_padding = (
+                output_sizes[i][0] - min_source[0], output_sizes[i][1] - min_source[1])
+            # This awkward code is a quick fix for the output padding calculation being overly
+            # large.
+            if stride <= output_padding[0]:
+                output_padding = (output_padding[0] - stride, output_padding[1])
+            if stride <= output_padding[1]:
+                output_padding = (output_padding[0], output_padding[1] - stride)
+            self.vis_layers.append(nn.ConvTranspose2d(
+                in_channels=1, out_channels=1, kernel_size=ksize,
+                stride=stride, padding=padding, output_padding=output_padding, bias=False))
+            self.vis_layers[-1].weight.requires_grad_(False)
+            self.vis_layers[-1].weight.fill_(1.)
+
     def forward(self, x):
         # TODO The two side of the network need to be transferred to different devices, and the
         # tensors need to be transferred back and forth as well.
@@ -171,5 +216,70 @@ class AlexLikeNet(nn.Module):
         x = self.classifier(x)
         return x
 
+    def vis_forward(self, x):
+        """Forward and calculate a visualization mask of the convolution layers."""
+        conv_outputs_a = []
+        conv_outputs_b = []
+        # The inputs will lag one index behind
+        conv_inputs_a = []
+        conv_inputs_b = []
+        # Forward as usual, but store the convolution outputs for later backtracking to build the
+        # visualization masks.
 
+        y = x
+        for i, (a, b) in enumerate(itertools.zip_longest(self.model_a, self.model_b)):
+            x = a(x)
+            y = b(y)
+            if i < len(self.kernels):
+                conv_outputs_a.append(x)
+                conv_outputs_b.append(y)
+            # The outputs of the second layer are joined together to make the inputs of the third
+            # layer. Remember that the first layer's index is 0.
+            if (1 == i):
+                x = torch.cat((x, y), dim=1)
+                y = x
+            # After the last convolution the output is flattened. For all linear layers the outputs
+            # of the previous layer are concatenated.
+            elif (4 == i):
+                x = torch.cat((self.flatten(x), self.flatten(y)), dim=1)
+                y = x
+            elif (5 == i):
+                x = torch.cat((x, y), dim=1)
+                y = x
+            elif (6 == i):
+                x = torch.cat((x, y), dim=1)
+            # These are the actual inputs for the next layer
+            #conv_inputs_a.append(x)
+            #conv_inputs_b.append(y)
+
+        # Go backwards to create the visualization mask
+        mask_a = None
+        mask_b = None
+        # The following line is extremely pythonic.
+        for i, (features_a, features_b) in enumerate(reversed(list(zip(conv_outputs_a, conv_outputs_b)))):
+            # Flatten the current output
+            avg_outputs_a = torch.mean(features_a, dim=1, keepdim=True)
+            avg_outputs_b = torch.mean(features_b, dim=1, keepdim=True)
+            # Multiply with the previous upconv features (if they exist) and then upconv
+            if mask_a is None:
+                mask_a = self.vis_layers[-(1+i)](avg_outputs_a)
+                mask_b = self.vis_layers[-(1+i)](avg_outputs_b)
+            else:
+                mask_a = self.vis_layers[-(1+i)](mask_a * avg_outputs_a)
+                mask_b = self.vis_layers[-(1+i)](mask_b * avg_outputs_b)
+            # If the data crossed over from one route to another then masks from all routes are
+            # correlated to the outputs of all of the routes. Combine them with max.
+            if self.crossover[i]:
+                # The max function returns a tuple of the max and the indices. We don't need the
+                # indices.
+                mask_a = mask_b = torch.cat((mask_a, mask_b), dim=1).max(dim=1, keepdim=True)[0]
+            # Keep the maximum value of the mask at 1
+            mask_max = max(mask_a.max(), mask_b.max())
+            mask_a = mask_a / mask_max
+            mask_b = mask_b / mask_max
+
+        mask = torch.cat((mask_a, mask_b), dim=1).max(dim=1, keepdim=True)[0]
+
+        x = self.classifier(x)
+        return x, mask
 
