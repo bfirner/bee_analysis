@@ -16,6 +16,45 @@ import webdataset as wds
 # Helper function to convert to images
 from torchvision import transforms
 
+# A collection of shapes that have some similarities to one another, but should still be simple
+# enough to disambiguate.
+all_shapes = {
+    'square4x4': torch.ones(4,4),
+    'square5x5': torch.ones(5,5),
+    'square9x9': torch.ones(9,9),
+    'triangle3up': torch.tensor([[0, 0, 1, 0, 0],
+                               [0, 1, 1, 1, 0],
+                               [1, 1, 1, 1, 1]]),
+    'triangle3down': torch.tensor([[1, 1, 1, 1, 1],
+                                 [0, 1, 1, 1, 0],
+                                 [0, 0, 1, 0, 0]]),
+    'triangle5right': torch.tensor([[0, 0, 0, 0, 1],
+                                  [0, 0, 0, 1, 1],
+                                  [0, 0, 1, 1, 1],
+                                  [0, 1, 1, 1, 1],
+                                  [1, 1, 1, 1, 1]]),
+    'triangle5left': torch.tensor([[1, 0, 0, 0, 0],
+                                 [1, 1, 0, 0, 0],
+                                 [1, 1, 1, 0, 0],
+                                 [1, 1, 1, 1, 0],
+                                 [1, 1, 1, 1, 1]]),
+    'chevron5': torch.tensor([[0, 0, 1, 0, 0],
+                            [0, 1, 1, 1, 0],
+                            [1, 1, 1, 1, 1],
+                            [1, 1, 0, 1, 1],
+                            [1, 0, 0, 0, 1]]),
+    'chevron5inverted': torch.tensor([[1, 0, 0, 0, 1],
+                                    [1, 1, 0, 1, 1],
+                                    [1, 1, 1, 1, 1],
+                                    [0, 1, 1, 1, 0],
+                                    [0, 0, 1, 0, 0]]),
+    'diamond5': torch.tensor([[0, 0, 1, 0, 0],
+                            [0, 1, 1, 1, 0],
+                            [1, 1, 1, 1, 1],
+                            [0, 1, 1, 1, 0],
+                            [0, 0, 1, 0, 0]]),
+}
+
 parser = argparse.ArgumentParser(
     description="Perform data preparation to create synthetic images for DNN training on a video set.")
 parser.add_argument(
@@ -48,78 +87,44 @@ parser.add_argument(
     choices=[1],
     help='Number of frames in each sample (only 1 is currently supported).')
 parser.add_argument(
+    '--shapes_per_sample',
+    type=int,
+    required=False,
+    default=1,
+    choices=[1 + x for x in range(len(all_shapes))],
+    help='Number of frames in each sample (only 1 is currently supported).')
+parser.add_argument(
     '--samples',
     type=int,
     required=False,
     default=5000,
-    help='Number of samples of each shape.')
+    help='Number of samples in the dataset.')
 
 args = parser.parse_args()
-
-# A collection of shapes that have some similarities to one another, but should still be simple
-# enough to disambiguate.
-all_shapes = {
-    'square4x4': torch.ones(4,4),
-    'square5x5': torch.ones(5,5),
-    'square9x9': torch.ones(9,9),
-    'triangle3up': torch.tensor([[0, 0, 1, 0, 0],
-                               [0, 1, 1, 1, 1],
-                               [1, 1, 1, 1, 1]]),
-    'triangle3down': torch.tensor([[1, 1, 1, 1, 1],
-                                 [0, 1, 1, 1, 0],
-                                 [0, 0, 1, 0, 0]]),
-    'triangle5right': torch.tensor([[0, 0, 0, 0, 1],
-                                  [0, 0, 0, 1, 1],
-                                  [0, 0, 1, 1, 1],
-                                  [0, 1, 1, 1, 1],
-                                  [1, 1, 1, 1, 1]]),
-    'triangle5left': torch.tensor([[1, 0, 0, 0, 0],
-                                 [1, 1, 0, 0, 0],
-                                 [1, 1, 1, 0, 0],
-                                 [1, 1, 1, 1, 0],
-                                 [1, 1, 1, 1, 1]]),
-    'chevron5': torch.tensor([[0, 0, 1, 0, 0],
-                            [0, 1, 1, 1, 0],
-                            [1, 1, 1, 1, 1],
-                            [1, 1, 0, 1, 1],
-                            [1, 0, 0, 0, 1]]),
-    'chevron5inverted': torch.tensor([[1, 0, 0, 0, 1],
-                                    [1, 1, 0, 1, 1],
-                                    [1, 1, 1, 1, 1],
-                                    [0, 1, 1, 1, 0],
-                                    [0, 0, 1, 0, 0]]),
-    'diamond5': torch.tensor([[0, 0, 1, 0, 0],
-                            [0, 1, 1, 1, 0],
-                            [1, 1, 1, 1, 1],
-                            [0, 1, 1, 1, 0],
-                            [0, 0, 1, 0, 0]]),
-}
 
 
 class DataCreator:
 
-    def __init__(self, num_samples, frames_per_sample, speed,
-            width, height):
+    def __init__(self, num_samples, frames_per_sample, shapes_per_sample,
+            width, height, speed):
         """
         Samples have no overlaps. For example, a 10 second video at 30fps has 300 samples of 1
         frame, 150 samples of 2 frames with a frame interval of 0, or 100 samples of 2 frames with a
         frame interval of 1.
         Arguments:
             num_samples       (int): Number of generated scenes.
-            frames_per_sample (int):  Number of frames per scene.
-            frame_interval    (int): Number of frames to skip between each sampled frame.
+            frames_per_sample (int): Number of frames per scene.
+            shapes_per_sample (int): Number of distinct shapes per sample.
             width             (int): Width of output images, or the original width if None.
             height            (int): Height of output images, or the original height if None.
             speed             (int): Pixels of motion between each frame in a sample.
         """
         self.num_samples = num_samples
         self.frames_per_sample = frames_per_sample
-        self.speed = speed
+        self.shapes_per_sample = shapes_per_sample
         self.width = width
         self.height = height
-
-        # TODO Add in support for multiple shapes
-        self.shapes_per_sample = 1
+        self.speed = speed
 
 
     def setSeed(self, seed):
@@ -176,7 +181,8 @@ class DataCreator:
 # Create a writer for the WebDataset
 datawriter = wds.TarWriter(args.outpath, encoder=False)
 
-sampler = DataCreator(args.samples, args.frames_per_sample, args.motion, args.width, args.height)
+sampler = DataCreator(
+    args.samples, args.frames_per_sample, args.shapes_per_sample, args.width, args.height, args.motion)
 
 for sample_num, data in enumerate(sampler):
     frame, ground_truth = data
