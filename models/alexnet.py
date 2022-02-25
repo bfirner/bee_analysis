@@ -278,7 +278,8 @@ class AlexLikeNet(nn.Module):
             mask_a = mask_a / mask_max
             mask_b = mask_b / mask_max
 
-        mask = torch.cat((mask_a, mask_b), dim=1).max(dim=1, keepdim=True)[0]
+        # Square root for better visualization.
+        mask = torch.cat((mask_a, mask_b), dim=1).max(dim=1, keepdim=True)[0].sqrt()
 
         x = self.classifier(x)
         return x, mask
