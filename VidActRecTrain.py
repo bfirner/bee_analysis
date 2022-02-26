@@ -28,54 +28,13 @@ from collections import namedtuple
 # Helper function to convert to images
 from torchvision import transforms
 
+from utility.eval_utility import (ConfusionMatrix, MaxNode, MinNode, saveWorstN)
+
 from models.alexnet import AlexLikeNet
 from models.bennet import BenNet
 from models.resnet import (ResNet18, ResNet34)
 from models.resnext import (ResNext18, ResNext34, ResNext50)
 from models.convnext import (ConvNextExtraTiny, ConvNextTiny, ConvNextSmall, ConvNextBase)
-
-# Need a special comparison function that won't attempt to do something that tensors do not
-# support. Used if args.save_top_n or args.save_worst_n are used.
-class MaxNode:
-    def __init__(self, score, data, metadata, mask):
-        self.score = score
-        self.data = data
-        self.metadata = metadata
-        self.mask = mask
-
-    def __lt__(self, other):
-        return self.score < other.score
-
-# Turns the heapq from a max heap into a min heap by using greater than in the less than operator.
-class MinNode:
-    def __init__(self, score, data, metadata, mask):
-        self.score = score
-        self.data = data
-        self.metadata = metadata
-        self.mask = mask
-
-    def __lt__(self, other):
-        return self.score > other.score
-
-def saveWorstN(worstn, worstn_path, classname):
-    """Saves samples from the priority queue worstn into the given path.
-
-    Arguments:
-        worstn (List[MaxNode or MinNode]): List of nodes with data to save.
-        worstn_path                 (str): Path to save outputs.
-        classname                   (str): Classname for these images.
-    """
-    for i, node in enumerate(worstn):
-        img = transforms.ToPILImage()(node.data).convert('L')
-        if 0 < len(metadata):
-            timestamp = node.metadata.split(',')[2].replace(' ', '_')
-        else:
-            timestamp = "unknown"
-        img.save(f"{worstn_path}/class-{classname}_time-{timestamp}_score-{node.score}.png")
-        if node.mask is not None:
-            # Save the mask
-            mask_img = transforms.ToPILImage()(node.mask.data).convert('L')
-            mask_img.save(f"{worstn_path}/class-{classname}_time-{timestamp}_score-{node.score}_mask.png")
 
 
 def updateWithScaler(net, net_input, labels, scaler, optimizer):
@@ -120,30 +79,6 @@ def updateWithoutScaler(net, net_input, labels, optimizer):
     optimizer.step()
 
     return out, loss
-
-def calculateRecallPrecision(confusion_matrix, class_idx, label_size):
-    """
-    Arguments:
-        confusion_matrix (List): NxN confusion matrix
-        class_idx         (int): Class index.
-    Return:
-        tuple (precision, recall): Precision and recall for the class_idx element.
-    """
-    # Find all of the positives for this class, then find just the true positives.
-    all_positives = sum([confusion_matrix[i][class_idx] for i in range(label_size)])
-    true_positives = confusion_matrix[class_idx][class_idx]
-    if 0 < all_positives:
-        precision = true_positives/all_positives
-    else:
-        precision = 0.
-
-    class_total = sum(confusion_matrix[class_idx])
-    if 0 < class_total:
-        recall = true_positives/class_total
-    else:
-        recall = 0.
-
-    return precision, recall
 
 # Argument parser setup for the program.
 parser = argparse.ArgumentParser(
@@ -286,6 +221,17 @@ if args.template is not None:
             args.labels = 'detection.pth'
         if '--loss_fun' not in sys.argv:
             args.loss_fun = 'BCEWithLogitsLoss'
+
+
+# Network outputs may need to be postprocessed for evaluation if some postprocessing is being done
+# automatically by the loss function.
+if 'CrossEntropyLoss' == args.loss_fun:
+    nn_postprocess = torch.nn.Softmax(dim=1)
+elif 'BCEWithLogitsLoss' == args.loss_fun:
+    nn_postprocess = torch.nn.Sigmoid()
+else:
+    # Otherwise just use an identify function.
+    nn_postprocess = lambda x: x
 
 # Convert the numeric input to a bool
 convert_idx_to_classes = args.convert_idx_to_classes == 1
@@ -448,8 +394,8 @@ if not args.no_train:
         if args.save_worst_n is not None:
             # Save worst examples for each of the classes.
             worstn = [[], [], []]
-        # Make a confusion matrix, x is item, y is classification
-        totals=[[0] * label_size for _ in range(label_size)]
+        # Make a confusion matrix
+        totals = ConfusionMatrix(size=label_size)
         print(f"Starting epoch {epoch}")
         for batch_num, dl_tuple in enumerate(dataloader):
             optimizer.zero_grad()
@@ -482,15 +428,15 @@ if not args.no_train:
 
             # Fill in the confusion matrix
             with torch.no_grad():
-                classes = torch.argmax(out, dim=1)
-                # Convert the labels to a one hot encoding for ease of use.
+                # The postprocessesing should include Softmax or similar if that is required for
+                # the network. Outputs of most classification networks are considered
+                # probabilities (but only take that in a very loose sense of the word) so
+                # rounding is appropriate.
+                classes = torch.round(nn_postprocess(out)).clamp(0, 1)
+                # Convert index labels to a one hot encoding for standard processing.
                 if convert_idx_to_classes:
                     labels = torch.nn.functional.one_hot(labels, num_classes=label_size)
-                for i in range(labels.size(0)):
-                    for j in range(labels.size(1)):
-                        # If this is the j'th class
-                        if 1 == labels[i][j]:
-                            totals[j][classes[i]] += 1
+                totals.update(predictions=classes, labels=labels)
                 if args.save_worst_n is not None:
                     if args.skip_metadata:
                         metadata = [""] * labels.size(0)
@@ -510,16 +456,13 @@ if not args.no_train:
                                 elif out[i][j] < worstn[j][0].score:
                                     heapq.heapreplace(worstn[j], MinNode(out[i][j].item(), input_images[i], metadata[i], None))
         print(f"Finished epoch {epoch}, last loss was {loss}")
-        print(f"Confusion matrix:")
+        print(f"Training confusion matrix:")
         print(totals)
-        correct = sum([totals[cidx][cidx] for cidx in range(label_size)])
-        possible = sum([sum(totals[cidx]) for cidx in range(label_size)])
-        accuracy = correct/possible
-        print(f"Accuracy: {accuracy}")
+        print(f"Accuracy: {totals.accuracy()}")
         for cidx in range(label_size):
             # Print out class statistics if this class was present in the data.
             if 0 < sum(totals[cidx]):
-                precision, recall = calculateRecallPrecision(totals, cidx, label_size)
+                precision, recall = totals.calculateRecallPrecision(cidx)
                 print(f"Class {cidx} precision={precision}, recall={recall}")
         if args.save_worst_n is not None:
             worstn_path_epoch = os.path.join(worstn_path, f"epoch_{epoch}")
@@ -534,8 +477,8 @@ if not args.no_train:
         if args.evaluate is not None:
             net.eval()
             with torch.no_grad():
-                # Make a confusion matrix, x is item, y is classification
-                totals=[[0] * label_size for _ in range(label_size)]
+                # Make a confusion matrix
+                totals = ConfusionMatrix(size=label_size)
                 for batch_num, dl_tuple in enumerate(eval_dataloader):
                     if 1 == in_frames:
                         net_input = dl_tuple[0].unsqueeze(1).cuda()
@@ -559,26 +502,23 @@ if not args.no_train:
 
                         loss = loss_fn(out, labels.cuda())
                     with torch.no_grad():
-                        classes = torch.argmax(out, dim=1)
-                        # Convert the labels to a one hot encoding for ease of use.
+                        # The postprocessesing should include Softmax or similar if that is required for
+                        # the network. Outputs of most classification networks are considered
+                        # probabilities (but only take that in a very loose sense of the word) so
+                        # rounding is appropriate.
+                        classes = torch.round(nn_postprocess(out)).clamp(0, 1)
+                        # Convert index labels to a one hot encoding for standard processing.
                         if convert_idx_to_classes:
                             labels = torch.nn.functional.one_hot(labels, num_classes=label_size)
-                        for i in range(labels.size(0)):
-                            for j in range(label_size):
-                                # If this is the j'th class
-                                if 1 == labels[i][j]:
-                                    totals[j][classes[i]] += 1
+                        totals.update(predictions=classes, labels=labels)
                 # Print evaluation information
                 print(f"Evaluation confusion matrix:")
                 print(totals)
-                correct = sum([totals[cidx][cidx] for cidx in range(label_size)])
-                possible = sum([sum(totals[cidx]) for cidx in range(label_size)])
-                accuracy = correct/possible
-                print(f"Accuracy: {accuracy}")
+                print(f"Accuracy: {totals.accuracy()}")
                 for cidx in range(label_size):
                     # Print out class statistics if this class was present in the data.
                     if 0 < sum(totals[cidx]):
-                        precision, recall = calculateRecallPrecision(totals, cidx, label_size)
+                        precision, recall = totals.calculateRecallPrecision(cidx)
                         print(f"Class {cidx} precision={precision}, recall={recall}")
             net.train()
         # Adjust learning rate according to the learning rate schedule
@@ -619,8 +559,8 @@ if args.evaluate is not None:
 
     net.eval()
     with torch.no_grad():
-        # Make a confusion matrix, x is item, y is classification
-        totals=[[0] * label_size for _ in range(label_size)]
+        # Make a confusion matrix
+        totals = ConfusionMatrix(size=label_size)
         with open(args.outname.split('.')[0] + ".log", 'w') as logfile:
             logfile.write('video_path,frame,time,label,prediction\n')
             for batch_num, dl_tuple in enumerate(eval_dataloader):
@@ -659,17 +599,19 @@ if args.evaluate is not None:
                 loss = loss_fn(out, labels.cuda())
 
                 with torch.no_grad():
-                    classes = torch.argmax(out, dim=1)
-                    # Convert the labels to a one hot encoding for ease of use.
+                    # The postprocessesing should include Softmax or similar if that is required for
+                    # the network. Outputs of most classification networks are considered
+                    # probabilities (but only take that in a very loose sense of the word) so
+                    # rounding is appropriate.
+                    classes = torch.round(nn_postprocess(out)).clamp(0, 1)
+                    # Convert index labels to a one hot encoding for standard processing.
                     if convert_idx_to_classes:
                         labels = torch.nn.functional.one_hot(labels, num_classes=label_size)
+                    totals.update(predictions=classes, labels=labels)
+                    # Log the predictions
                     for i in range(labels.size(0)):
-                        for j in range(label_size):
-                            # If this is a member of the j'th class
-                            if 1 == labels[i][j]:
-                                totals[j][classes[i]] += 1
-                                logfile.write(','.join((metadata[i], str(j), str(classes[i].item()))))
-                                logfile.write('\n')
+                        logfile.write(','.join((metadata[i], str(out[i]), str(labels[i]))))
+                        logfile.write('\n')
                     if args.save_top_n is not None:
                         for i in range(labels.size(0)):
                             for j in range(label_size):
@@ -708,12 +650,9 @@ if args.evaluate is not None:
         # Print evaluation information
         print(f"Evaluation confusion matrix:")
         print(totals)
-        correct = sum([totals[cidx][cidx] for cidx in range(label_size)])
-        possible = sum([sum(totals[cidx]) for cidx in range(label_size)])
-        accuracy = correct/possible
-        print(f"Accuracy: {accuracy}")
+        print(f"Accuracy: {totals.accuracy()}")
         for cidx in range(label_size):
             # Print out class statistics if this class was present in the data.
             if 0 < sum(totals[cidx]):
-                precision, recall = calculateRecallPrecision(totals, cidx, label_size)
+                precision, recall = totals.calculateRecallPrecision(cidx)
                 print(f"Class {cidx} precision={precision}, recall={recall}")
