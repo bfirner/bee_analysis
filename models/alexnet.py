@@ -142,7 +142,8 @@ class AlexLikeNet(nn.Module):
                 nn.Linear(
                     in_features=2*self.linear_size, out_features=self.out_classes),
                 nn.ReLU(),
-                nn.Softmax(dim=1)
+                # No softmax at the end. To train a single label classifier use CrossEntropyLoss
+                # rather than NLLLoss. This allows for multi-label classifiers trained with BCELoss.
             )
             self.classifier[0].bias.fill_(1.)
 

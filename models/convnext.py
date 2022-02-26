@@ -296,8 +296,9 @@ class ConvNextBase(nn.Module):
                 nn.AvgPool2d(kernel_size=(out_size[0], out_size[1])),
                 nn.Flatten(),
                 nn.LayerNorm(normalized_shape=self.channels[-1], eps=1e-6),
-                nn.Linear(in_features=self.channels[-1], out_features=self.out_classes),
-                nn.Softmax(dim=1)
+                nn.Linear(in_features=self.channels[-1], out_features=self.out_classes)
+                # No softmax at the end. To train a single label classifier use CrossEntropyLoss
+                # rather than NLLLoss. This allows for multi-label classifiers trained with BCELoss.
             )
 
             # Initialize weights

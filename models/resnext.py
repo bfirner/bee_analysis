@@ -243,17 +243,19 @@ class ResNext50(nn.Module):
                 self.classifier = torch.nn.Sequential(
                     nn.AvgPool2d(kernel_size=(out_size[0], out_size[1])),
                     nn.Flatten(),
-                    nn.Linear(in_features=self.channels[-1][-1], out_features=out_classes),
-                    nn.Softmax(dim=1))
+                    nn.Linear(in_features=self.channels[-1][-1], out_features=out_classes)
+                    # No softmax at the end. To train a single label classifier use CrossEntropyLoss
+                    # rather than NLLLoss. This allows for multi-label classifiers trained with BCELoss.
+                )
             else:
                 linear_input_size = out_size[0]*out_size[1]*self.channels[-1][-1]
                 self.classifier = nn.Sequential(
                     nn.Flatten(),
                     self.createLinearLayer(num_inputs=linear_input_size, num_outputs=1024),
                     self.createLinearLayer(num_inputs=1024, num_outputs=512),
-                    nn.Linear(
-                        in_features=512, out_features=self.out_classes),
-                    nn.Softmax(dim=1)
+                    nn.Linear(in_features=512, out_features=self.out_classes)
+                    # No softmax at the end. To train a single label classifier use CrossEntropyLoss
+                    # rather than NLLLoss. This allows for multi-label classifiers trained with BCELoss.
                 )
                 self.classifier[3].bias.fill_(1.)
             self.activation = nn.ReLU()

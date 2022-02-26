@@ -189,9 +189,9 @@ class BenNet(nn.Module):
                 self.createLinearLayer(num_inputs=256, num_outputs=256),
                 self.createLinearLayer(num_inputs=256, num_outputs=128),
                 self.createLinearLayer(num_inputs=128, num_outputs=96),
-                nn.Linear(
-                    in_features=96, out_features=self.out_classes),
-                nn.Softmax(dim=1)
+                nn.Linear(in_features=96, out_features=self.out_classes)
+                # No softmax at the end. To train a single label classifier use CrossEntropyLoss
+                # rather than NLLLoss. This allows for multi-label classifiers trained with BCELoss.
             )
             self.activation = nn.ReLU()
             self.dropout = nn.Dropout2d(p=0.5)

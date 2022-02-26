@@ -157,7 +157,7 @@ parser.add_argument(
     help=('Set other options automatically based upon a typical training template.'
         'Template settings are overriden by other selected options.'
         'bees: Alexnet model with index labels are converted to one hot labels.'
-        'multilabel: Multilabels are loaded from "detection.pth".'))
+        'multilabel: Multilabels are loaded from "detection.pth", binary cross entropy loss is used.'))
 parser.add_argument(
     'dataset',
     type=str,
@@ -259,8 +259,8 @@ parser.add_argument(
 parser.add_argument(
     '--loss_fun',
     required=False,
-    default='NLLLoss',
-    choices=['NLLLoss', 'L1Loss', 'MSELoss', 'BCELoss'],
+    default='CrossEntropyLoss',
+    choices=['NLLLoss', 'CrossEntropyLoss', 'L1Loss', 'MSELoss', 'BCELoss'],
     type=str,
     help="Loss function to use during training.")
 
@@ -285,19 +285,11 @@ if args.template is not None:
         if '--labels' not in sys.argv:
             args.labels = 'detection.pth'
         if '--loss_fun' not in sys.argv:
-            args.loss_fun = 'L1Loss'
+            args.loss_fun = 'BCELoss'
 
 # Convert the numeric input to a bool
-args.convert_idx_to_classes = args.convert_idx_to_classes == 1
+convert_idx_to_classes = args.convert_idx_to_classes == 1
 loss_fn = getattr(torch.nn, args.loss_fun)()
-#if convert_idx_to_classes:
-#    loss_fn = torch.nn.NLLLoss()
-#else:
-#    #loss_fn = torch.nn.L1Loss()
-#    loss_fn = torch.nn.MSELoss()
-
-# TODO Should have an option for regression of classification training.
-convert_idx_to_classes = args.convert_idx_to_classes
 
 in_frames = args.sample_frames
 decode_strs = []
@@ -341,7 +333,7 @@ def getLabelSize(data_path, decode_strs, convert_idx_to_classes):
     dl_tuple = next(test_dataloader.__iter__())
     return dl_tuple[label_index].size(1)
 
-label_size = getLabelSize(args.dataset, decode_strs, args.convert_idx_to_classes)
+label_size = getLabelSize(args.dataset, decode_strs, convert_idx_to_classes)
 
 # Decode the proper number of items for each sample from the dataloader
 # The field names are just being taken from the decode strings, but they cannot begin with a digit
