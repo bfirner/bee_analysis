@@ -260,7 +260,7 @@ parser.add_argument(
     '--loss_fun',
     required=False,
     default='CrossEntropyLoss',
-    choices=['NLLLoss', 'CrossEntropyLoss', 'L1Loss', 'MSELoss', 'BCELoss'],
+    choices=['NLLLoss', 'BCEWithLogitsLoss', 'CrossEntropyLoss', 'L1Loss', 'MSELoss', 'BCELoss'],
     type=str,
     help="Loss function to use during training.")
 
@@ -285,7 +285,7 @@ if args.template is not None:
         if '--labels' not in sys.argv:
             args.labels = 'detection.pth'
         if '--loss_fun' not in sys.argv:
-            args.loss_fun = 'BCELoss'
+            args.loss_fun = 'BCEWithLogitsLoss'
 
 # Convert the numeric input to a bool
 convert_idx_to_classes = args.convert_idx_to_classes == 1
