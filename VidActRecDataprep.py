@@ -300,71 +300,68 @@ with open(args.datalist, newline='') as datacsv:
     endf_col = header.index('endframe')
     for row in conf_reader:
         # Read the next video
-        path = row[file_col]
-        sampler = VideoSampler(
-            video_path=path, num_samples=args.samples, frames_per_sample=args.frames_per_sample,
-            frame_interval=args.interval, out_width=args.width, out_height=args.height,
-            crop_noise=args.crop_noise, channels=args.out_channels,
-            begin_frame=row[beginf_col], end_frame=row[endf_col])
-        for sample_num, frame_data in enumerate(sampler):
-            frame, video_path, frame_num = frame_data
-            base_name = os.path.basename(video_path).replace(' ', '_').replace('.', '_')
-            video_time = os.path.basename(video_path).split('.')[0]
-            # TODO FIXME Convert the time from the video to the current frame time.
-            # TODO Assuming 3fps bee videos
-            time_sec = time.mktime(time.strptime(video_time, "%Y-%m-%d %H:%M:%S"))
-            time_struct = time.localtime(time_sec + int(frame_num[0]) // 3)
-            curtime = time.strftime("%Y-%m-%d %H:%M:%S", time_struct)
-            metadata = f"{video_path},{frame_num[0]},{curtime}"
-            height, width = frame.size(2), frame.size(3)
-            # Now crop to args.width by args.height.
-            #ybegin = (height - args.height)//2
-            #xbegin = (width - args.width)//2
-            #cropped = frame[:,:,ybegin:ybegin+args.height,xbegin:xbegin+args.width]
-            # If you would like to debug (and you would like to!) check your images.
-            if 1 == args.frames_per_sample:
-                if 3 == args.out_channels:
-                    img = transforms.ToPILImage()(frame[0]/255.0).convert('RGB')
-                else:
-                    img = transforms.ToPILImage()(frame[0]/255.0).convert('L')
-                # Now save the image as a png into a buffer in memory
-                buf = io.BytesIO()
-                img.save(fp=buf, format="png")
-
-                sample = {
-                    "__key__": '_'.join((base_name, '_'.join(frame_num))),
-                    "0.png": buf.getbuffer(),
-                    "cls": row[class_col].encode('utf-8'),
-                    "metadata.txt": metadata.encode('utf-8')
-                }
-            else:
-                # Save multiple pngs
-                buffers = []
-
-                for i in range(args.frames_per_sample):
+        # Make sure that this line is sane
+        if 4 != len(row):
+            print(f"Row '{row}' does not have the correct number of columns (4).")
+        else:
+            path = row[file_col]
+            sampler = VideoSampler(
+                video_path=path, num_samples=args.samples, frames_per_sample=args.frames_per_sample,
+                frame_interval=args.interval, out_width=args.width, out_height=args.height,
+                crop_noise=args.crop_noise, channels=args.out_channels,
+                begin_frame=row[beginf_col], end_frame=row[endf_col])
+            for sample_num, frame_data in enumerate(sampler):
+                frame, video_path, frame_num = frame_data
+                base_name = os.path.basename(video_path).replace(' ', '_').replace('.', '_')
+                video_time = os.path.basename(video_path).split('.')[0]
+                # TODO FIXME Convert the time from the video to the current frame time.
+                # TODO Assuming 3fps bee videos
+                time_sec = time.mktime(time.strptime(video_time, "%Y-%m-%d %H:%M:%S"))
+                time_struct = time.localtime(time_sec + int(frame_num[0]) // 3)
+                curtime = time.strftime("%Y-%m-%d %H:%M:%S", time_struct)
+                metadata = f"{video_path},{frame_num[0]},{curtime}"
+                height, width = frame.size(2), frame.size(3)
+                # Now crop to args.width by args.height.
+                #ybegin = (height - args.height)//2
+                #xbegin = (width - args.width)//2
+                #cropped = frame[:,:,ybegin:ybegin+args.height,xbegin:xbegin+args.width]
+                # If you would like to debug (and you would like to!) check your images.
+                if 1 == args.frames_per_sample:
                     if 3 == args.out_channels:
-                        img = transforms.ToPILImage()(frame[i]/255.0).convert('RGB')
+                        img = transforms.ToPILImage()(frame[0]/255.0).convert('RGB')
                     else:
-                        img = transforms.ToPILImage()(frame[i]/255.0).convert('L')
+                        img = transforms.ToPILImage()(frame[0]/255.0).convert('L')
                     # Now save the image as a png into a buffer in memory
-                    buffers.append(io.BytesIO())
-                    img.save(fp=buffers[-1], format="png")
+                    buf = io.BytesIO()
+                    img.save(fp=buf, format="png")
 
-                sample = {
-                    "__key__": '_'.join((base_name, '_'.join(frame_num))),
-                    "cls": row[class_col].encode('utf-8'),
-                    "metadata.txt": metadata.encode('utf-8')
-                }
-                for i in range(args.frames_per_sample):
-                    sample[f"{i}.png"] = buffers[i].getbuffer()
+                    sample = {
+                        "__key__": '_'.join((base_name, '_'.join(frame_num))),
+                        "0.png": buf.getbuffer(),
+                        "cls": row[class_col].encode('utf-8'),
+                        "metadata.txt": metadata.encode('utf-8')
+                    }
+                else:
+                    # Save multiple pngs
+                    buffers = []
 
-            datawriter.write(sample)
+                    for i in range(args.frames_per_sample):
+                        if 3 == args.out_channels:
+                            img = transforms.ToPILImage()(frame[i]/255.0).convert('RGB')
+                        else:
+                            img = transforms.ToPILImage()(frame[i]/255.0).convert('L')
+                        # Now save the image as a png into a buffer in memory
+                        buffers.append(io.BytesIO())
+                        img.save(fp=buffers[-1], format="png")
 
-            #img.save(f"frame_{sample_num}.png")
-            # Need the input conditioner to normalize the channel means to 0.5 and stdev to 0.5
-            #inputs = input_conditioner(images=cropped[0], return_tensors='pt')
-            #inputs = {'pixel_values': cropped}
-            #outputs = model(pixel_values=cropped)
-            #print(f"Outputs logits max is {outputs.logits.argmax(-1).item()}")
+                    sample = {
+                        "__key__": '_'.join((base_name, '_'.join(frame_num))),
+                        "cls": row[class_col].encode('utf-8'),
+                        "metadata.txt": metadata.encode('utf-8')
+                    }
+                    for i in range(args.frames_per_sample):
+                        sample[f"{i}.png"] = buffers[i].getbuffer()
+
+                datawriter.write(sample)
 
 datawriter.close()
