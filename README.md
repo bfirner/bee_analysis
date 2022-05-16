@@ -13,8 +13,8 @@ See https://pytorch.org/get-started/locally/ for additional installation instruc
 
 ## Creating a dataset
 
-First run `make_train.sh` to create a csv file with labels for each video.
-> bash make_train.sh *path/to/videos* > dataset.csv
+First run `make_train_csv.sh` to create a csv file with labels for each video.
+> bash make_train_csv.sh *path/to/videos* > dataset.csv
 
 The file paths created by `make_train_csv.sh` are relative so it should be run from the same
 directory as the dataprep step will be run. 
