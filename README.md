@@ -20,7 +20,10 @@ The file paths created by `make_train_csv.sh` are relative so it should be run f
 directory as the dataprep step will be run. 
 
 Next process that csv file with VidActRecDataprep.py. For example:
-> python3 VidActRecDataprep.py --width 400 --height 400 --resizeestrategy crop --samples 500 --out_channels 1 --frames_per_sample 1 dataset.csv dataset.tar
+> python3 VidActRecDataprep.py --width 400 --height 400 --resize-strategy crop --samples 500 --crop_noise 20 --out_channels 1 --frames_per_sample 1 dataset.csv dataset.tar
+
+The `crop_nose` option adds some randomness to the cropping location, which is important to prevenet
+overfitting.
 
 The script can also be run with `--help` for more details.
 
