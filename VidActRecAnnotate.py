@@ -86,6 +86,19 @@ parser.add_argument(
     default=3,
     help='Number of label classes predicted by the model.')
 parser.add_argument(
+    '--class_names',
+    type=str,
+    nargs='+',
+    required=False,
+    help='Label class names.')
+parser.add_argument(
+    '--normalize',
+    required=False,
+    default=False,
+    action="store_true",
+    help=("Normalize inputs: input = (input - mean) / stddev. "
+        "Note that VidActRecDataprep is already normalizing so this may not be required."))
+parser.add_argument(
     '--resume_from',
     type=str,
     required=True,
@@ -123,6 +136,7 @@ class VideoAnnotator:
             output_name   (str): Name for the output annotated video.
         """
         self.path = video_path
+        self.video_labels = video_labels
         self.frames_per_sample = frames_per_sample
         self.frame_interval = frame_interval
         self.channels = channels
@@ -209,7 +223,7 @@ class VideoAnnotator:
 
         # Prepare a font for annotations. Just using the default font for now.
         try:
-            font = ImageFont.truetype(font="DejaVuSerifCondensed.ttf", size=14)
+            font = ImageFont.truetype(font="DejaVuSans.ttf", size=14)
         except OSError:
             font = ImageFont.load_default()
 
@@ -224,7 +238,6 @@ class VideoAnnotator:
             .filter('normalize', independence=1.0)
             #.filter('reverse')
             # YUV444p is the alternative to rgb24, but the pretrained network expects rgb images.
-            #.output('pipe:', format='rawvideo', pix_fmt='yuv444p')
             .output('pipe:', format='rawvideo', pix_fmt=pix_fmt)
             .run_async(pipe_stdout=True, quiet=True)
         )
@@ -232,9 +245,8 @@ class VideoAnnotator:
         info_width = in_width // 3
         output_process = (
             ffmpeg
-            .input('pipe:', format='rawvideo', pix_fmt=pix_fmt, s=f'{in_width+info_width}x{in_height}')
-            #.input('pipe:', format='rawvideo', pix_fmt=pix_fmt, s=f'{in_width}x{in_height}')
-            .output(self.output_name, pix_fmt='gray')
+            .input('pipe:', format='rawvideo', pix_fmt='rgb24', s=f'{in_width+info_width}x{in_height}')
+            .output(self.output_name, pix_fmt='rgb24')
             .overwrite_output()
             .run_async(pipe_stdin=True, quiet=True)
         )
@@ -277,19 +289,27 @@ class VideoAnnotator:
                     image_input = torch.cat(sample_frames)
 
                 # Get the label for this frame. Multiframe inputs have the label of the newest frame.
-                label = video_label.getLabel(frame)
+                label = self.video_labels.getLabel(frame)
 
                 # Now normalize the image and send it through the DNN. Then annotate the image with
                 # the label and result.
                 # Visualization masks are not supported with all model types yet.
                 with torch.no_grad():
-                    out, mask = net.vis_forward(image_input/255.0)
+                    if args.normalize:
+                        v, m = torch.var_mean(image_input)
+                        net_input = (image_input - m) / v
+                    else:
+                        net_input = image_input
+                    out, mask = net.vis_forward(net_input)
 
                 # Reconvert to an image for the output video stream
-                if 3 == self.channels:
-                    cur_image = transforms.ToPILImage()(sample_frames[-1][0]/255.0).convert('RGB')
-                else:
-                    cur_image = transforms.ToPILImage()(sample_frames[-1][0]/255.0).convert('L')
+                display_frame = sample_frames[-1][0]
+                # Convert to a color image is necessary
+                if 3 != self.channels:
+                    display_frame = display_frame.repeat(3, 1, 1)
+                cur_image = transforms.ToPILImage()(display_frame/255.0).convert('RGB')
+
+                # Draw bounding boxes around every large group of features
 
                 # Pad an empty space to the right.
                 padded_image = ImageOps.pad(cur_image, (in_width + info_width, in_height), centering=(0,0))
@@ -297,8 +317,15 @@ class VideoAnnotator:
                 # Get the drawing context
                 cont = ImageDraw.Draw(padded_image)
                 # Annotate with the label
-                cont.text(((in_width + info_width//2), in_height//3), f"label {label}",
-                        fill=(128), font=font, anchor="mm")
+                rows = len(self.video_labels.class_names) + 1
+                cont.text(((in_width + info_width//2), in_height//rows), f"Label: {label}",
+                        fill=(235, 235, 235), font=font, anchor="mm")
+
+                for row in range(2, rows):
+                    lname = self.video_labels.class_names[row-1]
+                    lscore = out[0,row-2]
+                    cont.text(((in_width + info_width//2), row * in_height//rows),
+                        f"{lname} score: {lscore}", fill=(235, 235, 235), font=font, anchor="mm")
 
                 # Write the frame
                 output_process.stdin.write(
@@ -356,6 +383,9 @@ if args.resume_from is not None:
     net.createVisMaskLayers(net.output_sizes)
     net = net.cuda()
 
+# Always use the network in evaluation mode.
+net.eval()
+
 class LabelRange:
     """LabelRange class used to store all of the label data for a video."""
     def __init__(self, labelclass, beginframe, endframe):
@@ -368,8 +398,9 @@ class LabelRange:
 
 class VideoLabels:
     """A video and all of their labels."""
-    def __init__(self, videoname):
+    def __init__(self, videoname, class_names):
         self.videoname = videoname
+        self.class_names = class_names
         self.labels = []
 
     def addLabel(self, labelrange):
@@ -379,10 +410,10 @@ class VideoLabels:
 
     def getLabel(self, frame):
         """Get the label for a frame number. Frame numbers begin at 1."""
-        # Return -1 if there is no class information for the given frame
+        # Return "none" if there is no class information for the given frame
         if (0 == len(self.labels) or frame < self.labels[0].beginframe or
                 frame > self.labels[-1].endframe):
-            return -1
+            return "none"
         # Advance the index until we encounter a label range that should have the label for this
         # frame.
         idx = 0
@@ -390,10 +421,20 @@ class VideoLabels:
             idx += 1
         # It's possible that there is a gap between labels.
         if (self.labels[idx].beginframe > frame):
-            return -1
+            return "none"
         # Otherwise we have finally found the label for this frame.
-        return self.labels[idx].labelclass
+        return self.class_names[self.labels[idx].labelclass]
 
+# Create strings with label class names if none were provided.
+if not args.class_names:
+    args.class_names = []
+# Index 0 does not correspond to a valid class label
+args.class_names = ["none"] + args.class_names
+
+# Make sure that each label value has a string
+for i in range(args.label_classes):
+    if len(args.class_names) <= i:
+        args.class_names.push(str(i+1))
 
 with open(args.datalist, newline='') as datacsv:
     conf_reader = csv.reader(datacsv)
@@ -416,7 +457,7 @@ with open(args.datalist, newline='') as datacsv:
         else:
             path = row[file_col]
             if (path not in video_labels):
-                video_labels[path] = VideoLabels(path)
+                video_labels[path] = VideoLabels(path, args.class_names)
             video_labels[path].addLabel(LabelRange(int(row[class_col]), int(row[beginf_col]), int(row[endf_col])))
 
     # Now play each video and annotate them with results
