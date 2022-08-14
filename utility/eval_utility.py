@@ -4,6 +4,7 @@
 Utility functions and classes for evaluating model performance.
 """
 import torch
+from torchvision import transforms
 
 class ConfusionMatrix:
     """A confusion matrix with functions to extract evaluation statistics."""
@@ -132,7 +133,7 @@ def saveWorstN(worstn, worstn_path, classname):
     """
     for i, node in enumerate(worstn):
         img = transforms.ToPILImage()(node.data).convert('L')
-        if 0 < len(metadata):
+        if 0 < len(node.metadata):
             timestamp = node.metadata.split(',')[2].replace(' ', '_')
         else:
             timestamp = "unknown"
