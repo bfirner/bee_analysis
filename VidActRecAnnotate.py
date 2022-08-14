@@ -227,6 +227,10 @@ class VideoAnnotator:
         except OSError:
             font = ImageFont.load_default()
 
+        # All of the DNNs that are being trained used cross entropy loss and should be postprocessed
+        # with a softmax.
+        nn_postprocess = torch.nn.Softmax(dim=1)
+
         # Begin the video input process from ffmpeg.
         input_process = (
             ffmpeg
@@ -301,6 +305,7 @@ class VideoAnnotator:
                     else:
                         net_input = image_input
                     out, mask = net.vis_forward(net_input)
+                    out = nn_postprocess(out)
 
                 # Reconvert to an image for the output video stream
                 display_frame = sample_frames[-1][0]
@@ -323,9 +328,9 @@ class VideoAnnotator:
 
                 for row in range(2, rows):
                     lname = self.video_labels.class_names[row-1]
-                    lscore = out[0,row-2]
+                    lscore = out[0,row-2].item()
                     cont.text(((in_width + info_width//2), row * in_height//rows),
-                        f"{lname} score: {lscore}", fill=(235, 235, 235), font=font, anchor="mm")
+                        f"{lname} score: {round(lscore, 3)}", fill=(235, 235, 235), font=font, anchor="mm")
 
                 # Write the frame
                 output_process.stdin.write(
