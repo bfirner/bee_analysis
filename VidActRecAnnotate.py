@@ -312,9 +312,27 @@ class VideoAnnotator:
                 # Convert to a color image is necessary
                 if 3 != self.channels:
                     display_frame = display_frame.repeat(3, 1, 1)
-                cur_image = transforms.ToPILImage()(display_frame/255.0).convert('RGB')
 
                 # Draw bounding boxes around every large group of features
+                # Add all of the pixel features greater than 1% of the total into a set
+                mask_total = mask[0].sum().item()
+                #mask_captures = mask[0,0] > (mask_total/100.0)
+                mask_captures = mask[0,0] > 0.70
+                # Turn the image tensor green at the masked locations.
+                display_frame[1].masked_fill_(mask_captures, 255.0)
+
+                cur_image = transforms.ToPILImage()(display_frame/255.0).convert('RGB')
+
+                # Segment mask captures into bounding boxes.
+                #mask_pixels = [(i, j) for i in range(mask.size(2)) for j
+                #        in range(mask.size(3)) if mask_captures[i,j]]
+                # Do bfs or dfs to cluster them
+                # Draw bounding boxes around the clusters
+
+                # Part 2: Assign clusters to classes.
+                # Before adding features into a set, create a set for each class.
+                # Go through the net.classifier part of the DNN (the linear layers) to assign
+                # classes by backpropping through each class prediction.
 
                 # Pad an empty space to the right.
                 padded_image = ImageOps.pad(cur_image, (in_width + info_width, in_height), centering=(0,0))
@@ -381,6 +399,10 @@ print(f"Model is {net}")
 # See if the model weights can be restored.
 if args.resume_from is not None:
     checkpoint = torch.load(args.resume_from)
+    # Remove vis_layers from the checkpoint to support older models with the current code.
+    vis_names = [key for key in list(checkpoint['model_dict'].keys()) if key.startswith("vis_layers")]
+    for key in vis_names:
+        del checkpoint['model_dict'][key]
     missing_keys, unexpected_keys = net.load_state_dict(checkpoint["model_dict"], strict=False)
     if (unexpected_keys):
         raise RuntimeError(f"Found unexpected keys in model checkpoint: {unexpected_keys}")
