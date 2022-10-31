@@ -95,7 +95,8 @@ parser.add_argument(
         'multilabel: Multilabels are loaded from "detection.pth", binary cross entropy loss is used.'))
 parser.add_argument(
     'dataset',
-    type=str,
+    nargs='+',
+    type=[],
     help='Dataset for training.')
 parser.add_argument(
     '--sample_frames',
@@ -259,7 +260,7 @@ else:
 def getLabelSize(data_path, decode_strs, convert_idx_to_classes):
     """
     Arguments:
-        data_path   (str): Path to webdataset tar file.
+        data_path   (str or list[str]): Path to webdataset tar file(s).
         decode_strs (str): Decode string for dataset loading.
         convert_idx_to_classes (bool): True to convert single index values to one hot labels.
     Returns:
@@ -271,7 +272,7 @@ def getLabelSize(data_path, decode_strs, convert_idx_to_classes):
         return 3
     # Check the size of the labels
     test_dataset = (
-        wds.WebDataset(args.dataset)
+        wds.WebDataset(data_path)
         .decode("l")
         .to_tuple(*decode_strs)
     )
@@ -289,10 +290,10 @@ label_size = getLabelSize(args.dataset, decode_strs, convert_idx_to_classes)
 LoopTuple = namedtuple('LoopTuple', ' '.join(["f" + s for s in decode_strs]).replace('.', '_'))
 dl_tuple = LoopTuple(*([None] * len(decode_strs)))
 
-# TODO FIXME Deterministic shuffle only shuffles within a range. Should manipulate what is in the
-# tar file, shuffling after the dataset is created.
+# TODO FIXME Deterministic shuffle only shuffles within a range. Should perhaps manipulate what is
+# in the tar file by shuffling filenames after the dataset is created.
 dataset = (
-    wds.WebDataset(args.dataset)
+    wds.WebDataset(args.dataset, shardshuffle=True)
     .shuffle(20000//in_frames, initial=20000//in_frames)
     .decode("l")
     .to_tuple(*decode_strs)
