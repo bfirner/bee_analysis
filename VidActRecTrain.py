@@ -96,7 +96,7 @@ parser.add_argument(
 parser.add_argument(
     'dataset',
     nargs='+',
-    type=[],
+    type=str,
     help='Dataset for training.')
 parser.add_argument(
     '--sample_frames',
@@ -280,6 +280,7 @@ def getLabelSize(data_path, decode_strs, convert_idx_to_classes):
     dl_tuple = next(test_dataloader.__iter__())
     return dl_tuple[label_index].size(1)
 
+print(f"Training with dataset {args.dataset}")
 label_size = getLabelSize(args.dataset, decode_strs, convert_idx_to_classes)
 
 # Decode the proper number of items for each sample from the dataloader
