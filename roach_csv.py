@@ -7,7 +7,7 @@ import csv
 
 
 SKIP_FIRST_N_FRAMES = "4"
-SPLIT_RATIO = 0.8
+SPLIT_RATIO = 0.75
 
 def write_to_lists(lists, directory, stimulus_class):
     for filename in os.listdir(directory):
@@ -23,16 +23,18 @@ def write_to_lists(lists, directory, stimulus_class):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("test_dir", type = str)
+    parser.add_argument("5g_dir", type = str)
     parser.add_argument("control_dir", type = str)
     args = parser.parse_args()
     return args.test_dir, args.control_dir
 
 if __name__ == "__main__":
-    test, control = parse_args()
+    test, test_5g, control = parse_args()
     header_row = ["file", "class", "begin frame", "end frame"]
     lists = []
-    lists = write_to_lists(lists, test, "1")
-    lists = write_to_lists(lists, control, "0")
+    lists = write_to_lists(lists, test, "2")
+    lists = write_to_lists(lists, test_5g, "3")
+    lists = write_to_lists(lists, control, "1")
     random.shuffle(lists)
     split = int(len(lists)*SPLIT_RATIO)
     train_list = lists[:split]
