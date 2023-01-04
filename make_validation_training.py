@@ -1,0 +1,219 @@
+#!/common/home/rmartin/bin/python3
+# This code writes scripts to do both (1) data prepation and (2) training/evaluation on video files for the
+# ML behavior disriminator videos on the Rutgers CS computing infrastructure.
+# (c) 2023 R. P. Martin. This code is licensed under the GNU General Public License (GPL), version 3
+
+# This program takes the video list in a main data cvs file and breaks it up into training and testing data sets to run k-fold validation.
+# The main dataset.csv file is created by the command 'make_train_csv.py' script and is used as input to this script.
+# After taking the input csv list, this script creates 4 additional kinds of files as output. What is produced is: 
+
+# 1. A set of N smaller dataset.csv files, used for cross-fold validation, broken up from the main dataset.csv file 
+# 2. N batch.sh shell scripts to to call the VidActRecDataprep.py script on the above data set files to perform the data prepartion.
+# 3. A global shell file (sbatch) to run the slurm sbatch command on the above batch files.
+# 4. N training.sh shell scripts to to call the VidActRecTrain.py script on the above data tar files to peform training and evaluaton. 
+# 5. A batch script that runs the training scripts using the slurm sbatch command and srun commands (to get GPUs)
+
+# This script breaks up the large datset file into multiple smaller randomized sets of 1/N size each
+# The number of sets is controlled with the --k parameter below
+# This script then creates these N dataset_XX.csv files from the main dataset file, as well 
+# as N shell file that calls the VidActRecDataprep.py script that creates the tar file for the training and testing script.
+
+# The k-fold validation approach is described here:
+# See: https://towardsdatascience.com/k-fold-cross-validation-explained-in-plain-english-659e33c0bc0
+
+import argparse
+import csv
+import math
+import numpy
+import os
+import random
+import sys
+
+# The data prepartion python program 
+dataPrepProgram = "/research/projects/grail/rmartin/analysis-results/code/bee_analysis/VidActRecDataprep.py"
+# The training python program 
+trainProgram =  '/research/projects/grail/rmartin/analysis-results/code/bee_analysis/VidActRecTrain.py'
+
+# command to run the data prep program
+dataPrepCommand = 'python3 $DATAPREPPROGRAM --width 400 --height 400 --resize-strategy crop --samples 500 --crop_noise 20 --out_channels 1 --frames_per_sample 1 $DATASETNAME.csv $DATASETNAME.tar'
+# command to run the evaluation and training program 
+trainCommand    = 'srun -G 1 python3 $TRAINPROGRAM --not_deterministic --epochs 10 --modeltype $MODEL --evaluate' # <eval-set> <a-set> <b-set> ... 
+
+#python verion to run the data prep program
+python3PathData = '/koko/system/anaconda/envs/python38/bin'
+#python version to run the training program 
+python3PathTrain = '/koko/system/anaconda/envs/python39/bin'
+
+parser = argparse.ArgumentParser( description="Create k-fold validation sets.")
+
+parser.add_argument(
+    '--datacsv',
+    type=str,
+    required=True,
+    default="dataset",
+    help='name of the dataset.')
+parser.add_argument(
+    '--k',
+    type=int,
+    required=False,
+    default=10,
+    help='number of sets.')
+parser.add_argument(
+    '--batchdir',
+    type=str,
+    required=False,
+    default=".",
+    help='working directory for the sbatch run jobs')
+parser.add_argument(
+    '--seed',
+    type=int,
+    required=False,
+    default='01011970',
+    help="Seed to use for randominizing the data sets.")
+parser.add_argument(
+    '--training',
+    type=str,
+    required=False,
+    default='training-run',
+    help="Name for the training script file.")
+parser.add_argument(
+    '--model',
+    type=str,
+    required=False,
+    default='alexnet',
+    help="Model to use for the training script.")
+
+args = parser.parse_args()
+datacsvname = args.datacsv
+numOfSets = args.k
+batchdir = args.batchdir
+seed = args.seed
+training_filename=args.training + '.sh'
+model_name = args.model
+
+# get the list of files from the dataset
+print("datset is %s" % (datacsvname))
+
+#set the random number generator 
+random.seed(seed)
+
+with open(datacsvname) as datacsv:
+    conf_reader = csv.reader(datacsv)
+    header = next(conf_reader)
+    # Remove all spaces from the header strings
+    header = [''.join(col.split(' ')) for col in header]
+    print("header is %s" % (header))
+    file_col = header.index('file')
+    class_col = header.index('class')
+    beginf_col = header.index('beginframe')
+    endf_col = header.index('endframe')
+
+    loop_counter = 0
+    all_csv_rows = []
+    # get all the rows in the csv file into a list so we can hand them
+    # over to the thread workers. Each row is a video file
+    # each worker processes 1 file 
+    for row in (conf_reader):
+        all_csv_rows.append(row)
+    pass
+
+# create a randomized permutation
+random_rows = random.shuffle(all_csv_rows)
+numRows = len(all_csv_rows) 
+
+i = 0
+for row in (all_csv_rows):
+    #print("row %d is %s " % (i,','.join(all_csv_rows[i])))
+    i = i + 1
+
+# figure out the number of files in the training test set.
+numFilesPerSet = int(numRows/numOfSets)
+extraFiles =   numRows % numOfSets
+
+# create test_N and train_N files for each of the k folds
+print("got to here rows %d files/set %d extra %d "  % (numRows,numFilesPerSet,extraFiles) )
+
+# foreach dataset, construct a csv of the files in that set
+baseNameFile =  datacsvname.split('.csv')
+baseName = baseNameFile[0]
+setNum = 0
+currentDir = os.getcwd()
+
+# this is the name of the batch script to run the data preparation 
+sbatch_filename = currentDir + "/sbatch-run-" + baseName +".sh"
+
+if (batchdir == '.'):
+    batchdir = currentDir
+    
+with open(sbatch_filename,'w') as sbatch_file:
+    sbatch_file.write("#!/usr/bin/bash \n")
+    sbatch_file.write("# batch file for slurm sbatch commands \n \n")
+    
+    # open the master training file
+    training_batch_file = open(training_filename, 'w')
+    training_batch_file.write("#!/usr/bin/bash \n")
+    training_batch_file.write("# batch file for getting the training results \n \n")
+    training_batch_file.write("cd " + currentDir + " \n")
+    training_batch_file.write("echo start-is: `date` \n \n") # add start timestamp to training file 
+                        
+    trainCommand = trainCommand.replace('$MODEL',model_name)
+    
+    for dataset_num in range(numOfSets):
+        setNumName = '0' + str(dataset_num) 
+        dataset_filename = baseName + '_' + setNumName + '.csv'
+        slurm_job_filename = baseName + '_' + setNumName + '.sh'
+        train_job_filename = 'train' + '_' + setNumName + '.sh'
+        
+        base_row = setNum * numFilesPerSet
+        #print("opening file %s" % (dataset_filename))
+    
+        with open(dataset_filename,'w') as dsetFile:
+            # write out the header row at the top of the set 
+            dsetFile.write('file, class, begin frame, end frame \n')
+            # write out all the rows for this set 
+            for rowNum in range(base_row,base_row+numFilesPerSet):
+                dsetFile.write(','.join(all_csv_rows[rowNum]))             
+                dsetFile.write("\n")
+
+            # write to the batch file that builds the data set 
+            with open(slurm_job_filename,'w') as batchFile:
+                batchFile.write("#!/usr/bin/bash \n")
+                batchFile.write("# command to run \n \n")
+                batchFile.write("cd " + currentDir + " \n")
+                batchFile.write("export PATH=" + python3PathData + ":$PATH \n")
+                batchFile.write("echo start-is: `date` \n \n") # add start timestamp 
+                command_to_run = dataPrepCommand.replace('$DATAPREPPROGRAM',dataPrepProgram)
+                command_to_run = command_to_run.replace('$DATASETNAME',baseName + '_0' + str(dataset_num) )
+                batchFile.write(command_to_run + " \n \n")
+                batchFile.write("echo end-is: `date` \n \n") # add end timestamp 
+                sbatch_file.write("sbatch -o " + baseName + '_datalog_' + setNumName + ".log " + slurm_job_filename + " \n")
+
+            # open the batch file that runs the testing and training commands 
+            with open(train_job_filename,'w') as trainFile:
+                trainFile.write("#!/usr/bin/bash \n")
+                #trainFile.write("#SBATCH --gpus-per-node=1 \n")
+                trainFile.write("# command to run \n \n")
+                trainFile.write("cd " + currentDir + " \n")
+                trainFile.write("export PATH=" + python3PathTrain + ":$PATH \n")
+                trainFile.write("echo start-is: `date` \n \n") # add start timestamp 
+                traincommand_local = trainCommand.replace('$TRAINPROGRAM',trainProgram)
+                trainCommand_local = trainCommand + ' ' + baseName +  '_' + '0' + str(dataset_num) + '.tar'
+                for trainingSetNum in range(numOfSets):
+                    if int(trainingSetNum) != int(dataset_num):
+                        trainCommand_local = trainCommand_local + ' ' + baseName +  '_' + '0' + str(trainingSetNum) + '.tar'
+                                        
+                trainFile.write(trainCommand_local +  "\n") # write the training command to the training command
+                trainFile.write("echo end-is: `date` \n \n") # add end timestamp                                         
+                training_batch_file.write("sbatch -G 1 -o " + baseName + '_trainlog_' + setNumName+ ".log " + train_job_filename + " \n") # add end timestamp to training file 
+                
+        setNum = setNum + 1
+                                        
+training_batch_file.write("echo end-is: `date` \n \n") # add end timestamp to training file 
+training_batch_file.close()
+                                        
+print("Done writing dataset and job files")
+# change the permissions of the shell scripts to be executable.
+os.system("chmod 755 *.sh") 
+
+
+
