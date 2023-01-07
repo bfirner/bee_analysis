@@ -5,7 +5,8 @@ import cv2
 import numpy as np
 
 
-SKIP_N_ROWS = 3
+SKIP_N_ROWS = 3 #to get headers from the txt file
+REMOVE_N_ROWS = 60 #discard 2 seconds of video
 VID_WIDTH = 1280 #pixels
 VID_HEIGHT = 720 #pixels
 VID_FPS = 30
@@ -25,6 +26,7 @@ def make_frame(row):
     img_roach = cv2.imread("bug.png", cv2.IMREAD_UNCHANGED)
     img_roach = cvzone.rotateImage(img_roach, angle)
     add_transparent_image(img_back, img_roach, X, Y)
+    img_back[img_back!=0.0] = 255
     return img_back
 
 def add_transparent_image(background, foreground, x_offset=None, y_offset=None):
@@ -66,11 +68,22 @@ def add_transparent_image(background, foreground, x_offset=None, y_offset=None):
 
 def generate_video(data):
     df = pd.read_csv(data, sep="(\s{3,})", skiprows=SKIP_N_ROWS, engine='python')
+    df.drop(index=df.index[:REMOVE_N_ROWS], inplace=True)
     vid_filename = data.replace(".txt", ".avi")
     out_vid = cv2.VideoWriter(vid_filename, cv2.VideoWriter_fourcc(*'DIVX'), VID_FPS, (VID_WIDTH, VID_HEIGHT))
-    for _,row in df.iterrows():
+    prev_angle = df['Angle (deg)'].iloc[0] # pull the first timestamps's angle as the prev_angle
+    flipped_180 = False
+    for idx,row in df.iterrows():
+        curr_angle = row['Angle (deg)']
+        delta_angle = curr_angle - prev_angle
+        if abs(delta_angle) > 45: # this can be any number probably greater than 1 degree and less than 180 since each normal frame should only have tenths of angle difference
+            flipped_180 = not flipped_180 # if a flip happens, then flipped_180 will be true until it flips back to the correct value
+        if flipped_180: # skip frame if flipped_180 is true
+            row['Angle (deg)']-= delta_angle # adjust angle back to actual
+            print("THERE'S A FLIPPING ROACH!")
         img = make_frame(row)
         out_vid.write(img)
+        prev_angle = curr_angle
     out_vid.release()
 
 if __name__ == "__main__":
