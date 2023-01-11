@@ -13,6 +13,7 @@ mode. If you encounter it, the solution is to just disable determinism with --no
 # It only works with old versions of ffmpeg.
 import argparse
 import csv
+import datetime 
 import ffmpeg
 import heapq
 import io
@@ -201,6 +202,20 @@ parser.add_argument(
     help="Loss function to use during training.")
 
 args = parser.parse_args()
+
+# these next clauses are for scripts so that we have a log of what was called on what machine and when.
+python_log =  os.system("which python3")
+machine_log = os.system("uname -a")
+date_log = os.system("date")
+
+print("Log: Program_args: ",end='')
+for theArg in sys.argv :
+    print(theArg + " ",end='')
+print(" ")
+
+print("Log: Started: ",date_log) 
+print("Log: Machine: ",machine_log)
+print("Log: Python_version: ",python_log)
 
 torch.use_deterministic_algorithms(not args.not_deterministic)
 torch.manual_seed(args.seed)
@@ -400,6 +415,10 @@ if not args.no_train:
         totals = ConfusionMatrix(size=label_size)
         print(f"Starting epoch {epoch}")
         for batch_num, dl_tuple in enumerate(dataloader):
+            dateNow = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+            if ( (batch_num % 1000) == 1): 
+                print ("Log: at tuple %d at %s" % (batch_num,dateNow))
+                
             optimizer.zero_grad()
             # For debugging purposes
             # img = transforms.ToPILImage()(dl_tuple[0][0]).convert('RGB')

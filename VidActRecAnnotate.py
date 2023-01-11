@@ -19,10 +19,15 @@ import random
 import sys
 import time
 import torch
+
+# for logging when where program was run
+from subprocess import PIPE, run
+
 # Helper function to convert to images
 from torchvision import transforms
 # For annotation drawing
 from PIL import ImageDraw, ImageFont, ImageOps
+
 
 from models.alexnet import AlexLikeNet
 from models.bennet import BenNet
@@ -30,6 +35,9 @@ from models.resnet import (ResNet18, ResNet34)
 from models.resnext import (ResNext18, ResNext34, ResNext50)
 from models.convnext import (ConvNextExtraTiny, ConvNextTiny, ConvNextSmall, ConvNextBase)
 
+def commandOutput(command):
+    result = run(command, stdout=PIPE, stderr=PIPE, universal_newlines=True, shell=True)
+    return result.stdout
 
 parser = argparse.ArgumentParser(
     description="Annotate a given video.")
@@ -113,6 +121,21 @@ parser.add_argument(
     help="Model to use for training.")
 
 args = parser.parse_args()
+
+# these next clauses are for scripts so that we have a log of what was called on what machine and when.
+python_log =  commandOutput("which python3")
+machine_log = commandOutput("uname -a")
+date_log = commandOutput("date")
+
+print("Log: Program_args: ",end='')
+for theArg in sys.argv :
+    print(theArg + " ",end='')
+print(" ")
+
+print("Log: Started: ",date_log)
+print("Log: cwd: ", os.getcwd() )
+print("Log: Machine: ",machine_log)
+print("Log: Python_version: ",python_log)
 
 class VideoAnnotator:
 
@@ -321,7 +344,7 @@ class VideoAnnotator:
                 # Turn the image tensor green at the masked locations.
                 display_frame[1].masked_fill_(mask_captures, 255.0)
 
-                cur_image = transforms.ToPILImage()(display_frame/255.0).convert('RGB')
+                cur_image = transforms.ToPILImage()(display_frame.cpu()/255.0).convert('RGB')
 
                 # Segment mask captures into bounding boxes.
                 #mask_pixels = [(i, j) for i in range(mask.size(2)) for j
