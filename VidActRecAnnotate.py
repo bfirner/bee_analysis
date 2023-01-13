@@ -19,10 +19,15 @@ import random
 import sys
 import time
 import torch
+
+# for logging when where program was run
+from subprocess import PIPE, run
+
 # Helper function to convert to images
 from torchvision import transforms
 # For annotation drawing
 from PIL import ImageDraw, ImageFont, ImageOps
+
 
 from models.alexnet import AlexLikeNet
 from models.bennet import BenNet
@@ -32,6 +37,9 @@ from models.convnext import (ConvNextExtraTiny, ConvNextTiny, ConvNextSmall, Con
 
 from utility.video_utility import (getVideoInfo, vidSamplingCommonCrop)
 
+def commandOutput(command):
+    result = run(command, stdout=PIPE, stderr=PIPE, universal_newlines=True, shell=True)
+    return result.stdout
 
 parser = argparse.ArgumentParser(
     description="Annotate a given video.")
@@ -135,10 +143,25 @@ parser.add_argument(
 
 args = parser.parse_args()
 
+# these next clauses are for scripts so that we have a log of what was called on what machine and when.
+python_log =  commandOutput("which python3")
+machine_log = commandOutput("uname -a")
+date_log = commandOutput("date")
+
+print("Log: Program_args: ",end='')
+for theArg in sys.argv :
+    print(theArg + " ",end='')
+print(" ")
+
+print("Log: Started: ",date_log)
+print("Log: cwd: ", os.getcwd() )
+print("Log: Machine: ",machine_log)
+print("Log: Python_version: ",python_log)
+
 class VideoAnnotator:
 
     def __init__(self, video_labels, net, frame_interval, frames_per_sample, out_width=None,
-            out_height=None, scale=1.0, crop_x_offset=0, crop_y_offset=0, channels=3, channels=3,
+            out_height=None, scale=1.0, crop_x_offset=0, crop_y_offset=0, channels=3,
              begin_frame=None, end_frame=None, output_name="annotated.mp4"):
         """
         Samples have no overlaps. For example, a 10 second video at 30fps has 300 samples of 1

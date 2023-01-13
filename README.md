@@ -31,6 +31,13 @@ classes. The date format in the files should be: `YYYYMMDD_HHMMSS`
 The file paths created by `make_train_csv.sh` are relative so it should be run from the same
 directory as the dataprep step will be run.
 
+### Make scripts to scale data preparation, training and evaluation on servers that run slurm 
+
+Slurm is a system for managing batch jobs and GPU allocation. 
+
+After to you make the dataset.csv as above, run the 'make_validation_training.py' script with the dataset.csv as input. This will
+create smaller dataset tar files and scripts to do K-cross fold validation using sbatch and srun.
+
 #### Synthetic Roach Data
 
 `roach_csv.py` takes the place of `make_train_csv.sh` for the synthetic roach data.
