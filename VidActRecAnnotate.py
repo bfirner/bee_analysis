@@ -30,6 +30,8 @@ from models.resnet import (ResNet18, ResNet34)
 from models.resnext import (ResNext18, ResNext34, ResNext50)
 from models.convnext import (ConvNextExtraTiny, ConvNextTiny, ConvNextSmall, ConvNextBase)
 
+from utility.video_utility import (getVideoInfo, vidSamplingCommonCrop)
+
 
 parser = argparse.ArgumentParser(
     description="Annotate a given video.")
@@ -46,20 +48,39 @@ parser.add_argument(
     type=int,
     required=False,
     default=224,
-    help='Width of output images.')
+    help='Width of output images (obtained via cropping, after applying scale).')
 parser.add_argument(
     '--height',
     type=int,
     required=False,
     default=224,
-    help='Height of output images.')
+    help='Height of output images (obtained via cropping, after applying scale).')
 parser.add_argument(
     '--resize-strategy',
     type=str,
     required=False,
     default='crop',
     choices=['crop', 'scale'],
-    help='Strategy to match desired output size.')
+    help='This deprecated option is ignored. Use --scale to scale, and crop with --width and '
+    '--height, with --crop_x_offset and --crop_y_offset for more options.')
+parser.add_argument(
+    '--scale',
+    type=float,
+    required=False,
+    default=1.0,
+    help='Scaling to apply to each dimension (before cropping). A value of 0.5 will yield 0.25 resolution.')
+parser.add_argument(
+    '--crop_x_offset',
+    type=int,
+    required=False,
+    default=0,
+    help='The offset (in pixels) of the crop location on the original image in the x dimension.')
+parser.add_argument(
+    '--crop_y_offset',
+    type=int,
+    required=False,
+    default=0,
+    help='The offset (in pixels) of the crop location on the original image in the y dimension.')
 parser.add_argument(
     '--interval',
     type=int,
@@ -117,8 +138,8 @@ args = parser.parse_args()
 class VideoAnnotator:
 
     def __init__(self, video_labels, net, frame_interval, frames_per_sample, out_width=None,
-            out_height=None, channels=3, begin_frame=None, end_frame=None,
-            output_name="annotated.mp4"):
+            out_height=None, scale=1.0, crop_x_offset=0, crop_y_offset=0, channels=3, channels=3,
+             begin_frame=None, end_frame=None, output_name="annotated.mp4"):
         """
         Samples have no overlaps. For example, a 10 second video at 30fps has 300 samples of 1
         frame, 150 samples of 2 frames with a frame interval of 0, or 100 samples of 2 frames with a
@@ -130,63 +151,29 @@ class VideoAnnotator:
             frames_per_sample (int):  Number of frames in each sample.
             out_width     (int): Width of output images (for the DNN), or the original width if None.
             out_height    (int): Height of output images (for the DNN), or the original height if None.
+            scale       (float): Scale factor of each dimension
+            crop_x_offset (int): x offset of crop, in pixels, from the original image
+            crop_y_offset (int): y offset of crop, in pixels, from the original image
             channels      (int): Numbers of channels (3 for RGB or 1 luminance/Y/grayscale/whatever)
             begin_frame   (int): First frame to sample.
             end_frame     (int): Final frame to sample.
             output_name   (str): Name for the output annotated video.
         """
+        # TODO This should be reusing components of the VideoSampler class from VidActRecDataprep.py
         self.path = video_path
         self.video_labels = video_labels
         self.frames_per_sample = frames_per_sample
         self.frame_interval = frame_interval
         self.channels = channels
+        self.scale = scale
         self.output_name = output_name
         print(f"Processing {video_path}")
         # Probe the video to find out some metainformation
+        self.width, self.height, self.total_frames = getVideoInfo(video_path)
 
-        # Following advice from https://kkroening.github.io/ffmpeg-python/index.html
-        # First find the size, then set up a stream.
-        probe = ffmpeg.probe(self.path)['streams'][0]
-        self.width = probe['width']
-        self.height = probe['height']
-        if out_width is not None:
-            self.out_width = out_width
-        else:
-            self.out_width = self.width
-        if out_height is not None:
-            self.out_height = out_height
-        else:
-            self.out_height = self.height
+        self.out_width, self.out_height, self.crop_x, self.crop_y = vidSamplingCommonCrop(
+            self.height, self.width, out_height, out_width, self.scale, crop_x_offset, crop_y_offset)
 
-        if 'duration' in probe:
-            numer, denom = probe['avg_frame_rate'].split('/')
-            self.frame_rate = float(numer) / float(denom)
-            self.duration = float(probe['duration'])
-            self.total_frames = math.floor(self.duration * self.frame_rate)
-        else:
-            # If the duration is not in the probe then we will need to read through the entire video
-            # to get the number of frames.
-            # It is possible that the "quiet" option to the python ffmpeg library may have a buffer
-            # size problem as the output does not go to /dev/null to be discarded. The workaround
-            # would be to manually poll the buffer.
-            input_process = (
-                ffmpeg
-                .input(self.path)
-                .output('pipe:', format='rawvideo', pix_fmt='gray')
-                #.output('pipe:', format='rawvideo', pix_fmt='yuv420p')
-                .run_async(pipe_stdout=True, quiet=True)
-            )
-            # Count frames
-            frame = 0
-            while True:
-                # Using pix_fmt='gray' we should get a single channel of 8 bits per pixel
-                in_bytes = input_process.stdout.read(self.width * self.height)
-                if in_bytes:
-                    frame += 1
-                else:
-                    input_process.wait()
-                    break
-            self.total_frames = frame
         if begin_frame is None:
             self.begin_frame = 1
         else:
@@ -235,8 +222,10 @@ class VideoAnnotator:
         input_process = (
             ffmpeg
             .input(self.path)
+            # Scale
+            .filter('scale', self.scale*self.width, -1)
             # The crop is automatically centered if the x and y parameters are not used.
-            .filter('crop', out_w=in_width, out_h=in_height)
+            .filter('crop', out_w=in_width, out_h=in_height, x=self.crop_x, y=self.crop_y)
             # Full independence between color channels. The bee videos are basically a single color.
             # Otherwise normalizing the channels independently may not be a good choice.
             .filter('normalize', independence=1.0)
@@ -321,7 +310,7 @@ class VideoAnnotator:
                 # Turn the image tensor green at the masked locations.
                 display_frame[1].masked_fill_(mask_captures, 255.0)
 
-                cur_image = transforms.ToPILImage()(display_frame/255.0).convert('RGB')
+                cur_image = transforms.ToPILImage()(display_frame.cpu()/255.0).convert('RGB')
 
                 # Segment mask captures into bounding boxes.
                 #mask_pixels = [(i, j) for i in range(mask.size(2)) for j
@@ -495,6 +484,7 @@ with open(args.datalist, newline='') as datacsv:
         sampler = VideoAnnotator(
             video_labels=video_label, net=net, frame_interval=args.interval,
             frames_per_sample=args.frames_per_sample, out_width=args.width, out_height=args.height,
+            scale=args.scale, crop_x_offset=args.crop_x_offset, crop_y_offset=args.crop_y_offset,
             channels=args.dnn_channels, begin_frame=begin_frame, end_frame=end_frame,
             output_name=annotated_name)
 

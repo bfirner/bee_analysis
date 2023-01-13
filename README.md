@@ -38,7 +38,15 @@ directory as the dataprep step will be run.
 ### Process the csv into training and/or testing data.
 
 Next process that csv file with VidActRecDataprep.py. For example:
-> python3 VidActRecDataprep.py --width 400 --height 400 --resize-strategy crop --samples 500 --crop_noise 20 --out_channels 1 --frames_per_sample 1 dataset.csv dataset.tar
+> python3 VidActRecDataprep.py --width 400 --height 400 --samples 500 --crop_noise 20 --out_channels 1 --frames_per_sample 1 dataset.csv dataset.tar
+
+The video can also be scaled with the `--scale` option:
+> python3 VidActRecDataprep.py --width 200 --height 200 --scale 0.5 --samples 500 --crop_noise 20 --out_channels 1 --frames_per_sample 1 dataset.csv dataset.tar
+
+Cropping is done after scaling, so a width and height of 200 after scaling by 0.5 will cover the
+same pixels as a crop of 400 by 400 without any scaling. To shift the location of the training crop,
+use the `--crop_x_offset` and `--crop_y_offset` command line arguments.
+
 
 The `samples` value should be as large as is reasonable. If your data has little movement from one
 frame to the next then you should sample sparsely to avoid having redundant frames. However, if your
@@ -95,7 +103,7 @@ Annotation is done with the `VidActRecAnnotate.py` script.
 ~~~~
 python3 VidActRecAnnotate.py --datalist <csv used in dataprep> \
                              --resume_from <training checkpoint> \
-                             --modeltype <model type of checkpoint
+                             --modeltype <model type of checkpoint>
 ~~~~
 
 You can also specify the `--class_names` option to set strings for the class names.
