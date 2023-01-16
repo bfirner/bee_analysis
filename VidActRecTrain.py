@@ -435,8 +435,9 @@ if not args.no_train:
                 # The postprocessesing should include Softmax or similar if that is required for
                 # the network. Outputs of most classification networks are considered
                 # probabilities (but only take that in a very loose sense of the word) so
-                # rounding is appropriate.
-                classes = torch.round(nn_postprocess(out)).clamp(0, 1)
+                # rounding could be appropriate.
+                # classes = torch.round(nn_postprocess(out)).clamp(0, 1)
+                classes = nn_postprocess(out)
                 # Convert index labels to a one hot encoding for standard processing.
                 if convert_idx_to_classes:
                     labels = torch.nn.functional.one_hot(labels, num_classes=label_size)
@@ -510,7 +511,8 @@ if not args.no_train:
                         # the network. Outputs of most classification networks are considered
                         # probabilities (but only take that in a very loose sense of the word) so
                         # rounding is appropriate.
-                        classes = torch.round(nn_postprocess(out)).clamp(0, 1)
+                        # classes = torch.round(nn_postprocess(out)).clamp(0, 1)
+                        classes = nn_postprocess(out)
                         # Convert index labels to a one hot encoding for standard processing.
                         if convert_idx_to_classes:
                             labels = torch.nn.functional.one_hot(labels, num_classes=label_size)
@@ -607,11 +609,13 @@ if args.evaluate is not None:
                     # the network. Outputs of most classification networks are considered
                     # probabilities (but only take that in a very loose sense of the word) so
                     # rounding is appropriate.
-                    classes = torch.round(nn_postprocess(out)).clamp(0, 1)
+                    # classes = torch.round(nn_postprocess(out)).clamp(0, 1)
+                    classes = nn_postprocess(out)
                     # Convert index labels to a one hot encoding for standard processing.
                     if convert_idx_to_classes:
                         labels = torch.nn.functional.one_hot(labels, num_classes=label_size)
                     totals.update(predictions=classes, labels=labels)
+                    classes = torch.round(classes).clamp(0, 1)
                     # Log the predictions
                     for i in range(labels.size(0)):
                         logfile.write(','.join((metadata[i], str(out[i]), str(labels[i]))))

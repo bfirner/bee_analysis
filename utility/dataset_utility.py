@@ -3,6 +3,8 @@
 """
 Utility functions for dataloading with webdatasets.
 """
+import torch
+import webdataset as wds
 
 def getLabelSize(data_path, decode_strs, convert_idx_to_classes, label_index):
     """

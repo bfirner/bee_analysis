@@ -10,7 +10,7 @@ class ConfusionMatrix:
     """A confusion matrix with functions to extract evaluation statistics."""
     def __init__(self, size):
         """ Initialize a size by size confusion matrix.
-        
+
         Arguments:
             size         (int): The number of classes used in the evaluation.
         """
@@ -38,33 +38,34 @@ class ConfusionMatrix:
         """ Update the confusion matrix with a new set of predictions and labels.
 
         Arguments:
-            predictions (torch.tensor): batch by size by size predictions.
-            labels      (torch.tensor): batch by size by size labels.
+            predictions (torch.tensor): [batch, size] predictions.
+            labels      (torch.tensor): [batch, size] labels.
         """
+        # TODO FIXME Need to add two confusion matrices, one raw and one with a new column for low
+        # confidence (e.g. no prediction)
         self.prediction_count += labels.size(0)
-        for prediction, label in zip(predictions, labels):
-            if (prediction == label.to(prediction)).all():
-                self.correct_count += 1
+        prediction_indices = torch.argmax(predictions, 1)
+        for prediction_index, label in zip(prediction_indices, labels):
             false_negatives = []
             false_positives = []
             for cidx in range(label.size(0)):
-                if 1 == label[cidx] and 1 == prediction[cidx]:
-                    self.cmatrix[cidx][cidx] += 1
+                # If this is the correct label and the prediction
+                if 1 == label[cidx] and cidx == prediction_index:
+                    self.correct_count += 1
+                    self.cmatrix[cidx][prediction_index] += 1
                     self.true_positives[cidx] += 1
-                elif 1 == label[cidx] and 0 == prediction[cidx]:
+                # If this is the correct label but not the prediction
+                elif 1 == label[cidx] and cidx != prediction_index:
+                    self.cmatrix[cidx][prediction_index] += 1
                     false_negatives.append(cidx)
                     self.false_negatives[cidx] += 1
-                elif 0 == label[cidx] and 1 == prediction[cidx]:
+                # If this is the wrong label but was the prediction
+                elif 0 == label[cidx] and cidx == prediction_index:
                     false_positives.append(cidx)
                     self.false_positives[cidx] += 1
+                # Wrong label and not predicted
                 else:
                     self.true_negatives[cidx] += 1
-            if 0 < (len(false_negatives) * len(false_positives)):
-                # Split the blame for the false negatives across the false positives.
-                blame = 1./(len(false_positives)*len(false_negatives))
-                for fn in false_negatives:
-                    for fp in false_positives:
-                        self.cmatrix[fn][fp] += blame
 
     def accuracy(self):
         """Return the accuracy of predictions in this ConfusionMatrix.
