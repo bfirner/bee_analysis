@@ -13,7 +13,7 @@ mode. If you encounter it, the solution is to just disable determinism with --no
 # It only works with old versions of ffmpeg.
 import argparse
 import csv
-import datetime 
+import datetime
 import ffmpeg
 import heapq
 import io
@@ -29,6 +29,7 @@ from collections import namedtuple
 # Helper function to convert to images
 from torchvision import transforms
 
+from utility.dataset_utility import (getImageSize, getLabelSize)
 from utility.eval_utility import (ConfusionMatrix, MaxNode, MinNode, saveWorstN)
 
 from models.alexnet import AlexLikeNet
@@ -272,31 +273,10 @@ if "cls" != args.labels:
 else:
     label_offset = 1
 
-def getLabelSize(data_path, decode_strs, convert_idx_to_classes):
-    """
-    Arguments:
-        data_path   (str or list[str]): Path to webdataset tar file(s).
-        decode_strs (str): Decode string for dataset loading.
-        convert_idx_to_classes (bool): True to convert single index values to one hot labels.
-    Returns:
-        label_size  (int): The size of labels in the dataset.
-    """
-    # TODO Currently only set up to convert index labels to 3 class outputs. Need to add another
-    # program argument.
-    if convert_idx_to_classes:
-        return 3
-    # Check the size of the labels
-    test_dataset = (
-        wds.WebDataset(data_path)
-        .decode("l")
-        .to_tuple(*decode_strs)
-    )
-    test_dataloader = torch.utils.data.DataLoader(test_dataset, num_workers=0, batch_size=1)
-    dl_tuple = next(test_dataloader.__iter__())
-    return dl_tuple[label_index].size(1)
+
 
 print(f"Training with dataset {args.dataset}")
-label_size = getLabelSize(args.dataset, decode_strs, convert_idx_to_classes)
+label_size = getLabelSize(args.dataset, decode_strs, convert_idx_to_classes, label_index)
 
 # Decode the proper number of items for each sample from the dataloader
 # The field names are just being taken from the decode strings, but they cannot begin with a digit
@@ -314,6 +294,9 @@ dataset = (
     .decode("l")
     .to_tuple(*decode_strs)
 )
+
+image_size = getImageSize(args.dataset, decode_strs)
+print(f"Decoding images of size {image_size}")
 
 batch_size = 32
 dataloader = torch.utils.data.DataLoader(dataset, num_workers=0, batch_size=batch_size)
@@ -334,52 +317,52 @@ lr_scheduler = None
 # verified.
 use_amp = False
 if 'alexnet' == args.modeltype:
-    net = AlexLikeNet(in_dimensions=(in_frames, 400, 400), out_classes=label_size, linear_size=512).cuda()
+    net = AlexLikeNet(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size, linear_size=512).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-4)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[3,5,7], gamma=0.2)
     use_amp = True
 elif 'resnet18' == args.modeltype:
-    net = ResNet18(in_dimensions=(in_frames, 400, 400), out_classes=label_size, expanded_linear=True).cuda()
+    net = ResNet18(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size, expanded_linear=True).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-5)
 elif 'resnet34' == args.modeltype:
-    net = ResNet34(in_dimensions=(in_frames, 400, 400), out_classes=label_size, expanded_linear=True).cuda()
+    net = ResNet34(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size, expanded_linear=True).cuda()
     optimizer = torch.optim.Adam(net.parameters(), lr=10e-5)
 elif 'bennet' == args.modeltype:
-    net = BenNet(in_dimensions=(in_frames, 400, 400), out_classes=label_size).cuda()
+    net = BenNet(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size).cuda()
     optimizer = torch.optim.Adam(net.parameters(), lr=10e-5)
 elif 'resnext50' == args.modeltype:
-    net = ResNext50(in_dimensions=(in_frames, 400, 400), out_classes=label_size, expanded_linear=True).cuda()
+    net = ResNext50(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size, expanded_linear=True).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[1,2,3], gamma=0.1)
     batch_size = 64
 elif 'resnext34' == args.modeltype:
     # Learning parameters were tuned on a dataset with about 80,000 examples
-    net = ResNext34(in_dimensions=(in_frames, 400, 400), out_classes=label_size, expanded_linear=False,
+    net = ResNext34(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size, expanded_linear=False,
             use_dropout=False).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,9], gamma=0.2)
 elif 'resnext18' == args.modeltype:
     # Learning parameters were tuned on a dataset with about 80,000 examples
-    net = ResNext18(in_dimensions=(in_frames, 400, 400), out_classes=label_size, expanded_linear=True,
+    net = ResNext18(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size, expanded_linear=True,
             use_dropout=False).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,12], gamma=0.2)
 elif 'convnextxt' == args.modeltype:
-    net = ConvNextExtraTiny(in_dimensions=(in_frames, 400, 400), out_classes=label_size).cuda()
+    net = ConvNextExtraTiny(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-4, weight_decay=10e-4, momentum=0.9,
             nesterov=True)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[4,5,12], gamma=0.2)
     use_amp = True
 elif 'convnextt' == args.modeltype:
-    net = ConvNextTiny(in_dimensions=(in_frames, 400, 400), out_classes=label_size).cuda()
+    net = ConvNextTiny(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,12], gamma=0.2)
 elif 'convnexts' == args.modeltype:
-    net = ConvNextSmall(in_dimensions=(in_frames, 400, 400), out_classes=label_size).cuda()
+    net = ConvNextSmall(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,12], gamma=0.2)
 elif 'convnextb' == args.modeltype:
-    net = ConvNextBase(in_dimensions=(in_frames, 400, 400), out_classes=label_size).cuda()
+    net = ConvNextBase(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,12], gamma=0.2)
 print(f"Model is {net}")
@@ -416,9 +399,9 @@ if not args.no_train:
         print(f"Starting epoch {epoch}")
         for batch_num, dl_tuple in enumerate(dataloader):
             dateNow = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-            if ( (batch_num % 1000) == 1): 
+            if ( (batch_num % 1000) == 1):
                 print ("Log: at tuple %d at %s" % (batch_num,dateNow))
-                
+
             optimizer.zero_grad()
             # For debugging purposes
             # img = transforms.ToPILImage()(dl_tuple[0][0]).convert('RGB')

@@ -35,6 +35,7 @@ from models.resnet import (ResNet18, ResNet34)
 from models.resnext import (ResNext18, ResNext34, ResNext50)
 from models.convnext import (ConvNextExtraTiny, ConvNextTiny, ConvNextSmall, ConvNextBase)
 
+from utility.dataset_utility import (getImageSize, getLabelSize)
 from utility.video_utility import (getVideoInfo, vidSamplingCommonCrop)
 
 def commandOutput(command):
@@ -107,7 +108,7 @@ parser.add_argument(
     required=False,
     choices=[1, 3],
     default=1,
-    help='Channels fed to the DNN.')
+    help='Channels feed to the DNN.')
 parser.add_argument(
     '--label_classes',
     type=int,
@@ -302,7 +303,9 @@ class VideoAnnotator:
                 if 1 == self.frames_per_sample:
                     image_input = sample_frames[0]
                 else:
-                    image_input = torch.cat(sample_frames)
+                    # Concatenate along the channel dimension since the first dimension will be
+                    # treated as the batch size.
+                    image_input = torch.cat(sample_frames, 1)
 
                 # Get the label for this frame. Multiframe inputs have the label of the newest frame.
                 label = self.video_labels.getLabel(frame)
@@ -379,33 +382,35 @@ class VideoAnnotator:
         output_process.wait()
 
 
+image_size = (args.dnn_channels * args.frames_per_sample, args.height, args.width)
+
 # Model setup stuff
 if 'alexnet' == args.modeltype:
-    net = AlexLikeNet(in_dimensions=(args.dnn_channels, 400, 400), out_classes=args.label_classes, linear_size=512).cuda()
+    net = AlexLikeNet(in_dimensions=image_size, out_classes=args.label_classes, linear_size=512).cuda()
 elif 'resnet18' == args.modeltype:
-    net = ResNet18(in_dimensions=(args.dnn_channels, 400, 400), out_classes=args.label_classes, expanded_linear=True).cuda()
+    net = ResNet18(in_dimensions=image_size, out_classes=args.label_classes, expanded_linear=True).cuda()
 elif 'resnet34' == args.modeltype:
-    net = ResNet34(in_dimensions=(args.dnn_channels, 400, 400), out_classes=args.label_classes, expanded_linear=True).cuda()
+    net = ResNet34(in_dimensions=image_size, out_classes=args.label_classes, expanded_linear=True).cuda()
 elif 'bennet' == args.modeltype:
-    net = BenNet(in_dimensions=(args.dnn_channels, 400, 400), out_classes=args.label_classes).cuda()
+    net = BenNet(in_dimensions=image_size, out_classes=args.label_classes).cuda()
 elif 'resnext50' == args.modeltype:
-    net = ResNext50(in_dimensions=(args.dnn_channels, 400, 400), out_classes=args.label_classes, expanded_linear=True).cuda()
+    net = ResNext50(in_dimensions=image_size, out_classes=args.label_classes, expanded_linear=True).cuda()
 elif 'resnext34' == args.modeltype:
     # Learning parameters were tuned on a dataset with about 80,000 examples
-    net = ResNext34(in_dimensions=(args.dnn_channels, 400, 400), out_classes=args.label_classes, expanded_linear=False,
+    net = ResNext34(in_dimensions=image_size, out_classes=args.label_classes, expanded_linear=False,
             use_dropout=False).cuda()
 elif 'resnext18' == args.modeltype:
     # Learning parameters were tuned on a dataset with about 80,000 examples
-    net = ResNext18(in_dimensions=(args.dnn_channels, 400, 400), out_classes=args.label_classes, expanded_linear=True,
+    net = ResNext18(in_dimensions=image_size, out_classes=args.label_classes, expanded_linear=True,
             use_dropout=False).cuda()
 elif 'convnextxt' == args.modeltype:
-    net = ConvNextExtraTiny(in_dimensions=(args.dnn_channels, 400, 400), out_classes=args.label_classes).cuda()
+    net = ConvNextExtraTiny(in_dimensions=image_size, out_classes=args.label_classes).cuda()
 elif 'convnextt' == args.modeltype:
-    net = ConvNextTiny(in_dimensions=(args.dnn_channels, 400, 400), out_classes=args.label_classes).cuda()
+    net = ConvNextTiny(in_dimensions=image_size, out_classes=args.label_classes).cuda()
 elif 'convnexts' == args.modeltype:
-    net = ConvNextSmall(in_dimensions=(args.dnn_channels, 400, 400), out_classes=args.label_classes).cuda()
+    net = ConvNextSmall(in_dimensions=image_size, out_classes=args.label_classes).cuda()
 elif 'convnextb' == args.modeltype:
-    net = ConvNextBase(in_dimensions=(args.dnn_channels, 400, 400), out_classes=args.label_classes).cuda()
+    net = ConvNextBase(in_dimensions=image_size, out_classes=args.label_classes).cuda()
 print(f"Model is {net}")
 
 # See if the model weights can be restored.
@@ -472,8 +477,11 @@ args.class_names = ["none"] + args.class_names
 
 # Make sure that each label value has a string
 for i in range(args.label_classes):
-    if len(args.class_names) <= i:
-        args.class_names.push(str(i+1))
+    # There should be one more class name than labels because we inserted a "none" class at the 0
+    # index position.
+    if len(args.class_names)-1 <= i:
+        # If this is label 0 then name it 'class 1', and so on
+        args.class_names.append(f"class {i+1}")
 
 with open(args.datalist, newline='') as datacsv:
     conf_reader = csv.reader(datacsv)
