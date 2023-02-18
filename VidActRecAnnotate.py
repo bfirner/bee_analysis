@@ -141,8 +141,25 @@ parser.add_argument(
     choices=["alexnet", "resnet18", "resnet34", "bennet", "resnext50", "resnext34", "resnext18",
     "convnextxt", "convnextt", "convnexts", "convnextb"],
     help="Model to use for training.")
+parser.add_argument(
+    '--loss_fun',
+    required=False,
+    default='CrossEntropyLoss',
+    choices=['NLLLoss', 'BCEWithLogitsLoss', 'CrossEntropyLoss', 'L1Loss', 'MSELoss', 'BCELoss'],
+    type=str,
+    help="Loss function to use during training.")
 
 args = parser.parse_args()
+
+# Network outputs may need to be postprocessed for evaluation if some postprocessing is being done
+# automatically by the loss function.
+if 'CrossEntropyLoss' == args.loss_fun:
+    nn_postprocess = torch.nn.Softmax(dim=1)
+elif 'BCEWithLogitsLoss' == args.loss_fun:
+    nn_postprocess = torch.nn.Sigmoid()
+else:
+    # Otherwise just use an identify function.
+    nn_postprocess = lambda x: x
 
 # these next clauses are for scripts so that we have a log of what was called on what machine and when.
 python_log =  commandOutput("which python3")
@@ -237,10 +254,6 @@ class VideoAnnotator:
             font = ImageFont.truetype(font="DejaVuSans.ttf", size=14)
         except OSError:
             font = ImageFont.load_default()
-
-        # All of the DNNs that are being trained used cross entropy loss and should be postprocessed
-        # with a softmax.
-        nn_postprocess = torch.nn.Softmax(dim=1)
 
         # Begin the video input process from ffmpeg.
         input_process = (
