@@ -116,6 +116,13 @@ parser.add_argument(
     required=False,
     default=1,
     help='Number of thread workers')
+parser.add_argument(
+    '--background_subtraction',
+    type=str,
+    required=False,
+    choices=['none', 'mog2', 'knn'],
+    default='none',
+    help='Background subtraction algorithm to apply to the input video, or none.')
 
 args = parser.parse_args()
 
@@ -123,7 +130,8 @@ class VideoSampler:
 
     def __init__(self, video_path, num_samples, frames_per_sample, frame_interval,
             out_width=None, out_height=None, crop_noise=0, scale=1.0, crop_x_offset=0,
-             crop_y_offset=0, channels=3, begin_frame=None, end_frame=None):
+             crop_y_offset=0, channels=3, begin_frame=None, end_frame=None,
+             bg_subtract='none'):
         """
         Samples have no overlaps. For example, a 10 second video at 30fps has 300 samples of 1
         frame, 150 samples of 2 frames with a frame interval of 0, or 100 samples of 2 frames with a
@@ -142,6 +150,7 @@ class VideoSampler:
             channels      (int): Numbers of channels (3 for RGB or 1 luminance/Y/grayscale/whatever)
             begin_frame   (int): First frame to possibly sample.
             end_frame     (int): Final frame to possibly sample.
+            bg_subtract   (str): Type of background subtraction to use (mog2 or knn), or none.
         """
         self.path = video_path
         self.num_samples = num_samples
@@ -149,6 +158,17 @@ class VideoSampler:
         self.frame_interval = frame_interval
         self.channels = channels
         self.scale = scale
+
+        # Background subtraction will require openCV if requested.
+        self.bg_subtractor = None
+        if ('none' != bg_subtract):
+            from cv2 import (createBackgroundSubtractorMOG2,
+                             createBackgroundSubtractorKNN)
+            if 'mog2' == bg_subtract:
+                self.bg_subtractor = createBackgroundSubtractorMOG2()
+            elif 'knn' == bg_subtract:
+                self.bg_subtractor = createBackgroundSubtractorKNN()
+
         print(f"Processing {video_path}")
         # Probe the video to find out some metainformation
 
@@ -212,6 +232,35 @@ class VideoSampler:
             pix_fmt='gray'
         in_width = self.out_width + 2 * self.crop_noise
         in_height = self.out_height + 2 * self.crop_noise
+
+        # Initialize the background subtractor
+        if (self.bg_subtractor is not None):
+            from cv2 import (bitwise_and)
+            # Read in a few hundred frames
+            process1 = (
+                ffmpeg
+                .input(self.path)
+                # 400 is the default window for background subtractors
+                .trim(start_frame=1, end_frame=400)
+                # Scale
+                .filter('scale', self.scale*self.width, -1)
+                # The crop is automatically centered if the x and y parameters are not used.
+                .filter('crop', out_w=in_width, out_h=in_height, x=self.crop_x, y=self.crop_y)
+                # Full independence between color channels. The bee videos are basically a single color.
+                # Otherwise normalizing the channels independently may not be a good choice.
+                .filter('normalize', independence=1.0)
+                #.filter('reverse')
+                # YUV444p is the alternative to rgb24, but the pretrained network expects rgb images.
+                #.output('pipe:', format='rawvideo', pix_fmt='yuv444p')
+                .output('pipe:', format='rawvideo', pix_fmt=pix_fmt)
+                .run_async(pipe_stdout=True, quiet=True)
+            )
+            in_bytes = process1.stdout.read(in_width * in_height * self.channels)
+            if in_bytes:
+                # Convert to numpy and feed to the background subtraction algorithm
+                np_frame = numpy.frombuffer(in_bytes, numpy.uint8)
+                fgMask = self.bg_subtractor.apply(np_frame)
+
         process1 = (
             ffmpeg
             .input(self.path)
@@ -244,6 +293,19 @@ class VideoSampler:
                 while len(partial_sample) < self.frames_per_sample:
                     in_bytes = process1.stdout.read(in_width * in_height * self.channels)
                     if in_bytes:
+                        # Numpy frame conversion either happens during background subtraction or
+                        # later during sampling
+                        np_frame = None
+                        # Apply background subtraction if requested
+                        if self.bg_subtractor is not None:
+                            # Convert to numpy
+                            np_frame = numpy.frombuffer(in_bytes, numpy.uint8)
+                            fgMask = self.bg_subtractor.apply(np_frame)
+                            # Curious use of a bitwise and involving the image and itself. Could use
+                            # a masked select instead.
+                            masked = bitwise_and(np_frame, np_frame, mask=fgMask)
+                            np_frame = masked.clip(max=255).astype(numpy.uint8)
+
                         # Check if this frame will be sampled.
                         # The sample number is from the list of available samples, starting from 0. Add the
                         # begin frame to get the actual desired frame number.
@@ -253,7 +315,8 @@ class VideoSampler:
                             (sample_in_progress and (frame - target_frame) %
                             (self.frame_interval + 1) == 0))):
                             # Convert to numpy, and then to torch.
-                            np_frame = numpy.frombuffer(in_bytes, numpy.uint8)
+                            if np_frame is None:
+                                np_frame = numpy.frombuffer(in_bytes, numpy.uint8)
                             in_frame = torch.tensor(data=np_frame, dtype=torch.uint8,
                                 ).reshape([1, in_height, in_width, self.channels])
                             # Apply the random crop
@@ -306,7 +369,8 @@ with open(args.datalist, newline='') as datacsv:
                 frame_interval=args.interval, out_width=args.width, out_height=args.height,
                 crop_noise=args.crop_noise, scale=args.scale, crop_x_offset=args.crop_x_offset,
                 crop_y_offset=args.crop_y_offset, channels=args.out_channels,
-                begin_frame=row[beginf_col], end_frame=row[endf_col])
+                begin_frame=row[beginf_col], end_frame=row[endf_col],
+                bg_subtract=args.background_subtraction)
             for sample_num, frame_data in enumerate(sampler):
                 frame, video_path, frame_num = frame_data
                 base_name = os.path.basename(video_path).replace(' ', '_').replace('.', '_')
