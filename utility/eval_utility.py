@@ -29,7 +29,10 @@ class ConfusionMatrix:
         self.correct_count = 0
 
     def __str__(self):
-        return str(self.cmatrix)
+        out_str = ""
+        for row in range(len(self.cmatrix)):
+            out_str += f"label {row}:" + str(self.cmatrix[row]) + "\n"
+        return out_str
 
     def __getitem__(self, key):
         return self.cmatrix[key]
