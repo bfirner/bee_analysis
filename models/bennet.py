@@ -247,3 +247,24 @@ class BenNet(nn.Module):
 
         x = self.classifier(x)
         return x, mask
+
+class TinyBenNet(BenNet):
+    """A version of the network for tiny images, like MNIST."""
+
+
+    def initializeSizes(self):
+        """
+        Override this function to change internal layer parameters.
+        """
+        self.channels = (self.in_dimensions[0], 48, 72, 96, 128)
+        # The first layer quickly reduces the size of feature maps.
+        # The stride of 2 is used whenever the feature map size doubles to keep computation roughly
+        # the same.
+        self.kernels = (3, 3, 3, 3)
+        self.strides = (2, 2, 1, 1)
+        self.padding = (1, 1, 1, 1)
+        self.non_res_layers = 2
+        # The sizes of the consecutive 3x3 convolutions in the residual layers are equivalent to a
+        # 5x5 convolution
+        self.vis_mask_sizes = (5, 5, 3, 3)
+        assert(len(self.kernels) == len(self.strides) == len(self.padding) == len(self.vis_mask_sizes))
