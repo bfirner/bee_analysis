@@ -14,8 +14,9 @@
 
 #SBATCH --output=LOG_FILE
 
-# You can use this if your python environment is not set up properly
-export PATH=/koko/system/anaconda/envs/python39/bin:$PATH
+# This doesn't have webdataset installed
+#export PATH=/koko/system/anaconda/envs/python39/bin:$PATH
+export PATH=/koko/system/anaconda/envs/python38/bin:$PATH
 echo start-is: `date`
 
 cd BIN_PATH
