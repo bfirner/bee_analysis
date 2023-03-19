@@ -18,6 +18,7 @@
 #SBATCH --array=1-MAX_FOLD
 #SBATCH --output=LOG_FILE.%A_%a
 
+# You can use this if your python environment is not set up properly
 export PATH=/koko/system/anaconda/envs/python39/bin:$PATH
 echo start-is: `date`
 
@@ -37,11 +38,12 @@ for I in `seq $((${SLURM_ARRAY_TASK_ID}+1)) MAX_FOLD`; do
 done
 
 # Train
-succ=$(python3 VidActRecTrain.py --epochs 10 --template bees \
+python3 VidActRecTrain.py --epochs 10 --template bees \
     --outname CHECKPOINT.${SLURM_ARRAY_TASK_ID} \
     --not_deterministic \
     --save_worst_n 100 \
-    --evaluate $evaldata $traindata)
+    --evaluate $evaldata $traindata
+succ=$?
 
 echo end-is: `date`
 

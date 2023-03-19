@@ -166,10 +166,13 @@ mkdir -p "${wfname}"
 wfpath=$(realpath "${wfname}")
 cd "${wfpath}"
 # Remove anything in the directory that could disturb the workflow
-if [[ -e "*.success" ]]; then
+# TODO Nothing is using these files yet, but they could be useful in the future.
+statfiles=(/*.success)
+if [[ -f ${statfiles[0]} ]]; then
     rm *.success
 fi
-if [[ -e "*.failure" ]]; then
+statfiles=(/*.failure)
+if [[ -f ${statfiles[0]} ]]; then
     rm *.failure
 fi
 

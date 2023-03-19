@@ -14,17 +14,19 @@
 
 #SBATCH --output=LOG_FILE
 
+# You can use this if your python environment is not set up properly
 export PATH=/koko/system/anaconda/envs/python39/bin:$PATH
 echo start-is: `date`
 
 cd BIN_PATH
 
 # Train
-succ=$(python3 VidActRecTrain.py --epochs 10 --template bees \
+python3 VidActRecTrain.py --epochs 10 --template bees \
     --outname CHECKPOINT \
     --not_deterministic \
     --save_worst_n 100 \
-    --evaluate EVAL_PATH TRAIN_PATH)
+    --evaluate EVAL_PATH TRAIN_PATH
+succ=$?
 
 echo end-is: `date`
 
