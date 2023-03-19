@@ -1,8 +1,11 @@
 #! /bin/bash
 
+# (c) 2021-2023 Bernhard Firner.
+# See the LICENSE file for more information
+
 # Create a train.csv file for a video dataset.
 # csv columns are:
-#     file, label, begin, end
+#     file, label, begin frame, end frame
 # The 'begin' and 'end' columns are in frames.
 
 # The target directory

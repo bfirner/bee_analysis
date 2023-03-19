@@ -14,7 +14,6 @@ mode. If you encounter it, the solution is to just disable determinism with --no
 import argparse
 import csv
 import datetime
-import ffmpeg
 import heapq
 import io
 import math
