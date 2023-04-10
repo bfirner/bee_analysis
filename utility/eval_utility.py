@@ -3,6 +3,8 @@
 """
 Utility functions and classes for evaluating model performance.
 """
+import heapq
+import os
 import torch
 from torchvision import transforms
 
@@ -146,3 +148,54 @@ def saveWorstN(worstn, worstn_path, classname):
             # Save the mask
             mask_img = transforms.ToPILImage()(node.mask.data).convert('L')
             mask_img.save(f"{worstn_path}/class-{classname}_time-{timestamp}_score-{node.score}_mask.png")
+
+class WorstExamples:
+    """Class to store the worst (or best) examples during training or validation."""
+
+    def __init__(self, path, class_names, num_to_save):
+        """
+
+        Arguments:
+            path (str): Path to save outputs.
+        """
+        self.worstn_path = path
+        # Create the directory if it does not exist
+        try:
+            os.mkdir(self.worstn_path)
+        except FileExistsError:
+            pass
+        # Save worst examples for each of the classes.
+        self.worstn = [[] for i in range(len(class_names))]
+        self.n = num_to_save
+        self.class_names = class_names
+
+    def test(self, label, nn_output, image, metadata):
+        """Test and possibly insert a new example.
+
+        Arguments:
+            label       (int): Desired model class output
+            nn_output (float): Model output for this class
+            image    (tensor): Image for this example
+            metadata   (dict): Metadata for this example
+        """
+        # Insert into an empty heap or replace the smallest value and
+        # heapify. The smallest value is in the first position.
+
+        # If there are empty slots then just insert.
+        if len(self.worstn[label]) < self.n:
+            heapq.heappush(self.worstn[label], MinNode(nn_output, image, metadata, None))
+        # Otherwise check to see if this should be inserted
+        elif nn_output < self.worstn[label][0].score:
+            heapq.heapreplace(self.worstn[label], MinNode(nn_output, image, metadata, None))
+
+
+    def save(self, epoch):
+        """Save worst examples for an epoch and then clear current results."""
+        worstn_path_epoch = os.path.join(self.worstn_path, f"epoch_{epoch}")
+        # Create the directory if it does not exist
+        try:
+            os.mkdir(worstn_path_epoch)
+        except FileExistsError:
+            pass
+        for i, classname in enumerate(self.class_names):
+            saveWorstN(worstn=self.worstn[i], worstn_path=worstn_path_epoch, classname=classname)

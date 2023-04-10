@@ -14,6 +14,7 @@ mode. If you encounter it, the solution is to just disable determinism with --no
 import argparse
 import csv
 import datetime
+import functools
 import heapq
 import io
 import math
@@ -29,7 +30,8 @@ from collections import namedtuple
 from torchvision import transforms
 
 from utility.dataset_utility import (getImageSize, getLabelSize)
-from utility.eval_utility import (ConfusionMatrix, MaxNode, MinNode, saveWorstN)
+from utility.eval_utility import (ConfusionMatrix, WorstExamples)
+from utility.model_utilty import (restoreModelAndState)
 
 from models.alexnet import AlexLikeNet
 from models.bennet import BenNet
@@ -213,7 +215,7 @@ for theArg in sys.argv :
     print(theArg + " ",end='')
 print(" ")
 
-print("Log: Started: ",date_log) 
+print("Log: Started: ",date_log)
 print("Log: Machine: ",machine_log)
 print("Log: Python_version: ",python_log)
 
@@ -238,6 +240,8 @@ if args.template is not None:
         if '--loss_fun' not in sys.argv:
             args.loss_fun = 'BCEWithLogitsLoss'
 
+# Convert the numeric input to a bool
+convert_idx_to_classes = args.convert_idx_to_classes == 1
 
 # Network outputs may need to be postprocessed for evaluation if some postprocessing is being done
 # automatically by the loss function.
@@ -249,8 +253,7 @@ else:
     # Otherwise just use an identify function.
     nn_postprocess = lambda x: x
 
-# Convert the numeric input to a bool
-convert_idx_to_classes = args.convert_idx_to_classes == 1
+
 loss_fn = getattr(torch.nn, args.loss_fun)()
 
 in_frames = args.sample_frames
@@ -309,8 +312,6 @@ if args.evaluate:
     eval_dataloader = torch.utils.data.DataLoader(eval_dataset, num_workers=0, batch_size=batch_size)
 
 
-# Hard coding the Alexnet like network for now.
-# TODO Also hard coding the input and output sizes
 lr_scheduler = None
 # AMP doesn't seem to like all of the different model types, so disable it unless it has been
 # verified.
@@ -368,31 +369,23 @@ print(f"Model is {net}")
 
 # See if the model weights and optimizer state should be restored.
 if args.resume_from is not None:
-    checkpoint = torch.load(args.resume_from)
-    net.load_state_dict(checkpoint["model_dict"])
-    optimizer.load_state_dict(checkpoint["optim_dict"])
-    # Also restore the RNG states
-    random.setstate(checkpoint["py_random_state"])
-    numpy.random.set_state(checkpoint["np_random_state"])
-    torch.set_rng_state(checkpoint["torch_rng_state"])
+    restoreModelAndState(args.resume_from, net, optimizer)
 
 # Gradient scaler for mixed precision training
 if use_amp:
     scaler = torch.cuda.amp.GradScaler()
 
+# TODO(bfirner) Read class names from something
+class_names = []
+for i in range(label_size):
+    class_names.append(f"{i}")
+
 if not args.no_train:
     if args.save_worst_n is not None:
-        worstn_path = args.outname.split('.')[0] + "-worstN-train"
-        # Create the directory if it does not exist
-        try:
-            os.mkdir(worstn_path)
-        except FileExistsError:
-            pass
-        print(f"Saving {args.save_worst_n} highest error training images to {worstn_path}.")
+        worst_training = WorstExamples(
+            args.outname.split('.')[0] + "-worstN-train", class_names, args.save_worst_n)
+        print(f"Saving {args.save_worst_n} highest error training images to {worst_training.worstn_path}.")
     for epoch in range(args.epochs):
-        if args.save_worst_n is not None:
-            # Save worst examples for each of the classes.
-            worstn = [[], [], []]
         # Make a confusion matrix
         totals = ConfusionMatrix(size=label_size)
         print(f"Starting epoch {epoch}")
@@ -429,36 +422,30 @@ if not args.no_train:
             else:
                 out, loss = updateWithoutScaler(net, net_input, labels, optimizer)
 
-            # Fill in the confusion matrix
+            # Fill in the confusion matrix and worst examples.
             with torch.no_grad():
                 # The postprocessesing should include Softmax or similar if that is required for
                 # the network. Outputs of most classification networks are considered
                 # probabilities (but only take that in a very loose sense of the word) so
                 # rounding could be appropriate.
-                # classes = torch.round(nn_postprocess(out)).clamp(0, 1)
                 classes = nn_postprocess(out)
                 # Convert index labels to a one hot encoding for standard processing.
                 if convert_idx_to_classes:
                     labels = torch.nn.functional.one_hot(labels, num_classes=label_size)
                 totals.update(predictions=classes, labels=labels)
-                if args.save_worst_n is not None:
+                if worst_training is not None:
                     if args.skip_metadata:
                         metadata = [""] * labels.size(0)
                     else:
                         metadata = dl_tuple[metadata_index]
+                    # For each item in the batch see if it requires an update to the worst examples
+                    # If the DNN should have predicted this image was a member of the labelled class
+                    # then see if this image should be inserted into the worst_n queue for the
+                    # labelled class based upon the DNN output for this class.
+                    input_images = dl_tuple[0]
                     for i in range(labels.size(0)):
-                        for j in range(labels.size(1)):
-                            # If the DNN should have predicted this image was a member of class j
-                            # then see if this image should be inserted into the worst_n queue for
-                            # class j based upon the DNN output for this class.
-                            input_images = dl_tuple[0]
-                            if 1 == labels[i][j]:
-                                # Insert into an empty heap or replace the smallest value and
-                                # heapify. The smallest value is in the first position.
-                                if len(worstn[j]) < args.save_worst_n:
-                                    heapq.heappush(worstn[j], MinNode(out[i][j].item(), input_images[i], metadata[i], None))
-                                elif out[i][j] < worstn[j][0].score:
-                                    heapq.heapreplace(worstn[j], MinNode(out[i][j].item(), input_images[i], metadata[i], None))
+                        label = torch.argwhere(labels[i])[0].item()
+                        worst_training.test(label, out[i][label].item(), input_images[i], metadata[i])
         print(f"Finished epoch {epoch}, last loss was {loss}")
         print(f"Training confusion matrix:")
         print(totals)
@@ -468,15 +455,8 @@ if not args.no_train:
             if 0 < sum(totals[cidx]):
                 precision, recall = totals.calculateRecallPrecision(cidx)
                 print(f"Class {cidx} precision={precision}, recall={recall}")
-        if args.save_worst_n is not None:
-            worstn_path_epoch = os.path.join(worstn_path, f"epoch_{epoch}")
-            # Create the directory if it does not exist
-            try:
-                os.mkdir(worstn_path_epoch)
-            except FileExistsError:
-                pass
-            for j in range(label_size):
-                saveWorstN(worstn=worstn[j], worstn_path=worstn_path_epoch, classname=f"{j}")
+        if worst_training is not None:
+            worst_training.save(epoch)
         # Validation set
         if args.evaluate is not None:
             net.eval()
