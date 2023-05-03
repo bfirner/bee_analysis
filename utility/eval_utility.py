@@ -152,11 +152,14 @@ def saveWorstN(worstn, worstn_path, classname):
 class WorstExamples:
     """Class to store the worst (or best) examples during training or validation."""
 
-    def __init__(self, path, class_names, num_to_save):
+    def __init__(self, path, class_names, num_to_save, worst_mode = True):
         """
 
         Arguments:
             path (str): Path to save outputs.
+            class_names ([str]):
+            num_to_save (int):
+            worst_mode (bool): True to save the worst examples, false to save the best.
         """
         self.worstn_path = path
         # Create the directory if it does not exist
@@ -168,8 +171,31 @@ class WorstExamples:
         self.worstn = [[] for i in range(len(class_names))]
         self.n = num_to_save
         self.class_names = class_names
+        if worst_mode:
+            self.test = self.less_than_test
+        else:
+            self.test = self.greater_than_test
 
-    def test(self, label, nn_output, image, metadata):
+    def less_than_test(self, label, nn_output, image, metadata):
+        """Test and possibly insert a new example.
+
+        Arguments:
+            label       (int): Desired model class output
+            nn_output (float): Model output for this class
+            image    (tensor): Image for this example
+            metadata   (dict): Metadata for this example
+        """
+        # Insert into an empty heap or replace the smallest value and
+        # heapify. The smallest value is in the first position.
+
+        # If there are empty slots then just insert.
+        if len(self.worstn[label]) < self.n:
+            heapq.heappush(self.worstn[label], MaxNode(nn_output, image, metadata, None))
+        # Otherwise check to see if this should be inserted
+        elif nn_output < self.worstn[label][0].score:
+            heapq.heapreplace(self.worstn[label], MaxNode(nn_output, image, metadata, None))
+
+    def greater_than_test(self, label, nn_output, image, metadata):
         """Test and possibly insert a new example.
 
         Arguments:
@@ -185,9 +211,8 @@ class WorstExamples:
         if len(self.worstn[label]) < self.n:
             heapq.heappush(self.worstn[label], MinNode(nn_output, image, metadata, None))
         # Otherwise check to see if this should be inserted
-        elif nn_output < self.worstn[label][0].score:
+        elif nn_output > self.worstn[label][0].score:
             heapq.heapreplace(self.worstn[label], MinNode(nn_output, image, metadata, None))
-
 
     def save(self, epoch):
         """Save worst examples for an epoch and then clear current results."""

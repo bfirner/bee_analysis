@@ -31,7 +31,7 @@ from torchvision import transforms
 
 from utility.dataset_utility import (getImageSize, getLabelSize)
 from utility.eval_utility import (ConfusionMatrix, WorstExamples)
-from utility.model_utilty import (restoreModelAndState)
+from utility.model_utility import (restoreModelAndState)
 
 from models.alexnet import AlexLikeNet
 from models.bennet import BenNet
@@ -522,25 +522,14 @@ if not args.no_train:
 if args.evaluate is not None:
     print("Evaluating model.")
     if args.save_top_n is not None:
-        topn_path = args.outname.split('.')[0] + "-topN"
-        # Create the directory if it does not exist
-        try:
-            os.mkdir(topn_path)
-        except FileExistsError:
-            pass
-        print(f"Saving {args.save_top_n} highest confidence images to {topn_path}.")
-        # Save tuples of (class score, tensor)
-        topn = [[], [], []]
+        top_eval = WorstExamples(
+            args.outname.split('.')[0] + "-topN-eval", class_names, args.save_top_n,
+            worst_mode=False)
+        print(f"Saving {args.save_top_n} highest error evaluation images to {top_eval.worstn_path}.")
     if args.save_worst_n is not None:
-        worstn_path = args.outname.split('.')[0] + "-worstN"
-        # Create the directory if it does not exist
-        try:
-            os.mkdir(worstn_path)
-        except FileExistsError:
-            pass
-        print(f"Saving {args.save_worst_n} lowest confidence images to {worstn_path}.")
-        # Save tuples of (class score, tensor)
-        worstn = [[], [], []]
+        worst_eval = WorstExamples(
+            args.outname.split('.')[0] + "-worstN-eval", class_names, args.save_worst_n)
+        print(f"Saving {args.save_worst_n} highest error evaluation images to {worst_eval.worstn_path}.")
 
     net.eval()
     with torch.no_grad():
@@ -599,40 +588,24 @@ if args.evaluate is not None:
                     for i in range(labels.size(0)):
                         logfile.write(','.join((metadata[i], str(out[i]), str(labels[i]))))
                         logfile.write('\n')
-                    if args.save_top_n is not None:
+                    if worst_eval is not None or top_eval is not None:
+                        # For each item in the batch see if it requires an update to the worst examples
+                        # If the DNN should have predicted this image was a member of the labelled class
+                        # then see if this image should be inserted into the worst_n queue for the
+                        # labelled class based upon the DNN output for this class.
+                        input_images = dl_tuple[0]
                         for i in range(labels.size(0)):
-                            for j in range(label_size):
-                                # If the DNN should have predicted this image was a member of class j
-                                # then see if this image should be inserted into the worst_n queue for
-                                # class j based upon the DNN output for this class.
-                                if j == classes[i].item() and 1 == labels[i][j]:
-                                    # Insert into an empty heap or replace the smallest value and
-                                    # heapify. The smallest value is in the first position.
-                                    if len(topn[j]) < args.save_top_n:
-                                        heapq.heappush(topn[j], MaxNode(out[i][j].item(), dl_tuple[0][i], metadata[i], mask[i]))
-                                    elif out[i][j] > topn[j][0].score:
-                                        heapq.heapreplace(topn[j], MaxNode(out[i][j].item(), dl_tuple[0][i], metadata[i], mask[i]))
-                    if args.save_worst_n is not None:
-                        for i in range(labels.size(0)):
-                            for j in range(label_size):
-                                # If the DNN should have predicted this image was a member of class j
-                                # then see if this image should be inserted into the worst_n queue for
-                                # class j based upon the DNN output for this class.
-                                if 1 == labels[i][j]:
-                                    # Insert into an empty heap or replace the smallest value and
-                                    # heapify. The smallest value is in the first position.
-                                    if len(worstn[j]) < args.save_worst_n:
-                                        heapq.heappush(worstn[j], MinNode(out[i][j].item(), dl_tuple[0][i], metadata[i], mask[i]))
-                                    elif out[i][j] < worstn[j][0].score:
-                                        heapq.heapreplace(worstn[j], MinNode(out[i][j].item(), dl_tuple[0][i], metadata[i], mask[i]))
+                            label = torch.argwhere(labels[i])[0].item()
+                            if worst_eval is not None:
+                                worst_eval.test(label, out[i][label].item(), input_images[i], metadata[i])
+                            if top_eval is not None:
+                                top_eval.test(label, out[i][label].item(), input_images[i], metadata[i])
 
-        # The heap has tuples of (class score, tensor)
-        if args.save_top_n is not None:
-            for j in range(label_size):
-                saveWorstN(worstn=topn[j], worstn_path=topn_path, classname=f"{j}")
-        if args.save_worst_n is not None:
-            for j in range(label_size):
-                saveWorstN(worstn=worstn[j], worstn_path=worstn_path, classname=f"{j}")
+        # Save the worst and best examples
+        if worst_eval is not None:
+            worst_eval.save("evaluation")
+        if top_eval is not None:
+            top_eval.save("evaluation")
 
         # Print evaluation information
         print(f"Evaluation confusion matrix:")
