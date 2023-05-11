@@ -381,6 +381,7 @@ for i in range(label_size):
     class_names.append(f"{i}")
 
 if not args.no_train:
+    worst_training = None
     if args.save_worst_n is not None:
         worst_training = WorstExamples(
             args.outname.split('.')[0] + "-worstN-train", class_names, args.save_worst_n)
@@ -520,6 +521,8 @@ if not args.no_train:
 
 # Post-training evaluation
 if args.evaluate is not None:
+    top_eval = None
+    worst_eval = None
     print("Evaluating model.")
     if args.save_top_n is not None:
         top_eval = WorstExamples(
