@@ -36,7 +36,7 @@ fi
 #     date -d "2021-07-28 14:02:06" +%Y%M%d_%H%M%S
 
 # Using 'grep .' to get all nonblank lines
-readarray -t all_state_switches < <( grep --no-filename . $target/*.txt | sort -n )
+readarray -t all_state_switches < <( grep --no-filename . $target/*.txt |sed "s/[^0-9_]//g" | sort -n )
 
 # Print out the csv header
 echo "file, class, begin frame, end frame"
