@@ -153,7 +153,8 @@ for dataset_num in range(numOfSets):
         for rowNum in range(base_row,base_row+numFilesPerSet):
             dsetFile.write(','.join(all_csv_rows[rowNum]))             
             dsetFile.write("\n")
-
+    setNum = setNum + 1
+    
 # Finish here if the only_split option was set.
 if args.only_split:
     sys.exit(0)
