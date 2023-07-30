@@ -91,7 +91,7 @@ class VideoSampler:
     def __init__(self, video_path, num_samples, frames_per_sample, frame_interval,
             out_width=None, out_height=None, crop_noise=0, scale=1.0, crop_x_offset=0,
              crop_y_offset=0, channels=3, begin_frame=None, end_frame=None,
-             bg_subtract='none'):
+             bg_subtract='none', normalize=True):
         """
         Samples have no overlaps. For example, a 10 second video at 30fps has 300 samples of 1
         frame, 150 samples of 2 frames with a frame interval of 0, or 100 samples of 2 frames with a
@@ -111,6 +111,7 @@ class VideoSampler:
             begin_frame   (int): First frame to possibly sample.
             end_frame     (int): Final frame to possibly sample.
             bg_subtract   (str): Type of background subtraction to use (mog2 or knn), or none.
+            normalize    (bool): True to normalize image channels (done independently)
         """
         self.path = video_path
         self.num_samples = num_samples
@@ -118,6 +119,7 @@ class VideoSampler:
         self.frame_interval = frame_interval
         self.channels = channels
         self.scale = scale
+        self.normalize = normalize
 
         # Background subtraction will require openCV if requested.
         self.bg_subtractor = None
@@ -206,10 +208,14 @@ class VideoSampler:
                 .filter('scale', self.scale*self.width, -1)
                 # The crop is automatically centered if the x and y parameters are not used.
                 .filter('crop', out_w=in_width, out_h=in_height, x=self.crop_x, y=self.crop_y)
+            )
+            if self.normalize:
                 # Full independence between color channels. The bee videos are basically a single color.
                 # Otherwise normalizing the channels independently may not be a good choice.
-                .filter('normalize', independence=1.0)
-                #.filter('reverse')
+                process1 = process1.filter('normalize', independence=1.0)
+
+            process1 = (
+                process1
                 # YUV444p is the alternative to rgb24, but the pretrained network expects rgb images.
                 #.output('pipe:', format='rawvideo', pix_fmt='yuv444p')
                 .output('pipe:', format='rawvideo', pix_fmt=pix_fmt)
@@ -230,8 +236,13 @@ class VideoSampler:
             .filter('crop', out_w=in_width, out_h=in_height, x=self.crop_x, y=self.crop_y)
             # Full independence between color channels. The bee videos are basically a single color.
             # Otherwise normalizing the channels independently may not be a good choice.
-            .filter('normalize', independence=1.0)
-            #.filter('reverse')
+        )
+        if self.normalize:
+            # Full independence between color channels. The bee videos are basically a single color.
+            # Otherwise normalizing the channels independently may not be a good choice.
+            process1 = process1.filter('normalize', independence=1.0)
+        process1 = (
+            process1
             # YUV444p is the alternative to rgb24, but the pretrained network expects rgb images.
             #.output('pipe:', format='rawvideo', pix_fmt='yuv444p')
             .output('pipe:', format='rawvideo', pix_fmt=pix_fmt)
