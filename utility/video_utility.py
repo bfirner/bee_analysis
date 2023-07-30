@@ -6,6 +6,9 @@ Utility functions and classes for video processing
 
 import ffmpeg
 import math
+import numpy
+import random
+import torch
 
 def vidSamplingCommonCrop(height, width, out_height, out_width, scale, x_offset, y_offset):
     """
