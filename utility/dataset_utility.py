@@ -6,22 +6,33 @@ Utility functions for dataloading with webdatasets.
 import torch
 import webdataset as wds
 
-def getLabelSize(data_path, decode_strs, convert_idx_to_classes, label_index, number_of_classes=3):
+
+def extractLabels(dl_tuple, label_range):
+    """Extract and concat the labels from the tuple returned by the dataloader.
+
+    Arguments:
+        dl_tuple    (tuple): Tuple from the dataloader iterator.
+        label_range (slice): Range that corresponds to labels.
+    Returns
+        torch.tensor
+    """
+    # Concat along the first non-batch dimension, but don't concat if there is only a single tensor.
+    labels = dl_tuple[label_range]
+    if 1 == len(labels):
+        return labels[0]
+    else:
+        return torch.cat(labels, 1)
+
+
+def getLabelSize(data_path, decode_strs, label_range):
     """
     Arguments:
         data_path   (str or list[str]): Path to webdataset tar file(s).
-        decode_strs (str): Decode string for dataset loading.
-        convert_idx_to_classes (bool): True to convert single index values to one hot labels.
-        label_index (int): The index of the label to check
-        number_of_classes (int): Number of one-hot classes, used if convert_idx_to_classes is True.
+        decode_strs              (str): Decode string for dataset loading.
+        label_range            (slice): The index range of the label to check
     Returns:
         label_size  (int): The size of labels in the dataset.
     """
-    # When converting to one hot vectors, there is no way to know all possible class values without
-    # reading the entire dataset. Thus an argument is required to tell the function how many classes
-    # exist.
-    if convert_idx_to_classes:
-        return number_of_classes
     # Check the size of the labels
     test_dataset = (
         wds.WebDataset(data_path)
@@ -30,7 +41,12 @@ def getLabelSize(data_path, decode_strs, convert_idx_to_classes, label_index, nu
     )
     test_dataloader = torch.utils.data.DataLoader(test_dataset, num_workers=0, batch_size=1)
     dl_tuple = next(test_dataloader.__iter__())
-    return dl_tuple[label_index].size(1)
+    labels = extractLabels(dl_tuple, label_range)
+    if 1 == labels.dim():
+        return 1
+    else:
+        return labels.size(1)
+
 
 def getImageSize(data_path, decode_strs):
     """

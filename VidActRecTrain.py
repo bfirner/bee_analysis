@@ -29,7 +29,7 @@ from collections import namedtuple
 # Helper function to convert to images
 from torchvision import transforms
 
-from utility.dataset_utility import (getImageSize, getLabelSize)
+from utility.dataset_utility import (extractLabels, getImageSize, getLabelSize)
 from utility.eval_utility import (ConfusionMatrix, WorstExamples)
 from utility.model_utility import (restoreModelAndState)
 from utility.train_utility import (updateWithScaler, updateWithoutScaler)
@@ -136,11 +136,12 @@ parser.add_argument(
     help='Set this to disable deterministic training.')
 parser.add_argument(
     '--labels',
-    # TODO Support an array of strings to have multiple different label targets.
     type=str,
+    # Support an array of strings to have multiple different label targets.
+    nargs='+',
     required=False,
-    default="cls",
-    help='File to decode from webdataset as the class labels.')
+    default=["cls"],
+    help='File to decode from webdataset as the DNN output target labels.')
 parser.add_argument(
     '--skip_metadata',
     required=False,
@@ -153,7 +154,7 @@ parser.add_argument(
     default=1,
     choices=[0, 1],
     type=int,
-    help='Train output as a classifier by converting labels to a one-hot vector.')
+    help='Train output as a classifier by converting all labels to one-hot vectors.')
 parser.add_argument(
     '--num_outputs',
     required=False,
@@ -201,7 +202,7 @@ if args.template is not None:
         if '--convert_idx_to_classes' not in sys.argv:
             args.convert_idx_to_classes = 0
         if '--labels' not in sys.argv:
-            args.labels = 'detection.pth'
+            args.labels = ['detection.pth']
         if '--loss_fun' not in sys.argv:
             args.loss_fun = 'BCEWithLogitsLoss'
 
@@ -226,30 +227,30 @@ decode_strs = []
 # The image for a particular frame
 for i in range(in_frames):
     decode_strs.append(f"{i}.png")
-# The class label
-label_index = len(decode_strs)
-decode_strs.append(args.labels)
+# The class label(s)
+label_range = slice(len(decode_strs), len(decode_strs) + len(args.labels))
+for label_str in args.labels:
+    decode_strs.append(label_str)
 # Metadata for this sample. A string of format: f"{video_path},{frame},{time}"
 if not args.skip_metadata:
     metadata_index = len(decode_strs)
     decode_strs.append("metadata.txt")
 
 # The default labels for the bee videos are "1, 2, 3" instead of "0, 1, 2"
-if "cls" != args.labels:
+if "cls" != args.labels[0]:
     label_offset = 0
 else:
     label_offset = 1
 
 
-
 print(f"Training with dataset {args.dataset}")
 # If we are converting to a one-hot encoding output then we need to check the argument that
-# specifies the number of output elements.
+# specifies the number of output elements. Otherwise we can check the number of elements in the
+# webdataset.
 if convert_idx_to_classes:
-    label_size = getLabelSize(args.dataset, decode_strs, convert_idx_to_classes, label_index,
-        args.num_outputs)
+    label_size = args.num_outputs * getLabelSize(args.dataset, decode_strs, label_range)
 else:
-    label_size = getLabelSize(args.dataset, decode_strs, convert_idx_to_classes, label_index)
+    label_size = getLabelSize(args.dataset, decode_strs, label_range)
 
 # Decode the proper number of items for each sample from the dataloader
 # The field names are just being taken from the decode strings, but they cannot begin with a digit
@@ -383,11 +384,11 @@ if not args.no_train:
                 v, m = torch.var_mean(net_input)
                 net_input = (net_input - m) / v
 
-            labels = dl_tuple[label_index]
+            labels = extractLabels(dl_tuple,label_range)
 
-            # The label value may need to be adjust, for example if the label class is 1 based, but
+            # The label value may need to be adjusted, for example if the label class is 1 based, but
             # should be 0-based for the one_hot function.
-            labels = labels-label_offset
+            labels = labels - label_offset
 
             if use_amp:
                 out, loss = updateWithScaler(loss_fn, net, net_input, labels, scaler, optimizer)
@@ -450,7 +451,7 @@ if not args.no_train:
 
                     with torch.cuda.amp.autocast():
                         out = net.forward(net_input)
-                        labels = dl_tuple[label_index]
+                        labels = extractLabels(dl_tuple,label_range)
 
                         # The label value may need to be adjust, for example if the label class is 1 based, but
                         # should be 0-based for the one_hot function.
@@ -533,9 +534,9 @@ if args.evaluate is not None:
                     mask = [None] * batch_size
                 # Convert the labels to a one hot encoding to serve at the DNN target.
                 # The label class is 1 based, but need to be 0-based for the one_hot function.
-                labels = dl_tuple[label_index]
+                labels = extractLabels(dl_tuple,label_range)
 
-                # The label value may need to be adjust, for example if the label class is 1 based, but
+                # The label value may need to be adjusted, for example if the label class is 1 based, but
                 # should be 0-based for the one_hot function.
                 labels = labels-label_offset
 

@@ -35,7 +35,6 @@ from models.resnet import (ResNet18, ResNet34)
 from models.resnext import (ResNext18, ResNext34, ResNext50)
 from models.convnext import (ConvNextExtraTiny, ConvNextTiny, ConvNextSmall, ConvNextBase)
 
-from utility.dataset_utility import (getImageSize, getLabelSize)
 from utility.video_utility import (getVideoInfo, vidSamplingCommonCrop)
 
 def commandOutput(command):
