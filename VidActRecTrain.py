@@ -32,6 +32,7 @@ from torchvision import transforms
 from utility.dataset_utility import (getImageSize, getLabelSize)
 from utility.eval_utility import (ConfusionMatrix, WorstExamples)
 from utility.model_utility import (restoreModelAndState)
+from utility.train_utility import (updateWithScaler, updateWithoutScaler)
 
 from models.alexnet import AlexLikeNet
 from models.bennet import BenNet
@@ -40,48 +41,6 @@ from models.resnext import (ResNext18, ResNext34, ResNext50)
 from models.convnext import (ConvNextExtraTiny, ConvNextTiny, ConvNextSmall, ConvNextBase)
 
 
-def updateWithScaler(net, net_input, labels, scaler, optimizer):
-    """
-    Arguments:
-        net    (torch.nn.Module): The network to train.
-        net_input (torch.tensor): Network input.
-        labels    (torch.tensor): Desired network output.
-        scaler (torch.cuda.amp.GradScaler): Scaler for automatic mixed precision training.
-        optimizer  (torch.optim): Optimizer
-    """
-
-    with torch.cuda.amp.autocast():
-        out = net.forward(net_input.contiguous())
-
-    loss = loss_fn(out, labels.cuda())
-    scaler.scale(loss).backward()
-    scaler.step(optimizer)
-    # Important Note: Sometimes the scaler starts off with a value that is too high. This
-    # causes the loss to be NaN and the batch loss is not actually propagated. The scaler
-    # will reduce the scaling factor, but if all of the batches are skipped then the
-    # lr_scheduler should not take a step. More importantly, the batch itself should
-    # actually be repeated, otherwise some batches will be skipped.
-    # TODO Implement batch repeat by checking scaler.get_scale() before and after the update
-    # and repeating if the scale has changed.
-    scaler.update()
-
-    return out, loss
-
-def updateWithoutScaler(net, net_input, labels, optimizer):
-    """
-    Arguments:
-        net    (torch.nn.Module): The network to train.
-        net_input (torch.tensor): Network input.
-        labels    (torch.tensor): Desired network output.
-        optimizer  (torch.optim): Optimizer
-    """
-    out = net.forward(net_input.contiguous())
-
-    loss = loss_fn(out, labels.cuda().float())
-    loss.backward()
-    optimizer.step()
-
-    return out, loss
 
 # Argument parser setup for the program.
 parser = argparse.ArgumentParser(
@@ -196,6 +155,12 @@ parser.add_argument(
     type=int,
     help='Train output as a classifier by converting labels to a one-hot vector.')
 parser.add_argument(
+    '--num_outputs',
+    required=False,
+    default=3,
+    type=int,
+    help='The elements of the one-hot encoding of the label, if convert_idx_to_classes is set.')
+parser.add_argument(
     '--loss_fun',
     required=False,
     default='CrossEntropyLoss',
@@ -278,7 +243,13 @@ else:
 
 
 print(f"Training with dataset {args.dataset}")
-label_size = getLabelSize(args.dataset, decode_strs, convert_idx_to_classes, label_index)
+# If we are converting to a one-hot encoding output then we need to check the argument that
+# specifies the number of output elements.
+if convert_idx_to_classes:
+    label_size = getLabelSize(args.dataset, decode_strs, convert_idx_to_classes, label_index,
+        args.num_outputs)
+else:
+    label_size = getLabelSize(args.dataset, decode_strs, convert_idx_to_classes, label_index)
 
 # Decode the proper number of items for each sample from the dataloader
 # The field names are just being taken from the decode strings, but they cannot begin with a digit
@@ -419,9 +390,9 @@ if not args.no_train:
             labels = labels-label_offset
 
             if use_amp:
-                out, loss = updateWithScaler(net, net_input, labels, scaler, optimizer)
+                out, loss = updateWithScaler(loss_fn, net, net_input, labels, scaler, optimizer)
             else:
-                out, loss = updateWithoutScaler(net, net_input, labels, optimizer)
+                out, loss = updateWithoutScaler(loss_fn, net, net_input, labels, optimizer)
 
             # Fill in the confusion matrix and worst examples.
             with torch.no_grad():
