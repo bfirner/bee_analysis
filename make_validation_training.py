@@ -200,6 +200,7 @@ with open(sbatch_filename,'w') as sbatch_file:
             trainFile.write("#!/usr/bin/bash \n")
             #trainFile.write("#SBATCH --gpus-per-node=1 \n")
             trainFile.write("# command to run \n \n")
+            trainFile.write("export TRAINPROGRAM=\"VidActRecTrain.py\"\n")
             trainFile.write("cd " + currentDir + " \n")
             trainFile.write("export PATH=" + python3PathTrain + ":$PATH \n")
             trainFile.write("echo start-is: `date` \n \n") # add start timestamp 
