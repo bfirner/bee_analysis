@@ -7,6 +7,24 @@ import torch
 import webdataset as wds
 
 
+def decodeUTF8ListOrNumber(encoded_str):
+    """Decode a utf8 encoded list of floats that is currently in a string."""
+    if encoded_str[0] == '[':
+        return torch.tensor([float(data) for data in encoded_str[1:-1].split(', ')])
+    else:
+        return torch.tensor([float(encoded_str)])
+
+
+def decodeUTF8Strings(encoding):
+    """Decode a tuple of floats or lists of floats that have been encoded."""
+    decoded_strs = [[data.decode('utf-8') for data in element] for element in encoding]
+    # This looks pretty complicated because data should really be encoded as torch tensors rather
+    # than as strings. If a batch size > 1 is used, then each element of the batch must be combined,
+    # and to do that we need to unsqueeze to add in the batch dimension before concatenating.
+    # Each element of the decoded_strs represents another entry in the dataset.
+    return [torch.cat([decodeUTF8ListOrNumber(data).unsqueeze(0) for data in element]) for element in decoded_strs]
+
+
 def extractLabels(dl_tuple, label_range):
     """Extract and concat the labels from the tuple returned by the dataloader.
 
@@ -21,7 +39,10 @@ def extractLabels(dl_tuple, label_range):
     if 1 == len(labels):
         return labels[0]
     else:
-        return torch.cat(labels, 1)
+        # TODO Data is currently encoded as utf8 strings, which is great for debugging but terrible
+        # for decoding.
+        tensors = decodeUTF8Strings(labels)
+        return torch.cat(tensors, 1)
 
 
 def getLabelSize(data_path, decode_strs, label_range):
