@@ -6,20 +6,24 @@ Utility functions for PyTorch training
 import torch
 
 
-def updateWithScaler(loss_fn, net, net_input, labels, scaler, optimizer):
+def updateWithScaler(loss_fn, net, image_input, vector_input, labels, scaler, optimizer):
     """Update with scaler used in mixed precision training.
 
     Arguments:
-        loss_fn       (function): The loss function used during training.
-        net    (torch.nn.Module): The network to train.
-        net_input (torch.tensor): Network input.
-        labels    (torch.tensor): Desired network output.
+        loss_fn          (function): The loss function used during training.
+        net       (torch.nn.Module): The network to train.
+        image_input  (torch.tensor): Planar (3D) input to the network.
+        vector_input (torch.tensor): Vector (1D) input to the network.
+        labels       (torch.tensor): Desired network output.
         scaler (torch.cuda.amp.GradScaler): Scaler for automatic mixed precision training.
-        optimizer  (torch.optim): Optimizer
+        optimizer     (torch.optim): Optimizer
     """
 
     with torch.cuda.amp.autocast():
-        out = net.forward(net_input.contiguous())
+        if vector_input is None:
+            out = net.forward(image_input.contiguous())
+        else:
+            out = net.forward(image_input.contiguous(), vector_input.contiguous())
 
     loss = loss_fn(out, labels.half())
     scaler.scale(loss).backward()
@@ -35,17 +39,21 @@ def updateWithScaler(loss_fn, net, net_input, labels, scaler, optimizer):
 
     return out, loss
 
-def updateWithoutScaler(loss_fn, net, net_input, labels, optimizer):
+def updateWithoutScaler(loss_fn, net, image_input, vector_input, labels, optimizer):
     """Update without any scaling from mixed precision training.
 
     Arguments:
-        loss_fn       (function): The loss function used during training.
-        net    (torch.nn.Module): The network to train.
-        net_input (torch.tensor): Network input.
-        labels    (torch.tensor): Desired network output.
-        optimizer  (torch.optim): Optimizer
+        loss_fn          (function): The loss function used during training.
+        net       (torch.nn.Module): The network to train.
+        image_input  (torch.tensor): Planar (3D) input to the network.
+        vector_input (torch.tensor): Vector (1D) input to the network.
+        labels       (torch.tensor): Desired network output.
+        optimizer     (torch.optim): Optimizer
     """
-    out = net.forward(net_input.contiguous())
+    if vector_input is None:
+        out = net.forward(image_input.contiguous())
+    else:
+        out = net.forward(image_input.contiguous(), vector_input.contiguous())
 
     loss = loss_fn(out, labels.float())
     loss.backward()

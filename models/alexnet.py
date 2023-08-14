@@ -77,12 +77,13 @@ class AlexLikeNet(nn.Module):
         layer[0].bias.fill_(1.)
         return layer
 
-    def __init__(self, in_dimensions, out_classes, linear_size=2048):
+    def __init__(self, in_dimensions, out_classes, linear_size=2048, vector_input_size=0):
         """
         Arguments:
             in_dimensions (tuple(int)): Tuple of channels, height, and width.
             out_classes          (int): The number of output classes.
             linear_size          (int): The size of the linear layers. There are two at each depth.
+            vector_input_size    (int): The number of vector inputs to the linear layers.
         """
         super(AlexLikeNet, self).__init__()
         #self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -141,7 +142,7 @@ class AlexLikeNet(nn.Module):
             # The original Alexnet splits the linear layers over two GPUs so that the first two
             # linear layers are actually each a pair of linear layers with 2048 outputs. With 4096
             # inputs and 2048 outputs the layer's memory consumption is cut in half.
-            linear_input_size = out_size[0]*out_size[1]*self.channels[-1]*2
+            linear_input_size = out_size[0]*out_size[1]*self.channels[-1]*2 + vector_input_size
             self.model_a.append(self.createLinearLayer(
                 num_inputs=linear_input_size, num_outputs=self.linear_size))
             self.model_b.append(self.createLinearLayer(
@@ -202,7 +203,7 @@ class AlexLikeNet(nn.Module):
         # Store the unpool layers in reverse order because that is the order they will be used.
         self.reversed_unpool_layers = nn.ModuleList(list(reversed(unpool_layers)))
 
-    def forward(self, x):
+    def forward(self, x, vector_input=None):
         # TODO The two side of the network need to be transferred to different devices, and the
         # tensors need to be transferred back and forth as well.
         # Both pathways start with the same input
@@ -218,7 +219,10 @@ class AlexLikeNet(nn.Module):
             # After the last convolution the output is flattened. For all linear layers the outputs
             # of the previous layer are concatenated.
             elif (4 == i):
-                x = torch.cat((self.flatten(x), self.flatten(y)), dim=1)
+                if vector_input is None:
+                    x = torch.cat((self.flatten(x), self.flatten(y)), dim=1)
+                else:
+                    x = torch.cat((self.flatten(x), self.flatten(y), vector_input), dim=1)
                 y = x
             elif (5 == i):
                 x = torch.cat((x, y), dim=1)
@@ -229,7 +233,7 @@ class AlexLikeNet(nn.Module):
         x = self.classifier(x)
         return x
 
-    def vis_forward(self, x):
+    def vis_forward(self, x, vector_input=None):
         """Forward and calculate a visualization mask of the convolution layers."""
         # Forward as usual, but store the convolution outputs for later backtracking to build the
         # visualization masks.
@@ -282,7 +286,10 @@ class AlexLikeNet(nn.Module):
                     y = x
                 # After the last convolution the output is flattened. 
                 if (4 == i):
-                    x = torch.cat((self.flatten(x), self.flatten(y)), dim=1)
+                    if vector_input is None:
+                        x = torch.cat((self.flatten(x), self.flatten(y)), dim=1)
+                    else:
+                        x = torch.cat((self.flatten(x), self.flatten(y), vector_input), dim=1)
                     y = x
             else:
                 x = a(x)
