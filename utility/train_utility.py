@@ -21,7 +21,7 @@ def updateWithScaler(loss_fn, net, net_input, labels, scaler, optimizer):
     with torch.cuda.amp.autocast():
         out = net.forward(net_input.contiguous())
 
-    loss = loss_fn(out, labels.cuda())
+    loss = loss_fn(out, labels.half())
     scaler.scale(loss).backward()
     scaler.step(optimizer)
     # Important Note: Sometimes the scaler starts off with a value that is too high. This
@@ -47,7 +47,7 @@ def updateWithoutScaler(loss_fn, net, net_input, labels, optimizer):
     """
     out = net.forward(net_input.contiguous())
 
-    loss = loss_fn(out, labels.cuda().float())
+    loss = loss_fn(out, labels.float())
     loss.backward()
     optimizer.step()
 

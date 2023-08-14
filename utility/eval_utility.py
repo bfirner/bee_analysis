@@ -4,9 +4,107 @@
 Utility functions and classes for evaluating model performance.
 """
 import heapq
+import math
 import os
 import torch
 from torchvision import transforms
+
+
+class OnlineStatistics:
+    """Calculator that tracks a running mean and variance.
+
+    Makes use of Welford's algorithm for online variance:
+    https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
+    """
+    def __init__(self):
+        """Initialize the variables."""
+        self._population = 0
+        self._mean = 0
+        self._m2 = 0
+        self._max = None
+
+    def reset(self):
+        self._population = 0
+        self._mean = 0
+        self._m2 = 0
+        self._max = None
+
+    def mean(self):
+        return self._mean
+
+    def variance(self):
+        if 0 < self._population:
+            return self._m2 / self._population
+        else:
+            return None
+
+    def max(self):
+        return self._max
+
+    def sample(self, value):
+        """Add the given value to the population."""
+        # First check for a new maximum value
+        if self._max is None or math.fabs(self._max) < math.fabs(value):
+            self._max = value
+        # Next update values for mean and variance
+        self._population += 1
+        # The new mean is mean_{n-1} + (value - mean_{n-1})/population
+        mean_diff = value - self._mean
+        self._mean += mean_diff / self._population
+        # The change in differences of the mean is used to calculate the new variance
+        new_mean_diff = value - self._mean
+        self._m2 += mean_diff * new_mean_diff
+
+
+class RegressionResults:
+    """A data structure to track regression results during training."""
+    def __init__(self, size, units = None):
+        """Initialize storage for size regression outputs.
+
+        Arguments:
+            size         (int): The number of regression outputs.
+            units  (list[str]): The units of the regression outputs.
+        """
+        if units is None:
+            self.units = [""] * size
+        else:
+            self.units = [" {}".format(unit) for unit in units]
+        # Assume that errors are normally distributed and track the mean and standard deviation.
+        # Also track the maximum magnitude of the error for each class.
+        self.statistics = [OnlineStatistics() for _ in range(size)]
+        self.overall = OnlineStatistics()
+
+    def __str__(self):
+        out_str = "error:\t\tmean,\tvariance,\tmax\n"
+        out_str += "average:\t{},\t{},\t{}\n".format(self.overall.mean(), self.overall.variance(),
+                self.overall.max())
+        for row, stats in enumerate(self.statistics):
+            out_str += "output {}:\t{},\t{},\t{}\n".format(row, str(stats.mean())+self.units[row],
+                    stats.variance(), str(stats.max())+self.units[row])
+        return out_str
+
+    def update(self, predictions, labels):
+        """ Update the statistics matrix with a new set of predictions and labels.
+
+        Arguments:
+            predictions (torch.tensor): [batch, size] predictions.
+            labels      (torch.tensor): [batch, size] labels.
+        """
+        avg_error = 0
+        for batch in range(predictions.size(0)):
+            for row, stat in enumerate(self.statistics):
+                error = predictions[batch][row] - labels[batch][row]
+                stat.sample(error.item())
+                avg_error += error.item() / len(self.statistics)
+            self.overall.sample(avg_error)
+
+    def makeResults(self):
+        """Generate human readable results.
+        Returns:
+            str: String of the results.
+        """
+        return str(self)
+
 
 class ConfusionMatrix:
     """A confusion matrix with functions to extract evaluation statistics."""
@@ -105,6 +203,22 @@ class ConfusionMatrix:
             recall = 0.
 
         return precision, recall
+
+    def makeResults(self):
+        """Generate human readable results.
+        Returns:
+            str: String of the results.
+        """
+        results = '\n'.join(
+            "Confusion Matrix:\n{}\n".format(str(self)),
+            "Accuracy:  {}".format(self.accuracy())
+        )
+        for row in range(len(self.cmatrix)):
+            # Print out class statistics if this class was present in the data.
+            if 0 < sum(self[cidx]):
+                precision, recall = self.calculateRecallPrecision(row)
+                results += "\nClass {} precision={}, recall={}".format(row, precision, recall)
+            
 
 # Need a special comparison function that won't attempt to do something that tensors do not
 # support. Used if args.save_top_n or args.save_worst_n are used.
