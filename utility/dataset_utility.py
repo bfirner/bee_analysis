@@ -25,17 +25,17 @@ def decodeUTF8Strings(encoding):
     return [torch.cat([decodeUTF8ListOrNumber(data).unsqueeze(0) for data in element]) for element in decoded_strs]
 
 
-def extractLabels(dl_tuple, label_range):
+def extractVectors(dl_tuple, vector_range):
     """Extract and concat the labels from the tuple returned by the dataloader.
 
     Arguments:
         dl_tuple    (tuple): Tuple from the dataloader iterator.
-        label_range (slice): Range that corresponds to labels.
+        vector_range (slice): Range that corresponds to labels.
     Returns
         torch.tensor
     """
     # Concat along the first non-batch dimension, but don't concat if there is only a single tensor.
-    labels = dl_tuple[label_range]
+    labels = dl_tuple[vector_range]
     if 1 == len(labels):
         return labels[0]
     else:
@@ -45,12 +45,12 @@ def extractLabels(dl_tuple, label_range):
         return torch.cat(tensors, 1)
 
 
-def getLabelSize(data_path, decode_strs, label_range):
+def getVectorSize(data_path, decode_strs, vector_range):
     """
     Arguments:
         data_path   (str or list[str]): Path to webdataset tar file(s).
         decode_strs              (str): Decode string for dataset loading.
-        label_range            (slice): The index range of the label to check
+        vector_range           (slice): The index range of the vectors to check
     Returns:
         label_size  (int): The size of labels in the dataset.
     """
@@ -62,7 +62,7 @@ def getLabelSize(data_path, decode_strs, label_range):
     )
     test_dataloader = torch.utils.data.DataLoader(test_dataset, num_workers=0, batch_size=1)
     dl_tuple = next(test_dataloader.__iter__())
-    labels = extractLabels(dl_tuple, label_range)
+    labels = extractVectors(dl_tuple, vector_range)
     if 1 == labels.dim():
         return 1
     else:

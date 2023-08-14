@@ -29,7 +29,7 @@ from collections import namedtuple
 # Helper function to convert to images
 from torchvision import transforms
 
-from utility.dataset_utility import (extractLabels, getImageSize, getLabelSize)
+from utility.dataset_utility import (extractVectors, getImageSize, getVectorSize)
 from utility.eval_utility import (ConfusionMatrix, RegressionResults, WorstExamples)
 from utility.model_utility import (restoreModelAndState)
 from utility.train_utility import (updateWithScaler, updateWithoutScaler)
@@ -141,7 +141,15 @@ parser.add_argument(
     nargs='+',
     required=False,
     default=["cls"],
-    help='File to decode from webdataset as the DNN output target labels.')
+    help='Files to decode from webdataset as the DNN output target labels.')
+parser.add_argument(
+    '--vector_inputs',
+    type=str,
+    # Support an array of strings to have multiple different label targets.
+    nargs='+',
+    required=False,
+    default=[],
+    help='Files to decode from webdataset as DNN vector inputs.')
 parser.add_argument(
     '--skip_metadata',
     required=False,
@@ -231,10 +239,17 @@ decode_strs = []
 # The image for a particular frame
 for i in range(in_frames):
     decode_strs.append(f"{i}.png")
-# The class label(s)
+
+# The class label(s) or regression targets
 label_range = slice(len(decode_strs), len(decode_strs) + len(args.labels))
 for label_str in args.labels:
     decode_strs.append(label_str)
+
+# Vector inputs (if there are none then the slice will be an empty range)
+vector_range = slice(label_range.stop, label_range.stop + len(args.vector_inputs))
+for vector_str in args.vector_inputs:
+    decode_strs.append(vector_str)
+
 # Metadata for this sample. A string of format: f"{video_path},{frame},{time}"
 if not args.skip_metadata:
     metadata_index = len(decode_strs)
@@ -251,10 +266,11 @@ print(f"Training with dataset {args.dataset}")
 # If we are converting to a one-hot encoding output then we need to check the argument that
 # specifies the number of output elements. Otherwise we can check the number of elements in the
 # webdataset.
+label_size = getVectorSize(args.dataset, decode_strs, label_range)
 if convert_idx_to_classes:
-    label_size = args.num_outputs * getLabelSize(args.dataset, decode_strs, label_range)
-else:
-    label_size = getLabelSize(args.dataset, decode_strs, label_range)
+    label_size = label_size * args.num_outputs
+
+vector_input_size = getVectorSize(args.dataset, decode_strs, vector_range)
 
 # Decode the proper number of items for each sample from the dataloader
 # The field names are just being taken from the decode strings, but they cannot begin with a digit
@@ -293,7 +309,8 @@ lr_scheduler = None
 # verified.
 use_amp = False
 if 'alexnet' == args.modeltype:
-    net = AlexLikeNet(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size, linear_size=512).cuda()
+    net = AlexLikeNet(in_dimensions=(in_frames, image_size[1], image_size[2]),
+            out_classes=label_size, linear_size=512, vector_input_size=vector_input_size).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-4)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[3,5,7], gamma=0.2)
     use_amp = True
@@ -391,16 +408,19 @@ if not args.no_train:
                 v, m = torch.var_mean(net_input)
                 net_input = (net_input - m) / v
 
-            labels = extractLabels(dl_tuple,label_range).cuda()
+            labels = extractVectors(dl_tuple, label_range).cuda()
+            vector_inputs=None
+            if 0 < vector_input_size:
+                vector_inputs = extractVectors(dl_tuple, vector_range).cuda()
 
             # The label value may need to be adjusted, for example if the label class is 1 based, but
             # should be 0-based for the one_hot function.
             labels = labels - label_offset
 
             if use_amp:
-                out, loss = updateWithScaler(loss_fn, net, net_input, labels, scaler, optimizer)
+                out, loss = updateWithScaler(loss_fn, net, net_input, vector_inputs, labels, scaler, optimizer)
             else:
-                out, loss = updateWithoutScaler(loss_fn, net, net_input, labels, optimizer)
+                out, loss = updateWithoutScaler(loss_fn, net, net_input, vector_inputs, labels, optimizer)
 
             # Fill in the confusion matrix and worst examples.
             with torch.no_grad():
@@ -459,14 +479,17 @@ if not args.no_train:
                         net_input = (net_input - m) / v
 
                     with torch.cuda.amp.autocast():
-                        out = net.forward(net_input)
-                        labels = extractLabels(dl_tuple,label_range).cuda()
+                        vector_input=None
+                        if 0 < vector_input_size:
+                            vector_input = extractVectors(dl_tuple, vector_range).cuda()
+                        out = net.forward(net_input, vector_input)
+                        labels = extractVectors(dl_tuple,label_range).cuda()
 
                         # The label value may need to be adjusted, for example if the label class is
                         # 1-based, but should be 0-based for the one_hot function.
                         labels = labels-label_offset
 
-                        loss = loss_fn(out, labels.cuda())
+                        loss = loss_fn(out, labels)
                     with torch.no_grad():
                         if args.loss_fun in regression_loss:
                             post_out = nn_postprocess(out)
@@ -536,15 +559,19 @@ if args.evaluate is not None:
                     v, m = torch.var_mean(net_input)
                     net_input = (net_input - m) / v
 
+                vector_input=None
+                if 0 < vector_input_size:
+                    vector_input = extractVectors(dl_tuple, vector_range).cuda()
+
                 # Visualization masks are not supported with all model types yet.
                 if args.modeltype in ['alexnet', 'bennet', 'resnet18', 'resnet34']:
-                    out, mask = net.vis_forward(net_input)
+                    out, mask = net.vis_forward(net_input, vector_input)
                 else:
-                    out = net.forward(net_input)
+                    out = net.forward(net_input, vector_input, vector_input)
                     mask = [None] * batch_size
                 # Convert the labels to a one hot encoding to serve at the DNN target.
                 # The label class is 1 based, but need to be 0-based for the one_hot function.
-                labels = extractLabels(dl_tuple,label_range).cuda()
+                labels = extractVectors(dl_tuple,label_range).cuda()
 
                 # The label value may need to be adjusted, for example if the label class is 1 based, but
                 # should be 0-based for the one_hot function.
@@ -555,7 +582,7 @@ if args.evaluate is not None:
                 else:
                     metadata = dl_tuple[metadata_index]
 
-                loss = loss_fn(out, labels.cuda())
+                loss = loss_fn(out, labels)
 
                 with torch.no_grad():
                     if args.loss_fun in regression_loss:
