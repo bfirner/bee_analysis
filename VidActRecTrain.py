@@ -276,7 +276,24 @@ label_size = getVectorSize(args.dataset, decode_strs, label_range)
 if convert_idx_to_classes:
     label_size = label_size * args.num_outputs
 
-vector_input_size = getVectorSize(args.dataset, decode_strs, vector_range)
+label_names = None
+# See if we can deduce the label names
+if not convert_idx_to_classes:
+    label_names = []
+    for label_idx, out_elem in enumerate(range(label_range.start, label_range.stop)):
+        label_elements = getVectorSize(args.dataset, decode_strs, slice(out_elem, out_elem+1))
+        # Give this output the label name directly or add a number if multiple outputs come from
+        # this label
+        if 1 == label_elements:
+            label_names.append(args.labels[label_idx])
+        else:
+            for i in range(label_elements):
+                label_names.append("{}-{}".format(args.labels[label_idx], i))
+
+# Only check the size of the non-image input vector if it has any entries
+vector_input_size = 0
+if 0 < len(args.vector_inputs):
+    vector_input_size = getVectorSize(args.dataset, decode_strs, vector_range)
 
 # Decode the proper number of items for each sample from the dataloader
 # The field names are just being taken from the decode strings, but they cannot begin with a digit
@@ -388,7 +405,7 @@ if not args.no_train:
     for epoch in range(args.epochs):
         # Make a confusion matrix or loss statistics
         if args.loss_fun in regression_loss:
-            totals = RegressionResults(size=label_size)
+            totals = RegressionResults(size=label_size, names=label_names)
         else:
             totals = ConfusionMatrix(size=label_size)
         print(f"Starting epoch {epoch}")
