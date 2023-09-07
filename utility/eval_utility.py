@@ -58,29 +58,42 @@ class OnlineStatistics:
 
 class RegressionResults:
     """A data structure to track regression results during training."""
-    def __init__(self, size, units = None):
+    def __init__(self, size, units = None, names = None):
         """Initialize storage for size regression outputs.
 
         Arguments:
             size         (int): The number of regression outputs.
             units  (list[str]): The units of the regression outputs.
+            names  (list[str]): The names of the regression outputs.
         """
         if units is None:
             self.units = [""] * size
         else:
             self.units = [" {}".format(unit) for unit in units]
+        if names is None:
+            self.names = ["output {}".format(i) for i in range(size)]
+        else:
+            self.names = names
+
         # Assume that errors are normally distributed and track the mean and standard deviation.
         # Also track the maximum magnitude of the error for each class.
-        self.statistics = [OnlineStatistics() for _ in range(size)]
-        self.overall = OnlineStatistics()
+        self.prediction_statistics = [OnlineStatistics() for _ in range(size)]
+        self.prediction_overall = OnlineStatistics()
+        self.label_statistics = [OnlineStatistics() for _ in range(size)]
 
     def __str__(self):
-        out_str = "error:\t\tmean,\tvariance,\tmax\n"
-        out_str += "average:\t{},\t{},\t{}\n".format(self.overall.mean(), self.overall.variance(),
-                self.overall.max())
-        for row, stats in enumerate(self.statistics):
-            out_str += "output {}:\t{},\t{},\t{}\n".format(row, str(stats.mean())+self.units[row],
-                    stats.variance(), str(stats.max())+self.units[row])
+        out_str = "\t\t\terror mean,\terror variance,\terror max,\tsample mean,\tsample variance\t sample max\n"
+        out_str += "average:\t{},\t{},\t{}\n".format(self.prediction_overall.mean(),
+                self.prediction_overall.variance(),
+                self.prediction_overall.max())
+        for row, stats in enumerate(zip(self.prediction_statistics, self.label_statistics)):
+            out_str += "{}:\t{},\t{},\t{},\t{},\t{},\t{}\n".format(self.names[row],
+                    str(stats[0].mean())+self.units[row],
+                    stats[0].variance(),
+                    str(stats[0].max())+self.units[row],
+                    str(stats[1].mean())+self.units[row],
+                    stats[1].variance(),
+                    str(stats[1].max())+self.units[row])
         return out_str
 
     def update(self, predictions, labels):
@@ -92,11 +105,14 @@ class RegressionResults:
         """
         avg_error = 0
         for batch in range(predictions.size(0)):
-            for row, stat in enumerate(self.statistics):
+            for row, stat in enumerate(self.prediction_statistics):
                 error = predictions[batch][row] - labels[batch][row]
                 stat.sample(error.item())
-                avg_error += error.item() / len(self.statistics)
-            self.overall.sample(avg_error)
+                avg_error += error.item() / len(self.prediction_statistics)
+            self.prediction_overall.sample(avg_error)
+        for batch in range(labels.size(0)):
+            for row, stat in enumerate(self.label_statistics):
+                stat.sample(labels[batch][row].item())
 
     def makeResults(self):
         """Generate human readable results.

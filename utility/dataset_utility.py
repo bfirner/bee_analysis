@@ -36,13 +36,10 @@ def extractVectors(dl_tuple, vector_range):
     """
     # Concat along the first non-batch dimension, but don't concat if there is only a single tensor.
     labels = dl_tuple[vector_range]
-    if 1 == len(labels):
-        return labels[0]
-    else:
-        # TODO Data is currently encoded as utf8 strings, which is great for debugging but terrible
-        # for decoding.
-        tensors = decodeUTF8Strings(labels)
-        return torch.cat(tensors, 1)
+    # TODO Data is currently encoded as utf8 strings, which is great for debugging but terrible
+    # for decoding.
+    tensors = decodeUTF8Strings(labels)
+    return torch.cat(tensors, 1)
 
 
 def getVectorSize(data_path, decode_strs, vector_range):
