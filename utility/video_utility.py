@@ -227,9 +227,14 @@ class VideoSampler:
                 np_frame = numpy.frombuffer(in_bytes, numpy.uint8)
                 fgMask = self.bg_subtractor.apply(np_frame)
 
+        # Reading videos slows down as more frames have been read, so read them in chunks.
+        frame_batch_size = 2000
+        cur_end_frame = min(frame_batch_size, self.end_frame)
         process1 = (
             ffmpeg
             .input(self.path)
+            # Read the next chunk
+            .trim(start_frame=1, end_frame=cur_end_frame)
             # Scale
             .filter('scale', self.scale*self.width, -1)
             # The crop is automatically centered if the x and y parameters are not used.
@@ -253,7 +258,8 @@ class VideoSampler:
         # The first frame will be frame number 1
         frame = 0
         # Need to read in all frames.
-        while True:
+        in_bytes = True
+        while in_bytes:
             for target_idx, target_frame in enumerate(target_samples):
                 # Get ready to fetch the next frame
                 partial_sample = []
@@ -261,7 +267,7 @@ class VideoSampler:
                 # Use the same crop location for each sample in multiframe sequences.
                 crop_x = random.choice(range(0, 2 * self.crop_noise + 1))
                 crop_y = random.choice(range(0, 2 * self.crop_noise + 1))
-                while len(partial_sample) < self.frames_per_sample:
+                while len(partial_sample) < self.frames_per_sample and frame < self.end_frame:
                     in_bytes = process1.stdout.read(in_width * in_height * self.channels)
                     if in_bytes:
                         # Numpy frame conversion either happens during background subtraction or
@@ -296,6 +302,36 @@ class VideoSampler:
                             partial_sample.append(in_frame)
                             sample_frames.append(str(frame))
                         frame += 1
+                    elif (cur_end_frame < self.end_frame):
+                        # Let the previous process end.
+                        process1.wait()
+                        # Go to the next chunk
+                        cur_end_frame = min(frame_batch_size, self.end_frame)
+                        next_end_frame = min(cur_end_frame+frame_batch_size, self.end_frame)
+                        process1 = (
+                            ffmpeg
+                            .input(self.path)
+                            # Read the next chunk
+                            .trim(start_frame=cur_end_frame+1, end_frame=next_end_frame)
+                            # Scale
+                            .filter('scale', self.scale*self.width, -1)
+                            # The crop is automatically centered if the x and y parameters are not used.
+                            .filter('crop', out_w=in_width, out_h=in_height, x=self.crop_x, y=self.crop_y)
+                            # Full independence between color channels. The bee videos are basically a single color.
+                            # Otherwise normalizing the channels independently may not be a good choice.
+                        )
+                        if self.normalize:
+                            # Full independence between color channels. The bee videos are basically a single color.
+                            # Otherwise normalizing the channels independently may not be a good choice.
+                            process1 = process1.filter('normalize', independence=1.0)
+                        process1 = (
+                            process1
+                            # YUV444p is the alternative to rgb24, but the pretrained network expects rgb images.
+                            #.output('pipe:', format='rawvideo', pix_fmt='yuv444p')
+                            .output('pipe:', format='rawvideo', pix_fmt=pix_fmt)
+                            .run_async(pipe_stdout=True, quiet=True)
+                        )
+                        cur_end_frame = next_end_frame
                     else:
                         # Somehow we reached the end of the video without collected all of the samples.
                         print(f"Warning: reached the end of the video but only collected {target_idx}/{self.num_samples} samples")
