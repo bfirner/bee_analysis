@@ -77,13 +77,15 @@ class AlexLikeNet(nn.Module):
         layer[0].bias.fill_(1.)
         return layer
 
-    def __init__(self, in_dimensions, out_classes, linear_size=2048, vector_input_size=0):
+    def __init__(self, in_dimensions, out_classes, linear_size=2048, vector_input_size=0,
+            skip_last_relu=False):
         """
         Arguments:
             in_dimensions (tuple(int)): Tuple of channels, height, and width.
             out_classes          (int): The number of output classes.
             linear_size          (int): The size of the linear layers. There are two at each depth.
             vector_input_size    (int): The number of vector inputs to the linear layers.
+            skip_last_relu      (bool): Set to true to skip the last ReLU (as in regression outputs)
         """
         super(AlexLikeNet, self).__init__()
         #self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -156,10 +158,11 @@ class AlexLikeNet(nn.Module):
             self.classifier = nn.Sequential(
                 nn.Linear(
                     in_features=2*self.linear_size, out_features=self.out_classes),
-                nn.ReLU(),
                 # No softmax at the end. To train a single label classifier use CrossEntropyLoss
                 # rather than NLLLoss. This allows for multi-label classifiers trained with BCELoss.
             )
+            if not skip_last_relu:
+                self.classifier.append(nn.ReLU())
             self.classifier[0].bias.fill_(1.)
 
             self.createVisMaskLayers(self.output_sizes)

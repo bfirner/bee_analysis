@@ -11,12 +11,14 @@ from models.resnext import (ResNext18, ResNext34, ResNext50)
 from models.convnext import (ConvNextExtraTiny, ConvNextTiny, ConvNextSmall, ConvNextBase)
 
 
-def createModel(model_type, in_channels, frame_height, frame_width, vector_input_size, output_size):
+def createModel(model_type, in_channels, frame_height, frame_width, vector_input_size, output_size,
+        other_args=[]):
     """Create a model of the given type. Returns None on failure."""
     net = None
     if 'alexnet' == model_type:
         net = AlexLikeNet(in_dimensions=(in_channels, frame_height, frame_width),
-                out_classes=output_size, linear_size=512, vector_input_size=vector_input_size).cuda()
+                out_classes=output_size, linear_size=512, vector_input_size=vector_input_size,
+                **other_args).cuda()
     elif 'resnet18' == model_type:
         net = ResNet18(in_dimensions=(in_channels, frame_height, frame_width), out_classes=output_size, expanded_linear=True).cuda()
     elif 'resnet34' == model_type:

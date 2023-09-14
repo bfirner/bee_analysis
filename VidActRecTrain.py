@@ -266,6 +266,7 @@ if "cls" != args.labels[0]:
     label_offset = 0
 else:
     label_offset = args.label_offset
+print("Adjusting labels with offset {}".format(label_offset))
 
 
 print(f"Training with dataset {args.dataset}")
@@ -308,6 +309,9 @@ dl_tuple = LoopTuple(*([None] * len(decode_strs)))
 dataset = (
     wds.WebDataset(args.dataset, shardshuffle=True)
     .shuffle(20000//in_frames, initial=20000//in_frames)
+    # TODO This will hardcode all images to single channel numpy float images, but that isn't clear
+    # from any documentation.
+    # TODO Why "l" rather than decode to torch directly with "torchl"?
     .decode("l")
     .to_tuple(*decode_strs)
 )
@@ -331,9 +335,12 @@ lr_scheduler = None
 # AMP doesn't seem to like all of the different model types, so disable it unless it has been
 # verified.
 use_amp = False
+# If this model uses regression loss then don't put a ReLU at the end.
+skip_last_relue = (args.loss_fun in regression_loss)
 if 'alexnet' == args.modeltype:
     net = AlexLikeNet(in_dimensions=(in_frames, image_size[1], image_size[2]),
-            out_classes=label_size, linear_size=512, vector_input_size=vector_input_size).cuda()
+            out_classes=label_size, linear_size=512, vector_input_size=vector_input_size,
+            skip_last_relue=skip_last_relu).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-4)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[3,5,7], gamma=0.2)
     use_amp = True
