@@ -6,17 +6,19 @@ Utility functions for PyTorch training
 import torch
 
 
-def updateWithScaler(loss_fn, net, image_input, vector_input, labels, scaler, optimizer):
+def updateWithScaler(loss_fn, net, image_input, vector_input, labels, scaler, optimizer,
+        normalizer=None):
     """Update with scaler used in mixed precision training.
 
     Arguments:
-        loss_fn          (function): The loss function used during training.
-        net       (torch.nn.Module): The network to train.
-        image_input  (torch.tensor): Planar (3D) input to the network.
-        vector_input (torch.tensor): Vector (1D) input to the network.
-        labels       (torch.tensor): Desired network output.
+        loss_fn            (function): The loss function used during training.
+        net         (torch.nn.Module): The network to train.
+        image_input    (torch.tensor): Planar (3D) input to the network.
+        vector_input   (torch.tensor): Vector (1D) input to the network.
+        labels         (torch.tensor): Desired network output.
         scaler (torch.cuda.amp.GradScaler): Scaler for automatic mixed precision training.
-        optimizer     (torch.optim): Optimizer
+        optimizer       (torch.optim): Optimizer
+        normalizer  (torch.nn.module): Normalization for training labels.
     """
 
     with torch.cuda.amp.autocast():
@@ -24,6 +26,11 @@ def updateWithScaler(loss_fn, net, image_input, vector_input, labels, scaler, op
             out = net.forward(image_input.contiguous())
         else:
             out = net.forward(image_input.contiguous(), vector_input.contiguous())
+
+    # Scale the labels before calculating loss to rebalance how loss is distributed across the
+    # labels and to put the labels in a better training range.
+    if normalizer is not None:
+        labels = normalizer(labels)
 
     loss = loss_fn(out, labels.half())
     scaler.scale(loss).backward()
@@ -39,7 +46,8 @@ def updateWithScaler(loss_fn, net, image_input, vector_input, labels, scaler, op
 
     return out, loss
 
-def updateWithoutScaler(loss_fn, net, image_input, vector_input, labels, optimizer):
+def updateWithoutScaler(loss_fn, net, image_input, vector_input, labels, optimizer,
+        normalizer=None):
     """Update without any scaling from mixed precision training.
 
     Arguments:
@@ -54,6 +62,11 @@ def updateWithoutScaler(loss_fn, net, image_input, vector_input, labels, optimiz
         out = net.forward(image_input.contiguous())
     else:
         out = net.forward(image_input.contiguous(), vector_input.contiguous())
+
+    # Scale the labels before calculating loss to rebalance how loss is distributed across the
+    # labels and to put the labels in a better training range.
+    if normalizer is not None:
+        labels = normalizer(labels)
 
     loss = loss_fn(out, labels.float())
     loss.backward()

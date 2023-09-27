@@ -6,6 +6,7 @@ import torch
 
 from models.alexnet import AlexLikeNet
 from models.bennet import BenNet
+from models.denormalizer import (Denormalizer, Normalizer)
 from models.resnet import (ResNet18, ResNet34)
 from models.resnext import (ResNext18, ResNext34, ResNext50)
 from models.convnext import (ConvNextExtraTiny, ConvNextTiny, ConvNextSmall, ConvNextBase)
@@ -60,3 +61,19 @@ def restoreModelAndState(resume_from, net, optimizer):
     numpy.random.set_state(checkpoint["np_random_state"])
     torch.set_rng_state(checkpoint["torch_rng_state"])
 
+
+def hasNormalizers(resume_from) -> bool:
+    """Restore a trained model"""
+    checkpoint = torch.load(resume_from)
+    return checkpoint["denormalizer_state_dict"] is not None and checkpoint["normalizer_state_dict"] is not None
+
+
+def restoreNormalizers(resume_from):
+    """Restore normalizer and denormalizer. Check with hasNormalizers first."""
+    checkpoint = torch.load(resume_from)
+    nsd = checkpoint["normalizer_state_dict"]
+    dsd = checkpoint["denormalizer_state_dict"]
+    return (
+        Normalizer(means=nsd['means'], stddevs=1.0/nsd['inv_stddevs']),
+        Denormalizer(means=dsd['means'], stddevs=dsd['stddevs']),
+    )

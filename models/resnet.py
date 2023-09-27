@@ -37,7 +37,7 @@ class ResNet18(nn.Module):
             out_channels = self.channels[i]
             # The activation layer goes between convolutions in the block
             if j > 0:
-                block.append(nn.ReLU())
+                block.append(nn.LeakyReLU())
                 out_channels = self.channels[i+1]
                 stride = self.strides[i]
             else:
@@ -69,7 +69,7 @@ class ResNet18(nn.Module):
         layer = nn.Sequential(
             nn.Linear(
                 in_features=num_inputs, out_features=num_outputs),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Dropout(p=0.5)
         )
         layer[0].bias.fill_(1.)
@@ -152,7 +152,7 @@ class ResNet18(nn.Module):
             self.vis_layers[-1].weight.requires_grad_(False)
             self.vis_layers[-1].weight.fill_(1.)
 
-    def __init__(self, in_dimensions, out_classes, expanded_linear=False):
+    def __init__(self, in_dimensions, out_classes, expanded_linear=False, vector_input_size=0):
         """
         Arguments:
             in_dimensions (tuple(int)): Tuple of channels, height, and width.
@@ -160,6 +160,7 @@ class ResNet18(nn.Module):
             expanded_linear     (bool): True to expand the linear layers from the initial paper.
                                         Instead of global average pooling and a single linear layer
                                         there will be three linear layers of decreasing size.
+            vector_input_size    (int): The number of vector inputs to the linear layers.
         """
         super(ResNet18, self).__init__()
         #self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -196,7 +197,7 @@ class ResNet18(nn.Module):
 
             # Batch norm comes before the activation layer
             initial_block.append(nn.BatchNorm2d(self.channels[1]))
-            initial_block.append(nn.ReLU())
+            initial_block.append(nn.LeakyReLU())
             initial_block.append(nn.MaxPool2d(kernel_size=3, stride=2))
             out_size = (int((out_size[0] - 3)/2 + 1),
                         int((out_size[1] - 3)/2 + 1))
@@ -211,31 +212,33 @@ class ResNet18(nn.Module):
             # Linear layers accept the flattened feature maps.
             # TODO Should the bias of the linear layer be set to something in specific?
             if not expanded_linear:
-                self.classifier = torch.nn.Sequential(
+                self.neck = torch.nn.Sequential(
                     nn.AvgPool2d(kernel_size=(out_size[0], out_size[1])),
-                    nn.Flatten(),
-                    nn.Linear(in_features=self.channels[-1], out_features=out_classes)
+                    nn.Flatten()
+                )
+                self.classifier = torch.nn.Sequential(
+                    nn.Linear(in_features=self.channels[-1] + vector_input_size, out_features=out_classes)
                 # No softmax at the end. To train a single label classifier use CrossEntropyLoss
                 # rather than NLLLoss. This allows for multi-label classifiers trained with BCELoss.
                 )
             else:
-                linear_input_size = out_size[0]*out_size[1]*self.channels[-1]
+                self.neck = nn.Flatten()
+                linear_input_size = out_size[0]*out_size[1]*self.channels[-1] + vector_input_size
                 self.classifier = nn.Sequential(
-                    nn.Flatten(),
                     self.createLinearLayer(num_inputs=linear_input_size, num_outputs=1024),
                     self.createLinearLayer(num_inputs=1024, num_outputs=512),
                     nn.Linear( in_features=512, out_features=self.out_classes)
                     # No softmax at the end. To train a single label classifier use CrossEntropyLoss
                     # rather than NLLLoss. This allows for multi-label classifiers trained with BCELoss.
                 )
-                self.classifier[3].bias.fill_(1.)
-            self.activation = nn.ReLU()
+                self.classifier[2].bias.fill_(1.)
+            self.activation = nn.LeakyReLU()
 
             self.createVisMaskLayers(self.output_sizes)
 
     #TODO AMP
     #@autocast()
-    def forward(self, x):
+    def forward(self, x, vector_input=None):
         # The initial block of the model is not a residual layer, but then there is a skip
         # connection for every pair of layers after that.
         x = self.model[0](x)
@@ -249,6 +252,12 @@ class ResNet18(nn.Module):
             # Add the shortcut and the output of the convolutions, then pass through an activation
             # layer
             x = self.activation(x + y)
+
+        # Flatten, with other possible processing/pooling
+        x = self.neck(x)
+
+        if vector_input is not None:
+            x = torch.cat((x, vector_input), dim=1)
 
         x = self.classifier(x)
         return x
@@ -282,6 +291,12 @@ class ResNet18(nn.Module):
                 mask = self.vis_layers[-(1+i)](mask * avg_outputs)
             # Keep the maximum value of the mask at 1
             mask = mask / mask.max()
+
+        # Flatten, with other possible processing/pooling
+        x = self.neck(x)
+
+        if vector_input is not None:
+            x = torch.cat((x, vector_input), dim=1)
 
         x = self.classifier(x)
         return x, mask
