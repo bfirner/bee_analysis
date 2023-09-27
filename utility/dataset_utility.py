@@ -54,7 +54,7 @@ def getVectorSize(data_path, decode_strs, vector_range):
     # Check the size of the labels
     test_dataset = (
         wds.WebDataset(data_path)
-        .decode("l")
+        #.decode("l")
         .to_tuple(*decode_strs)
     )
     test_dataloader = torch.utils.data.DataLoader(test_dataset, num_workers=0, batch_size=1)

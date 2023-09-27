@@ -205,7 +205,7 @@ class VideoSampler:
                 # 400 is the default window for background subtractors
                 .trim(start_frame=1, end_frame=400)
                 # Scale
-                .filter('scale', self.scale*self.width, -1)
+                .filter('scale', math.floor(self.scale*self.width), -1)
                 # The crop is automatically centered if the x and y parameters are not used.
                 .filter('crop', out_w=in_width, out_h=in_height, x=self.crop_x, y=self.crop_y)
             )
@@ -236,7 +236,7 @@ class VideoSampler:
             # Read the next chunk
             .trim(start_frame=1, end_frame=cur_end_frame)
             # Scale
-            .filter('scale', self.scale*self.width, -1)
+            .filter('scale', math.floor(self.scale*self.width), -1)
             # The crop is automatically centered if the x and y parameters are not used.
             .filter('crop', out_w=in_width, out_h=in_height, x=self.crop_x, y=self.crop_y)
             # Full independence between color channels. The bee videos are basically a single color.
@@ -314,7 +314,7 @@ class VideoSampler:
                             # Read the next chunk
                             .trim(start_frame=cur_end_frame+1, end_frame=next_end_frame)
                             # Scale
-                            .filter('scale', self.scale*self.width, -1)
+                            .filter('scale', math.floor(self.scale*self.width), -1)
                             # The crop is automatically centered if the x and y parameters are not used.
                             .filter('crop', out_w=in_width, out_h=in_height, x=self.crop_x, y=self.crop_y)
                             # Full independence between color channels. The bee videos are basically a single color.

@@ -30,12 +30,13 @@ from collections import namedtuple
 from torchvision import transforms
 
 from utility.dataset_utility import (extractVectors, getImageSize, getVectorSize)
-from utility.eval_utility import (ConfusionMatrix, RegressionResults, WorstExamples)
+from utility.eval_utility import (ConfusionMatrix, OnlineStatistics, RegressionResults, WorstExamples)
 from utility.model_utility import (restoreModelAndState)
 from utility.train_utility import (updateWithScaler, updateWithoutScaler)
 
 from models.alexnet import AlexLikeNet
 from models.bennet import BenNet
+from models.denormalizer import Denormalizer, Normalizer
 from models.resnet import (ResNet18, ResNet34)
 from models.resnext import (ResNext18, ResNext34, ResNext50)
 from models.convnext import (ConvNextExtraTiny, ConvNextTiny, ConvNextSmall, ConvNextBase)
@@ -71,7 +72,7 @@ parser.add_argument(
     type=str,
     required=False,
     default="model.checkpoint",
-    help='Base name for model and checkpoint saving.')
+    help='Base name for model, checkpoint, and metadata saving.')
 parser.add_argument(
     '--resume_from',
     type=str,
@@ -96,6 +97,13 @@ parser.add_argument(
     action="store_true",
     help=("Normalize inputs: input = (input - mean) / stddev. "
         "Note that VidActRecDataprep is already normalizing so this may not be required."))
+parser.add_argument(
+    '--normalize_outputs',
+    required=False,
+    default=False,
+    action="store_true",
+    help=("Normalize the outputs: output = (output - mean) / stddev. "
+        "This will read the entire dataset to find these values. After training the final weights will be adjusted so that no additional processing is required."))
 parser.add_argument(
     '--modeltype',
     type=str,
@@ -242,6 +250,7 @@ regression_loss = ['L1Loss', 'MSELoss']
 
 in_frames = args.sample_frames
 decode_strs = []
+label_decode_strs = []
 # The image for a particular frame
 for i in range(in_frames):
     decode_strs.append(f"{i}.png")
@@ -250,6 +259,7 @@ for i in range(in_frames):
 label_range = slice(len(decode_strs), len(decode_strs) + len(args.labels))
 for label_str in args.labels:
     decode_strs.append(label_str)
+    label_decode_strs.append(label_str)
 
 # Vector inputs (if there are none then the slice will be an empty range)
 vector_range = slice(label_range.stop, label_range.stop + len(args.vector_inputs))
@@ -290,6 +300,50 @@ if not convert_idx_to_classes:
         else:
             for i in range(label_elements):
                 label_names.append("{}-{}".format(args.labels[label_idx], i))
+
+# Find the values required to normalize network outputs
+# Should be used with regression, obviously shouldn't be used with one hot vectors and classifiers
+if args.normalize_outputs and args.loss_fun not in regression_loss:
+    print("Error: normalize_outputs should only be true for regression loss.")
+    exit(1)
+if not args.normalize_outputs:
+    denormalizer = None
+    normalizer = None
+else:
+    print("Reading dataset to compute label statistics for normalization.")
+    label_stats = [OnlineStatistics() for _ in range(label_size)]
+    label_dataset = (
+        wds.WebDataset(args.dataset)
+        .to_tuple(*label_decode_strs)
+    )
+    # TODO Loop through the dataset and compile label statistics
+    label_dataloader = torch.utils.data.DataLoader(label_dataset, num_workers=0, batch_size=1)
+    for data in label_dataloader:
+        for label, stat in zip(extractVectors(data, slice(0, label_size))[0].tolist(), label_stats):
+            stat.sample(label)
+    # Now record the statistics
+    label_means = []
+    label_stddevs = []
+    for stat in label_stats:
+        label_means.append(stat.mean())
+        label_stddevs.append(math.sqrt(stat.variance()))
+
+    print("Normalizing labels with the follow statistics:")
+    for lnum, lname in enumerate(label_names):
+        print("{} mean and stddev are: {} and {}".format(lname, label_means[lnum], label_stddevs[lnum]))
+
+    # Convert label means and stddevs into tensors and send to modules for ease of application
+    label_means = torch.tensor(label_means).cuda()
+    label_stddevs = torch.tensor(label_stddevs).cuda()
+    denormalizer = Denormalizer(means=label_means, stddevs=label_stddevs).cuda()
+    normalizer = Normalizer(means=label_means, stddevs=label_stddevs).cuda()
+
+# If any of the standard deviations are 0 they must be adjusted to avoid mathematical errors.
+# More importantly, any labels with a standard deviation of 0 should not be used for training
+# since they are just fixed numbers.
+if (label_stddevs.abs() < 0.0001).any():
+    print("Some labels have extremely low variance--they may be fixed values. Check your dataset.")
+    exit(1)
 
 # Only check the size of the non-image input vector if it has any entries
 vector_input_size = 0
@@ -336,19 +390,22 @@ lr_scheduler = None
 # verified.
 use_amp = False
 # If this model uses regression loss then don't put a ReLU at the end.
-skip_last_relue = (args.loss_fun in regression_loss)
+skip_last_relu = (args.loss_fun in regression_loss)
 if 'alexnet' == args.modeltype:
     net = AlexLikeNet(in_dimensions=(in_frames, image_size[1], image_size[2]),
             out_classes=label_size, linear_size=512, vector_input_size=vector_input_size,
-            skip_last_relue=skip_last_relu).cuda()
+            skip_last_relu=skip_last_relu).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-4)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[3,5,7], gamma=0.2)
     use_amp = True
 elif 'resnet18' == args.modeltype:
-    net = ResNet18(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size, expanded_linear=True).cuda()
-    optimizer = torch.optim.SGD(net.parameters(), lr=10e-5)
+    net = ResNet18(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size,
+            expanded_linear=True, vector_input_size=vector_input_size).cuda()
+    #optimizer = torch.optim.SGD(net.parameters(), lr=10e-5)
+    optimizer = torch.optim.Adam(net.parameters(), lr=10e-5)
 elif 'resnet34' == args.modeltype:
-    net = ResNet34(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size, expanded_linear=True).cuda()
+    net = ResNet34(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size,
+            expanded_linear=True, vector_input_size=vector_input_size).cuda()
     optimizer = torch.optim.Adam(net.parameters(), lr=10e-5)
 elif 'bennet' == args.modeltype:
     net = BenNet(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size).cuda()
@@ -448,9 +505,13 @@ if not args.no_train:
             labels = labels - label_offset
 
             if use_amp:
-                out, loss = updateWithScaler(loss_fn, net, net_input, vector_inputs, labels, scaler, optimizer)
+                out, loss = updateWithScaler(loss_fn, net, net_input, vector_inputs, labels, scaler,
+                        optimizer, normalizer)
             else:
-                out, loss = updateWithoutScaler(loss_fn, net, net_input, vector_inputs, labels, optimizer)
+                out, loss = updateWithoutScaler(loss_fn, net, net_input, vector_inputs, labels,
+                        optimizer, normalizer)
+            # Adjust output to undo the label normalization
+            out = denormalizer(out)
 
             # Fill in the confusion matrix and worst examples.
             with torch.no_grad():
@@ -468,19 +529,19 @@ if not args.no_train:
                     if convert_idx_to_classes:
                         labels = torch.nn.functional.one_hot(labels, num_classes=label_size)
                     totals.update(predictions=classes, labels=labels)
-                    if worst_training is not None:
-                        if args.skip_metadata:
-                            metadata = [""] * labels.size(0)
-                        else:
-                            metadata = dl_tuple[metadata_index]
-                        # For each item in the batch see if it requires an update to the worst examples
-                        # If the DNN should have predicted this image was a member of the labelled class
-                        # then see if this image should be inserted into the worst_n queue for the
-                        # labelled class based upon the DNN output for this class.
-                        input_images = dl_tuple[0]
-                        for i in range(labels.size(0)):
-                            label = torch.argwhere(labels[i])[0].item()
-                            worst_training.test(label, out[i][label].item(), input_images[i], metadata[i])
+                if worst_training is not None:
+                    if args.skip_metadata:
+                        metadata = [""] * labels.size(0)
+                    else:
+                        metadata = dl_tuple[metadata_index]
+                    # For each item in the batch see if it requires an update to the worst examples
+                    # If the DNN should have predicted this image was a member of the labelled class
+                    # then see if this image should be inserted into the worst_n queue for the
+                    # labelled class based upon the DNN output for this class.
+                    input_images = dl_tuple[0]
+                    for i in range(labels.size(0)):
+                        label = torch.argwhere(labels[i])[0].item()
+                        worst_training.test(label, out[i][label].item(), input_images[i], metadata[i])
         print(f"Finished epoch {epoch}, last loss was {loss}")
         print(f"Training results:")
         print(totals.makeResults())
@@ -513,6 +574,8 @@ if not args.no_train:
                         if 0 < vector_input_size:
                             vector_input = extractVectors(dl_tuple, vector_range).cuda()
                         out = net.forward(net_input, vector_input)
+                        # Adjust output to undo the label normalization
+                        out = denormalizer(out)
                         labels = extractVectors(dl_tuple,label_range).cuda()
 
                         # The label value may need to be adjusted, for example if the label class is
@@ -549,6 +612,8 @@ if not args.no_train:
         "py_random_state": random.getstate(),
         "np_random_state": numpy.random.get_state(),
         "torch_rng_state": torch.get_rng_state(),
+        "denormalizer_state_dict": denormalizer.state_dict() if denormalizer is not None else None,
+        "normalizer_state_dict": normalizer.state_dict() if normalizer is not None else None,
         }, args.outname)
 
 # Post-training evaluation
@@ -599,6 +664,8 @@ if args.evaluate is not None:
                 else:
                     out = net.forward(net_input, vector_input, vector_input)
                     mask = [None] * batch_size
+                # Adjust output to undo the label normalization
+                out = denormalizer(out)
                 # Convert the labels to a one hot encoding to serve at the DNN target.
                 # The label class is 1 based, but need to be 0-based for the one_hot function.
                 labels = extractVectors(dl_tuple,label_range).cuda()
@@ -631,22 +698,22 @@ if args.evaluate is not None:
                             labels = torch.nn.functional.one_hot(labels, num_classes=label_size)
                         totals.update(predictions=classes, labels=labels)
                         classes = torch.round(classes).clamp(0, 1)
-                        # Log the predictions
+                    # Log the predictions
+                    for i in range(labels.size(0)):
+                        logfile.write(','.join((metadata[i], str(out[i]), str(labels[i]))))
+                        logfile.write('\n')
+                    if worst_eval is not None or top_eval is not None:
+                        # For each item in the batch see if it requires an update to the worst examples
+                        # If the DNN should have predicted this image was a member of the labelled class
+                        # then see if this image should be inserted into the worst_n queue for the
+                        # labelled class based upon the DNN output for this class.
+                        input_images = dl_tuple[0]
                         for i in range(labels.size(0)):
-                            logfile.write(','.join((metadata[i], str(out[i]), str(labels[i]))))
-                            logfile.write('\n')
-                        if worst_eval is not None or top_eval is not None:
-                            # For each item in the batch see if it requires an update to the worst examples
-                            # If the DNN should have predicted this image was a member of the labelled class
-                            # then see if this image should be inserted into the worst_n queue for the
-                            # labelled class based upon the DNN output for this class.
-                            input_images = dl_tuple[0]
-                            for i in range(labels.size(0)):
-                                label = torch.argwhere(labels[i])[0].item()
-                                if worst_eval is not None:
-                                    worst_eval.test(label, out[i][label].item(), input_images[i], metadata[i])
-                                if top_eval is not None:
-                                    top_eval.test(label, out[i][label].item(), input_images[i], metadata[i])
+                            label = torch.argwhere(labels[i])[0].item()
+                            if worst_eval is not None:
+                                worst_eval.test(label, out[i][label].item(), input_images[i], metadata[i])
+                            if top_eval is not None:
+                                top_eval.test(label, out[i][label].item(), input_images[i], metadata[i])
 
         # Save the worst and best examples
         if worst_eval is not None:
