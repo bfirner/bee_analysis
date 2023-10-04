@@ -332,12 +332,12 @@ else:
     denormalizer = Denormalizer(means=label_means, stddevs=label_stddevs).cuda()
     normalizer = Normalizer(means=label_means, stddevs=label_stddevs).cuda()
 
-# If any of the standard deviations are 0 they must be adjusted to avoid mathematical errors.
-# More importantly, any labels with a standard deviation of 0 should not be used for training
-# since they are just fixed numbers.
-if (label_stddevs.abs() < 0.0001).any():
-    print("Some labels have extremely low variance--they may be fixed values. Check your dataset.")
-    exit(1)
+    # If any of the standard deviations are 0 they must be adjusted to avoid mathematical errors.
+    # More importantly, any labels with a standard deviation of 0 should not be used for training
+    # since they are just fixed numbers.
+    if (label_stddevs.abs() < 0.0001).any():
+        print("Some labels have extremely low variance--they may be fixed values. Check your dataset.")
+        exit(1)
 
 # Only check the size of the non-image input vector if it has any entries
 vector_input_size = 0
@@ -385,58 +385,75 @@ lr_scheduler = None
 use_amp = False
 # If this model uses regression loss then don't put a ReLU at the end.
 skip_last_relu = (args.loss_fun in regression_loss)
+# Store the model arguments and save them with the model. This will simplify model loading and
+# recreation later.
+model_args = {
+    'in_dimensions': (in_frames, image_size[1], image_size[2]),
+    'out_classes': label_size,
+}
+if 0 < vector_input_size:
+    model_args['vector_input_size'] = vector_input_size
+
 if 'alexnet' == args.modeltype:
-    net = AlexLikeNet(in_dimensions=(in_frames, image_size[1], image_size[2]),
-            out_classes=label_size, linear_size=512, vector_input_size=vector_input_size,
-            skip_last_relu=skip_last_relu).cuda()
+    # Model specific arguments
+    model_args['linear_size'] = 512
+    model_args['skip_last_relu'] = skip_last_relu
+    net = AlexLikeNet(**model_args).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-4)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[3,5,7], gamma=0.2)
     use_amp = True
 elif 'resnet18' == args.modeltype:
-    net = ResNet18(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size,
-            expanded_linear=True, vector_input_size=vector_input_size).cuda()
-    #optimizer = torch.optim.SGD(net.parameters(), lr=10e-5)
-    optimizer = torch.optim.Adam(net.parameters(), lr=10e-5)
+    # Model specific arguments
+    model_args['expanded_linear'] = True
+    net = ResNet18(**model_args).cuda()
+    optimizer = torch.optim.SGD(net.parameters(), lr=10e-5)
 elif 'resnet34' == args.modeltype:
-    net = ResNet34(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size,
-            expanded_linear=True, vector_input_size=vector_input_size).cuda()
+    # Model specific arguments
+    model_args['expanded_linear'] = True
+    net = ResNet34(**model_args).cuda()
     optimizer = torch.optim.Adam(net.parameters(), lr=10e-5)
 elif 'bennet' == args.modeltype:
-    net = BenNet(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size).cuda()
+    net = BenNet(**model_args).cuda()
     optimizer = torch.optim.Adam(net.parameters(), lr=10e-5)
 elif 'resnext50' == args.modeltype:
-    net = ResNext50(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size, expanded_linear=True).cuda()
+    # Model specific arguments
+    model_args['expanded_linear'] = True
+    net = ResNext50(**model_args).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[1,2,3], gamma=0.1)
     batch_size = 64
 elif 'resnext34' == args.modeltype:
+    # Model specific arguments
+    model_args['expanded_linear'] = False
+    model_args['use_dropout'] = False
     # Learning parameters were tuned on a dataset with about 80,000 examples
-    net = ResNext34(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size, expanded_linear=False,
-            use_dropout=False).cuda()
+    net = ResNext34(**model_args).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,9], gamma=0.2)
 elif 'resnext18' == args.modeltype:
+    # Model specific arguments
+    model_args['expanded_linear'] = True
+    model_args['use_dropout'] = False
     # Learning parameters were tuned on a dataset with about 80,000 examples
-    net = ResNext18(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size, expanded_linear=True,
-            use_dropout=False).cuda()
+    net = ResNext18(**model_args).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,12], gamma=0.2)
 elif 'convnextxt' == args.modeltype:
-    net = ConvNextExtraTiny(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size).cuda()
+    net = ConvNextExtraTiny(**model_args).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-4, weight_decay=10e-4, momentum=0.9,
             nesterov=True)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[4,5,12], gamma=0.2)
     use_amp = True
 elif 'convnextt' == args.modeltype:
-    net = ConvNextTiny(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size).cuda()
+    net = ConvNextTiny(**model_args).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,12], gamma=0.2)
 elif 'convnexts' == args.modeltype:
-    net = ConvNextSmall(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size).cuda()
+    net = ConvNextSmall(**model_args).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,12], gamma=0.2)
 elif 'convnextb' == args.modeltype:
-    net = ConvNextBase(in_dimensions=(in_frames, image_size[1], image_size[2]), out_classes=label_size).cuda()
+    net = ConvNextBase(**model_args).cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,12], gamma=0.2)
 print(f"Model is {net}")
@@ -505,7 +522,8 @@ if not args.no_train:
                 out, loss = updateWithoutScaler(loss_fn, net, net_input, vector_inputs, labels,
                         optimizer, normalizer)
             # Adjust output to undo the label normalization
-            out = denormalizer(out)
+            if denormalizer is not None:
+                out = denormalizer(out)
 
             # Fill in the confusion matrix and worst examples.
             with torch.no_grad():
@@ -569,7 +587,8 @@ if not args.no_train:
                             vector_input = extractVectors(dl_tuple, vector_range).cuda()
                         out = net.forward(net_input, vector_input)
                         # Adjust output to undo the label normalization
-                        out = denormalizer(out)
+                        if denormalizer is not None:
+                            out = denormalizer(out)
                         labels = extractVectors(dl_tuple,label_range).cuda()
 
                         # The label value may need to be adjusted, for example if the label class is
@@ -608,6 +627,17 @@ if not args.no_train:
         "torch_rng_state": torch.get_rng_state(),
         "denormalizer_state_dict": denormalizer.state_dict() if denormalizer is not None else None,
         "normalizer_state_dict": normalizer.state_dict() if normalizer is not None else None,
+        # Store some metadata to make it easier to recreate and use this model
+        "metadata": {
+            'modeltype': args.modeltype,
+            'labels': args.labels,
+            'vector_inputs': args.vector_inputs,
+            'convert_idx_to_classes': args.convert_idx_to_classes,
+            'label_size': label_size,
+            'model_args': model_args,
+            'normalize_video': args.normalize,
+            'normalize_labels': args.normalize_outputs,
+            },
         }, args.outname)
 
 # Post-training evaluation
@@ -659,7 +689,8 @@ if args.evaluate is not None:
                     out = net.forward(net_input, vector_input, vector_input)
                     mask = [None] * batch_size
                 # Adjust output to undo the label normalization
-                out = denormalizer(out)
+                if denormalizer is not None:
+                    out = denormalizer(out)
                 # Convert the labels to a one hot encoding to serve at the DNN target.
                 # The label class is 1 based, but need to be 0-based for the one_hot function.
                 labels = extractVectors(dl_tuple,label_range).cuda()
