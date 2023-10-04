@@ -84,7 +84,7 @@ you have something more complicated happening and you will have to look into you
 what is happening.
 
 If you are going to use n-fold cross validation then be sure to break your dataset into *n* chunks
-at this point, which means running `VidAcRcDataprep.py` *n* times.
+at this point, which means running `VidActRecDataprep.py` *n* times.
 
 ## Training a model
 
@@ -99,6 +99,34 @@ By default the model is saved to `model.checkpoint`, but that can be changed wit
 option.
 
 Run the script with `--help` for more details.
+
+### Training with Arbitrary Targets and Inputs
+
+Once a webdataset is built, each file in the dataset can be used as an input or an output. To use
+one of the files as an input, use the `--label` option:
+> --labels <input name 1> <input name 2> ...
+
+If the inputs should be converted to one-hot vectors then set `--convert_idx_to_classes 1`
+
+Currently mixing one-hot with other inputs is not supported, either all labels will be treated a
+one-hot or all labels will be taken as-is.
+
+Inputs, meaning vector inputs or single inputs, can be specified with the `--vector_input` argument.
+This takes a list of names and works in the same way as the `--labels` option.
+
+### Training with Regression Targets
+
+To train with regression targets, first select a regression loss function, such as mean square
+error:
+> --loss_fun MSELoss
+
+Make sure to set `--convert_idx_to_classes 0`
+
+Regression training is sensitive to differences in magnitude of the training targets. For example,
+if one regression target has values an order of magnitude, then its loss will also be an order of
+magnitude larger which could suppress learning of the smaller target. To normalize this, use the
+`--normalize_outputs` option.
+
 
 ## Annotating a Video
 
