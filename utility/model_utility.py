@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-
 import random
 import numpy
 import torch
@@ -12,20 +10,33 @@ from models.resnext import (ResNext18, ResNext34, ResNext50)
 from models.convnext import (ConvNextExtraTiny, ConvNextTiny, ConvNextSmall, ConvNextBase)
 
 
-def createModel(model_type, in_channels, frame_height, frame_width, vector_input_size, output_size,
+def createModel2(model_type, other_args):
+    """Create a model of the given type. Returns None on failure."""
+    net = None
+    if 'alexnet' == model_type:
+        net = AlexLikeNet(**other_args).cuda()
+    elif 'resnet18' == model_type:
+        net = ResNet18(**other_args).cuda()
+    elif 'resnet34' == model_type:
+        net = ResNet34(**other_args).cuda()
+    elif 'bennet' == model_type:
+        net = BenNet(**other_args).cuda()
+    return net
+
+
+def createModel(model_type, in_channels, frame_height, frame_width, output_size,
         other_args=[]):
     """Create a model of the given type. Returns None on failure."""
     net = None
     if 'alexnet' == model_type:
         net = AlexLikeNet(in_dimensions=(in_channels, frame_height, frame_width),
-                out_classes=output_size, linear_size=512, vector_input_size=vector_input_size,
-                **other_args).cuda()
+                out_classes=output_size, **other_args).cuda()
     elif 'resnet18' == model_type:
-        net = ResNet18(in_dimensions=(in_channels, frame_height, frame_width), out_classes=output_size, expanded_linear=True).cuda()
+        net = ResNet18(in_dimensions=(in_channels, frame_height, frame_width), out_classes=output_size, **other_args).cuda()
     elif 'resnet34' == model_type:
-        net = ResNet34(in_dimensions=(in_channels, frame_height, frame_width), out_classes=output_size, expanded_linear=True).cuda()
+        net = ResNet34(in_dimensions=(in_channels, frame_height, frame_width), out_classes=output_size, **other_args).cuda()
     elif 'bennet' == model_type:
-        net = BenNet(in_dimensions=(in_channels, frame_height, frame_width), out_classes=output_size).cuda()
+        net = BenNet(in_dimensions=(in_channels, frame_height, frame_width), out_classes=output_size, **other_args).cuda()
     elif 'resnext50' == model_type:
         net = ResNext50(in_dimensions=(in_channels, frame_height, frame_width), out_classes=output_size, expanded_linear=True).cuda()
     elif 'resnext34' == model_type:
