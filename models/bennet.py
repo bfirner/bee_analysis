@@ -149,11 +149,12 @@ class BenNet(nn.Module):
             self.vis_layers[-1].weight.requires_grad_(False)
             self.vis_layers[-1].weight.fill_(1.)
 
-    def __init__(self, in_dimensions, out_classes):
+    def __init__(self, in_dimensions, out_classes, vector_input_size=0):
         """
         Arguments:
             in_dimensions (tuple(int)): Tuple of channels, height, and width.
             out_classes          (int): The number of output classes.
+            vector_input_size    (int): The number of vector inputs to the linear layers.
         """
         super(BenNet, self).__init__()
         #self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -181,10 +182,11 @@ class BenNet(nn.Module):
         with torch.no_grad():
             out_size = self.createInternalResLayers(out_size)
 
+            self.neck = nn.Flatten()
+
             # Linear layers accept the flattened feature maps.
-            linear_input_size = out_size[0]*out_size[1]*self.channels[-1]
+            linear_input_size = out_size[0]*out_size[1]*self.channels[-1] + vector_input_size
             self.classifier = nn.Sequential(
-                nn.Flatten(),
                 self.createLinearLayer(num_inputs=linear_input_size, num_outputs=256),
                 self.createLinearLayer(num_inputs=256, num_outputs=256),
                 self.createLinearLayer(num_inputs=256, num_outputs=128),
@@ -201,7 +203,7 @@ class BenNet(nn.Module):
 
     #TODO AMP
     #@autocast()
-    def forward(self, x):
+    def forward(self, x, vector_input=None):
         # The initial block of the model is not a residual layer, but then there is a skip
         # connection for every pair of layers after that.
         for idx in range(len(self.model) - self.non_res_layers):
@@ -213,6 +215,12 @@ class BenNet(nn.Module):
 
         for layer in self.model[-self.non_res_layers:]:
             x = layer(x)
+
+        # Flatten
+        x = self.neck(x)
+
+        if vector_input is not None:
+            x = torch.cat((x, vector_input), dim=1)
 
         x = self.classifier(x)
         return x
@@ -244,6 +252,12 @@ class BenNet(nn.Module):
                 mask = self.vis_layers[-(1+i)](mask * avg_outputs)
             # Keep the maximum value of the mask at 1
             mask = mask / mask.max()
+
+        # Flatten
+        x = self.neck(x)
+
+        if vector_input is not None:
+            x = torch.cat((x, vector_input), dim=1)
 
         x = self.classifier(x)
         return x, mask
