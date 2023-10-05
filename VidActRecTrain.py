@@ -32,7 +32,7 @@ from torchvision import transforms
 from utility.dataset_utility import (extractVectors, getImageSize, getVectorSize)
 from utility.eval_utility import (ConfusionMatrix, OnlineStatistics, RegressionResults, WorstExamples)
 from utility.model_utility import (restoreModelAndState)
-from utility.train_utility import (updateWithScaler, updateWithoutScaler)
+from utility.train_utility import (LabelHandler, evalEpoch, trainEpoch, updateWithScaler, updateWithoutScaler)
 
 from models.alexnet import AlexLikeNet
 from models.bennet import BenNet
@@ -225,16 +225,6 @@ if args.template is not None:
 # Convert the numeric input to a bool
 convert_idx_to_classes = args.convert_idx_to_classes == 1
 
-# Network outputs may need to be postprocessed for evaluation if some postprocessing is being done
-# automatically by the loss function.
-if 'CrossEntropyLoss' == args.loss_fun:
-    nn_postprocess = torch.nn.Softmax(dim=1)
-elif 'BCEWithLogitsLoss' == args.loss_fun:
-    nn_postprocess = torch.nn.Sigmoid()
-else:
-    # Otherwise just use an identify function.
-    nn_postprocess = lambda x: x
-
 
 loss_fn = getattr(torch.nn, args.loss_fun)()
 
@@ -339,6 +329,40 @@ else:
         print("Some labels have extremely low variance--they may be fixed values. Check your dataset.")
         exit(1)
 
+label_handler = LabelHandler(label_size, label_range, label_names)
+
+# The label value may need to be adjusted, for example if the label class is 1 based, but
+# should be 0-based for the one_hot function. This is done by subtracting the label_offset from the
+# labels.
+# Also scale the labels before calculating loss to rebalance how loss is distributed across the
+# labels and to put the labels in a better training range. Note that this only makes sense with a
+# regression loss, where the label_offset adjustment would not be used.
+if normalizer is not None:
+    label_handler.setPreprocess(lambda labels: normalizer(labels))
+else:
+    label_handler.setPreprocess(lambda labels: labels - label_offset)
+# Convert index labels to a one hot encoding for standard processing.
+if convert_idx_to_classes:
+    label_handler.setPreeval(lambda labels: torch.nn.functional.one_hot((labels - label_offset), num_classes=label_handler.size()))
+
+
+# Network outputs may need to be postprocessed for evaluation if some postprocessing is being done
+# automatically by the loss function.
+if 'CrossEntropyLoss' == args.loss_fun:
+    # Outputs of most classification networks are considered probabilities (but only take that in a
+    # very loose sense of the word). The Softmax function forces its inputs to sum to 1 as
+    # probabilities should do.
+    nn_postprocess = torch.nn.Softmax(dim=1)
+elif 'BCEWithLogitsLoss' == args.loss_fun:
+    nn_postprocess = torch.nn.Sigmoid()
+else:
+    # Otherwise just use an identify function unless normalization is being used.
+    if denormalizer is None:
+        nn_postprocess = lambda x: x
+    else:
+        nn_postprocess = lambda labels: denormalizer(labels)
+
+
 # Only check the size of the non-image input vector if it has any entries
 vector_input_size = 0
 if 0 < len(args.vector_inputs):
@@ -389,7 +413,7 @@ skip_last_relu = (args.loss_fun in regression_loss)
 # recreation later.
 model_args = {
     'in_dimensions': (in_frames, image_size[1], image_size[2]),
-    'out_classes': label_size,
+    'out_classes': label_handler.size(),
 }
 if 0 < vector_input_size:
     model_args['vector_input_size'] = vector_input_size
@@ -462,183 +486,93 @@ print(f"Model is {net}")
 if args.resume_from is not None:
     restoreModelAndState(args.resume_from, net, optimizer)
 
-# Gradient scaler for mixed precision training
-if use_amp:
-    scaler = torch.cuda.amp.GradScaler()
 
-# TODO(bfirner) Read class names from something
+# TODO(bfirner) Read class names from something instead of assigning them numbers.
+# Note that we can't just use the label names since we may be getting classes by converting a
+# numeric input into a one-hot vector
 class_names = []
 for i in range(label_size):
     class_names.append(f"{i}")
 
 if not args.no_train:
-    worst_training = None
     if args.save_worst_n is not None:
-        worst_training = WorstExamples(
-            args.outname.split('.')[0] + "-worstN-train", class_names, args.save_worst_n)
         print(f"Saving {args.save_worst_n} highest error training images to {worst_training.worstn_path}.")
+
+    # Gradient scaler for mixed precision training
+    if use_amp:
+        scaler = torch.cuda.amp.GradScaler()
+    else:
+        scaler = None
     for epoch in range(args.epochs):
-        # Make a confusion matrix or loss statistics
         if args.loss_fun in regression_loss:
-            totals = RegressionResults(size=label_size, names=label_names)
+            totals = RegressionResults(size=label_handler.size(), names=label_handler.names())
         else:
-            totals = ConfusionMatrix(size=label_size)
+            totals = ConfusionMatrix(size=label_handler.size())
+        worst_training = None
+        if args.save_worst_n:
+            worst_training = WorstExamples(
+                args.outname.split('.')[0] + "-worstN-train", class_names, save_worst_n)
+            print(f"Saving {save_worst_n} highest error training images to {worst_training.worstn_path}.")
         print(f"Starting epoch {epoch}")
-        for batch_num, dl_tuple in enumerate(dataloader):
-            dateNow = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-            if ( (batch_num % 1000) == 1):
-                print ("Log: at tuple %d at %s" % (batch_num,dateNow))
-
-            optimizer.zero_grad()
-            # For debugging purposes
-            # img = transforms.ToPILImage()(dl_tuple[0][0]).convert('RGB')
-            # img.save(f"batch_{batch_num}.png")
-            # Decoding only the luminance channel means that the channel dimension has gone away here.
-            if 1 == in_frames:
-                net_input = dl_tuple[0].unsqueeze(1).cuda()
-            else:
-                raw_input = []
-                for i in range(in_frames):
-                    raw_input.append(dl_tuple[i].unsqueeze(1).cuda())
-                net_input = torch.cat(raw_input, dim=1)
-            # Normalize inputs: input = (input - mean)/stddev
-            if args.normalize:
-                v, m = torch.var_mean(net_input)
-                net_input = (net_input - m) / v
-
-            labels = extractVectors(dl_tuple, label_range).cuda()
-            vector_inputs=None
-            if 0 < vector_input_size:
-                vector_inputs = extractVectors(dl_tuple, vector_range).cuda()
-
-            # The label value may need to be adjusted, for example if the label class is 1 based, but
-            # should be 0-based for the one_hot function.
-            labels = labels - label_offset
-
-            if use_amp:
-                out, loss = updateWithScaler(loss_fn, net, net_input, vector_inputs, labels, scaler,
-                        optimizer, normalizer)
-            else:
-                out, loss = updateWithoutScaler(loss_fn, net, net_input, vector_inputs, labels,
-                        optimizer, normalizer)
-            # Adjust output to undo the label normalization
-            if denormalizer is not None:
-                out = denormalizer(out)
-
-            # Fill in the confusion matrix and worst examples.
-            with torch.no_grad():
-                if args.loss_fun in regression_loss:
-                    post_out = nn_postprocess(out)
-                    totals.update(predictions=post_out, labels=labels)
-                    # TODO FIXME Worst and best eval for regression outputs
-                else:
-                    # The postprocessesing should include Softmax or similar if that is required for
-                    # the network. Outputs of most classification networks are considered
-                    # probabilities (but only take that in a very loose sense of the word) so
-                    # rounding could be appropriate.
-                    classes = nn_postprocess(out)
-                    # Convert index labels to a one hot encoding for standard processing.
-                    if convert_idx_to_classes:
-                        labels = torch.nn.functional.one_hot(labels, num_classes=label_size)
-                    totals.update(predictions=classes, labels=labels)
-                if worst_training is not None:
-                    if args.skip_metadata:
-                        metadata = [""] * labels.size(0)
-                    else:
-                        metadata = dl_tuple[metadata_index]
-                    # For each item in the batch see if it requires an update to the worst examples
-                    # If the DNN should have predicted this image was a member of the labelled class
-                    # then see if this image should be inserted into the worst_n queue for the
-                    # labelled class based upon the DNN output for this class.
-                    input_images = dl_tuple[0]
-                    for i in range(labels.size(0)):
-                        label = torch.argwhere(labels[i])[0].item()
-                        worst_training.test(label, out[i][label].item(), input_images[i], metadata[i])
-        print(f"Finished epoch {epoch}, last loss was {loss}")
-        print(f"Training results:")
-        print(totals.makeResults())
-        if worst_training is not None:
-            worst_training.save(epoch)
-        # Validation set
-        if args.evaluate is not None:
-            net.eval()
-            with torch.no_grad():
-                # Make a confusion matrix or loss statistics
-                if args.loss_fun in regression_loss:
-                    totals = RegressionResults(size=label_size)
-                else:
-                    totals = ConfusionMatrix(size=label_size)
-                for batch_num, dl_tuple in enumerate(eval_dataloader):
-                    if 1 == in_frames:
-                        net_input = dl_tuple[0].unsqueeze(1).cuda()
-                    else:
-                        raw_input = []
-                        for i in range(in_frames):
-                            raw_input.append(dl_tuple[i].unsqueeze(1).cuda())
-                        net_input = torch.cat(raw_input, dim=1)
-                    # Normalize inputs: input = (input - mean)/stddev
-                    if args.normalize:
-                        v, m = torch.var_mean(net_input)
-                        net_input = (net_input - m) / v
-
-                    with torch.cuda.amp.autocast():
-                        vector_input=None
-                        if 0 < vector_input_size:
-                            vector_input = extractVectors(dl_tuple, vector_range).cuda()
-                        out = net.forward(net_input, vector_input)
-                        # Adjust output to undo the label normalization
-                        if denormalizer is not None:
-                            out = denormalizer(out)
-                        labels = extractVectors(dl_tuple,label_range).cuda()
-
-                        # The label value may need to be adjusted, for example if the label class is
-                        # 1-based, but should be 0-based for the one_hot function.
-                        labels = labels-label_offset
-
-                        loss = loss_fn(out, labels)
-                    with torch.no_grad():
-                        if args.loss_fun in regression_loss:
-                            post_out = nn_postprocess(out)
-                            totals.update(predictions=post_out, labels=labels)
-                        else:
-                            # The postprocessesing should include Softmax or similar if that is required for
-                            # the network. Outputs of most classification networks are considered
-                            # probabilities (but only take that in a very loose sense of the word) so
-                            # rounding is appropriate.
-                            # classes = torch.round(nn_postprocess(out)).clamp(0, 1)
-                            classes = nn_postprocess(out)
-                            # Convert index labels to a one hot encoding for standard processing.
-                            if convert_idx_to_classes:
-                                labels = torch.nn.functional.one_hot(labels, num_classes=label_size)
-                            totals.update(predictions=classes, labels=labels)
-                # Print evaluation information
-                print(f"Evaluation results:")
-                print(totals.makeResults())
-            net.train()
+        trainEpoch(net=net, optimizer=optimizer, scaler=scaler, label_handler=label_handler,
+                train_stats=totals, dataloader=dataloader, vector_range=vector_range, train_frames=in_frames,
+                normalize_images=args.normalize, loss_fn=loss_fn, nn_postprocess=nn_postprocess,
+                worst_training=worst_training, skip_metadata=args.skip_metadata)
         # Adjust learning rate according to the learning rate schedule
         if lr_scheduler is not None:
             lr_scheduler.step()
+        print(f"Finished training epoch {epoch}")
 
-    torch.save({
-        "model_dict": net.state_dict(),
-        "optim_dict": optimizer.state_dict(),
-        "py_random_state": random.getstate(),
-        "np_random_state": numpy.random.get_state(),
-        "torch_rng_state": torch.get_rng_state(),
-        "denormalizer_state_dict": denormalizer.state_dict() if denormalizer is not None else None,
-        "normalizer_state_dict": normalizer.state_dict() if normalizer is not None else None,
-        # Store some metadata to make it easier to recreate and use this model
-        "metadata": {
-            'modeltype': args.modeltype,
-            'labels': args.labels,
-            'vector_inputs': args.vector_inputs,
-            'convert_idx_to_classes': args.convert_idx_to_classes,
-            'label_size': label_size,
-            'model_args': model_args,
-            'normalize_video': args.normalize,
-            'normalize_labels': args.normalize_outputs,
-            },
-        }, args.outname)
+        torch.save({
+            "model_dict": net.state_dict(),
+            "optim_dict": optimizer.state_dict(),
+            "py_random_state": random.getstate(),
+            "np_random_state": numpy.random.get_state(),
+            "torch_rng_state": torch.get_rng_state(),
+            "denormalizer_state_dict": denormalizer.state_dict() if denormalizer is not None else None,
+            "normalizer_state_dict": normalizer.state_dict() if normalizer is not None else None,
+            # Store some metadata to make it easier to recreate and use this model
+            "metadata": {
+                'modeltype': args.modeltype,
+                'labels': args.labels,
+                'vector_inputs': args.vector_inputs,
+                'convert_idx_to_classes': args.convert_idx_to_classes,
+                'label_size': label_handler.size(),
+                'model_args': model_args,
+                'normalize_images': args.normalize,
+                'normalize_labels': args.normalize_outputs,
+                },
+            }, args.outname)
+
+        # Validation step if requested
+        if args.evaluate is not None:
+            print(f"Evaluating epoch {epoch}")
+            if args.loss_fun in regression_loss:
+                eval_totals = RegressionResults(size=label_handler.size(), names=label_handler.names())
+            else:
+                eval_totals = ConfusionMatrix(size=label_handler.size())
+            evalEpoch(net=net, label_handler=label_handler, eval_stats=eval_totals,
+                    eval_dataloader=eval_dataloader, vector_range=eval_range, train_frames=in_frames,
+                    normalize_images=args.normalize, loss_fn=loss_fn, nn_postprocess=nn_postprocess)
+
+
+
+# TODO FIXME Move this evaluation step into the evaluation function as well.
+
+# Clamp classes output to 0 or 1 during evaluation to get clean results.
+if args.loss_fun not in regression_loss:
+    if 'CrossEntropyLoss' == args.loss_fun:
+        # Outputs of most classification networks are considered probabilities (but only take that in a
+        # very loose sense of the word). The Softmax function forces its inputs to sum to 1 as
+        # probabilities should do.
+        sm = torch.nn.Softmax(dim=1)
+        nn_postprocess = lambda classes: torch.round(sm(classes)).clamp(0, 1)
+    elif 'BCEWithLogitsLoss' == args.loss_fun:
+        sigm = torch.nn.Sigmoid()
+        nn_postprocess = lambda classes: torch.round(sigm(classes)).clamp(0, 1)
+    else:
+        nn_postprocess = lambda classes: torch.round(classes).clamp(0, 1)
+
 
 # Post-training evaluation
 if args.evaluate is not None:
@@ -688,44 +622,29 @@ if args.evaluate is not None:
                 else:
                     out = net.forward(net_input, vector_input, vector_input)
                     mask = [None] * batch_size
-                # Adjust output to undo the label normalization
-                if denormalizer is not None:
-                    out = denormalizer(out)
+
                 # Convert the labels to a one hot encoding to serve at the DNN target.
                 # The label class is 1 based, but need to be 0-based for the one_hot function.
                 labels = extractVectors(dl_tuple,label_range).cuda()
-
-                # The label value may need to be adjusted, for example if the label class is 1 based, but
-                # should be 0-based for the one_hot function.
-                labels = labels-label_offset
 
                 if args.skip_metadata:
                     metadata = [""] * labels.size(0)
                 else:
                     metadata = dl_tuple[metadata_index]
 
-                loss = loss_fn(out, labels)
+                loss = loss_fn(out, label_handler.preprocess(labels))
 
+                # Fill in the loss statistics and best/worst examples
                 with torch.no_grad():
-                    if args.loss_fun in regression_loss:
-                        post_out = nn_postprocess(out)
-                        totals.update(predictions=post_out, labels=labels)
-                        # TODO FIXME Worst and best eval for regression outputs
-                    else:
-                        # The postprocessesing should include Softmax or similar if that is required for
-                        # the network. Outputs of most classification networks are considered
-                        # probabilities (but only take that in a very loose sense of the word) so
-                        # rounding is appropriate.
-                        # classes = torch.round(nn_postprocess(out)).clamp(0, 1)
-                        classes = nn_postprocess(out)
-                        # Convert index labels to a one hot encoding for standard processing.
-                        if convert_idx_to_classes:
-                            labels = torch.nn.functional.one_hot(labels, num_classes=label_size)
-                        totals.update(predictions=classes, labels=labels)
-                        classes = torch.round(classes).clamp(0, 1)
+                    # The postprocessesing could include Softmax, denormalization, etc.
+                    post_out = nn_postprocess(out)
+                    # Labels may also require postprocessing, for example to convert to a one-hot
+                    # encoding.
+                    post_labels = label_handler.preeval(labels)
+
                     # Log the predictions
-                    for i in range(labels.size(0)):
-                        logfile.write(','.join((metadata[i], str(out[i]), str(labels[i]))))
+                    for i in range(post_labels.size(0)):
+                        logfile.write(','.join((metadata[i], str(out[i]), str(post_labels[i]))))
                         logfile.write('\n')
                     if worst_eval is not None or top_eval is not None:
                         # For each item in the batch see if it requires an update to the worst examples
@@ -733,8 +652,8 @@ if args.evaluate is not None:
                         # then see if this image should be inserted into the worst_n queue for the
                         # labelled class based upon the DNN output for this class.
                         input_images = dl_tuple[0]
-                        for i in range(labels.size(0)):
-                            label = torch.argwhere(labels[i])[0].item()
+                        for i in range(post_labels.size(0)):
+                            label = torch.argwhere(post_labels[i])[0].item()
                             if worst_eval is not None:
                                 worst_eval.test(label, out[i][label].item(), input_images[i], metadata[i])
                             if top_eval is not None:
@@ -749,3 +668,4 @@ if args.evaluate is not None:
         # Print evaluation information
         print(f"Evaluation results:")
         print(totals.makeResults())
+
