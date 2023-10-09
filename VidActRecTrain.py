@@ -161,6 +161,12 @@ parser.add_argument(
     type=int,
     help='The elements of the one-hot encoding of the label, if convert_idx_to_classes is set.')
 parser.add_argument(
+    '--label_offset',
+    required=False,
+    default=1,
+    type=int,
+    help='The starting value of classes when training with cls labels (the labels value is "cls").')
+parser.add_argument(
     '--loss_fun',
     required=False,
     default='CrossEntropyLoss',
@@ -238,7 +244,7 @@ if not args.skip_metadata:
 if "cls" != args.labels:
     label_offset = 0
 else:
-    label_offset = 1
+    label_offset = args.label_offset
 
 
 
