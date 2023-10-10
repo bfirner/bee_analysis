@@ -148,6 +148,12 @@ parser.add_argument(
     choices=['NLLLoss', 'BCEWithLogitsLoss', 'CrossEntropyLoss', 'L1Loss', 'MSELoss', 'BCELoss'],
     type=str,
     help="Loss function to use during training.")
+parser.add_argument(
+    '--label_offset',
+    required=False,
+    default=0,
+    type=int,
+    help='The starting value of classes when training with cls labels (the labels value is "cls").')
 
 args = parser.parse_args()
 
@@ -486,7 +492,7 @@ class VideoLabels:
 if not args.class_names:
     args.class_names = []
 # Index 0 does not correspond to a valid class label
-args.class_names = ["none"] + args.class_names
+args.class_names = (["none"] * args.label_offset) + args.class_names
 
 # Make sure that each label value has a string
 for i in range(args.label_classes):
