@@ -306,7 +306,6 @@ class VideoSampler:
                         # Let the previous process end.
                         process1.wait()
                         # Go to the next chunk
-                        cur_end_frame = min(frame_batch_size, self.end_frame)
                         next_end_frame = min(cur_end_frame+frame_batch_size, self.end_frame)
                         process1 = (
                             ffmpeg
