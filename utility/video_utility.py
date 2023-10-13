@@ -234,7 +234,7 @@ class VideoSampler:
             ffmpeg
             .input(self.path)
             # Read the next chunk
-            .trim(start_frame=1, end_frame=cur_end_frame)
+            .trim(start_frame=0, end_frame=cur_end_frame)
             # Scale
             .filter('scale', math.floor(self.scale*self.width), -1)
             # The crop is automatically centered if the x and y parameters are not used.
