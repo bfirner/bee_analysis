@@ -154,6 +154,13 @@ parser.add_argument(
     default=0,
     type=int,
     help='The starting value of classes when training with cls labels (the labels value is "cls").')
+parser.add_argument(
+    '--background_subtraction',
+    type=str,
+    required=False,
+    choices=['none', 'mog2', 'knn'],
+    default='none',
+    help='Background subtraction algorithm to apply to the input video, or none.')
 
 args = parser.parse_args()
 
@@ -186,7 +193,7 @@ class VideoAnnotator:
 
     def __init__(self, video_labels, net, frame_interval, frames_per_sample, out_width=None,
             out_height=None, scale=1.0, crop_x_offset=0, crop_y_offset=0, channels=3,
-             begin_frame=None, end_frame=None, output_name="annotated.mp4"):
+             begin_frame=None, end_frame=None, output_name="annotated.mp4", bg_subtract="none"):
         """
         Samples have no overlaps. For example, a 10 second video at 30fps has 300 samples of 1
         frame, 150 samples of 2 frames with a frame interval of 0, or 100 samples of 2 frames with a
@@ -205,6 +212,7 @@ class VideoAnnotator:
             begin_frame   (int): First frame to sample.
             end_frame     (int): Final frame to sample.
             output_name   (str): Name for the output annotated video.
+            bg_subtract   (str): Type of background subtraction to use (mog2 or knn), or none.
         """
         # TODO This should be reusing components of the VideoSampler class from VidActRecDataprep.py
         self.path = video_path
@@ -214,12 +222,23 @@ class VideoAnnotator:
         self.channels = channels
         self.scale = scale
         self.output_name = output_name
+        self.normalize = False
         print(f"Processing {video_path}")
         # Probe the video to find out some metainformation
         self.width, self.height, self.total_frames = getVideoInfo(video_path)
 
         self.out_width, self.out_height, self.crop_x, self.crop_y = vidSamplingCommonCrop(
             self.height, self.width, out_height, out_width, self.scale, crop_x_offset, crop_y_offset)
+
+        # Background subtraction will require openCV if requested.
+        self.bg_subtractor = None
+        if ('none' != bg_subtract):
+            from cv2 import (createBackgroundSubtractorMOG2,
+                             createBackgroundSubtractorKNN)
+            if 'mog2' == bg_subtract:
+                self.bg_subtractor = createBackgroundSubtractorMOG2()
+            elif 'knn' == bg_subtract:
+                self.bg_subtractor = createBackgroundSubtractorKNN()
 
         if begin_frame is None:
             self.begin_frame = 1
@@ -261,6 +280,38 @@ class VideoAnnotator:
         except OSError:
             font = ImageFont.load_default()
 
+        # Initialize the background subtractor
+        if (self.bg_subtractor is not None):
+            from cv2 import (bitwise_and)
+            # Read in a few hundred frames
+            process1 = (
+                ffmpeg
+                .input(self.path)
+                # 400 is the default window for background subtractors
+                .trim(start_frame=1, end_frame=400)
+                # Scale
+                .filter('scale', self.scale*self.width, -1)
+                # The crop is automatically centered if the x and y parameters are not used.
+                .filter('crop', out_w=in_width, out_h=in_height, x=self.crop_x, y=self.crop_y)
+            )
+            if self.normalize:
+                # Full independence between color channels. The bee videos are basically a single color.
+                # Otherwise normalizing the channels independently may not be a good choice.
+                process1 = process1.filter('normalize', independence=1.0)
+
+            process1 = (
+                process1
+                # YUV444p is the alternative to rgb24, but the pretrained network expects rgb images.
+                #.output('pipe:', format='rawvideo', pix_fmt='yuv444p')
+                .output('pipe:', format='rawvideo', pix_fmt=pix_fmt)
+                .run_async(pipe_stdout=True, quiet=True)
+            )
+            in_bytes = process1.stdout.read(in_width * in_height * self.channels)
+            if in_bytes:
+                # Convert to numpy and feed to the background subtraction algorithm
+                np_frame = numpy.frombuffer(in_bytes, numpy.uint8)
+                fgMask = self.bg_subtractor.apply(np_frame)
+
         # Begin the video input process from ffmpeg.
         input_process = (
             ffmpeg
@@ -300,13 +351,29 @@ class VideoAnnotator:
             # Fetch the next frame sample that can be sent through the neural network
             in_bytes = input_process.stdout.read(in_width * in_height * self.channels)
             if in_bytes:
+                # Numpy frame conversion either happens during background subtraction or
+                # later during sampling
+                np_frame = None
+                # Apply background subtraction if requested
+                if self.bg_subtractor is not None:
+                    # Convert to numpy
+                    np_frame = numpy.frombuffer(in_bytes, numpy.uint8)
+                    fgMask = self.bg_subtractor.apply(np_frame)
+                    # Curious use of a bitwise and involving the image and itself. Could use
+                    # a masked select instead.
+                    masked = bitwise_and(np_frame, np_frame, mask=fgMask)
+                    np_frame = masked.clip(max=255).astype(numpy.uint8)
+
                 frame += 1
-                # Convert to numpy, and then to torch.
-                np_frame = numpy.frombuffer(in_bytes, numpy.uint8)
+                # Convert to numpy (if not already handled by the background subtractor), and then to torch.
+                if np_frame is None:
+                    np_frame = numpy.frombuffer(in_bytes, numpy.uint8)
                 in_frame = torch.tensor(data=np_frame, dtype=torch.uint8,
                     ).reshape([1, in_height, in_width, self.channels])
                 in_frame = in_frame.permute(0, 3, 1, 2).to(dtype=torch.float).cuda()
                 sample_frames.append(in_frame)
+
+
             else:
                 # We reached the end of the video before reaching the desired end frame somehow.
                 input_process.wait()
