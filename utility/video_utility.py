@@ -58,7 +58,9 @@ def getVideoInfo(video_path):
         numer, denom = probe['avg_frame_rate'].split('/')
         frame_rate = float(numer) / float(denom)
         duration = float(probe['duration'])
-        total_frames = math.floor(duration * frame_rate)
+        # The duration does not count the first frame (e.g. a 0 duration video can still have 1
+        # frame, and a 30fps video with 1 second of elapsed duration will have 31 frames.)
+        total_frames = 1 + math.floor(duration * frame_rate)
     else:
         # If the duration is not in the probe then we will need to read through the entire video
         # to get the number of frames.
@@ -145,20 +147,20 @@ class VideoSampler:
             self.height, self.width, out_height, out_width, self.scale, crop_x_offset, crop_y_offset)
 
         if begin_frame is None:
-            self.begin_frame = 1
+            self.begin_frame = 0
         else:
             self.begin_frame = int(begin_frame)
 
         if end_frame is None:
-            self.end_frame = self.total_frames
+            self.end_frame = self.total_frames - 1
         else:
-            # Don't attempt to sample more frames than there exist.
-            self.end_frame = min(int(end_frame), self.total_frames)
+            # Don't attempt to sample more frames than what exists.
+            self.end_frame = min(int(end_frame), self.total_frames - 1)
         # Don't attempt to make more samples that the number of frames that will be sampled.
         # Remember that the frames in frame_interval aren't used but are still skipped along with
         # each sample.
         self.sample_span = self.frames_per_sample + (self.frames_per_sample - 1) * self.frame_interval
-        self.available_samples = (self.end_frame - (self.sample_span - 1) - self.begin_frame)//self.sample_span
+        self.available_samples = (1 + self.end_frame - (self.sample_span - 1) - self.begin_frame)//self.sample_span
         self.num_samples = min(self.available_samples, self.num_samples)
         print(f"Video begin and end frames are {self.begin_frame} and {self.end_frame}")
         print(f"Video has {self.available_samples} available samples of size {self.sample_span} and {self.num_samples} will be sampled")
@@ -182,7 +184,7 @@ class VideoSampler:
             (image, path, (frames))
         """
         # Determine where frames to sample.
-        target_samples = [(self.begin_frame - 1) + x * self.sample_span for x in sorted(random.sample(
+        target_samples = [(self.begin_frame) + x * self.sample_span for x in sorted(random.sample(
             population=range(self.available_samples), k=self.num_samples))]
         # Open the video
         # It is a bit unfortunate the we decode what is probably a YUV stream into rgb24, but this
@@ -203,7 +205,7 @@ class VideoSampler:
                 ffmpeg
                 .input(self.path)
                 # 400 is the default window for background subtractors
-                .trim(start_frame=1, end_frame=400)
+                .trim(start_frame=self.begin_frame, end_frame=self.begin_frame + 400)
                 # Scale
                 .filter('scale', math.floor(self.scale*self.width), -1)
                 # The crop is automatically centered if the x and y parameters are not used.
@@ -229,12 +231,12 @@ class VideoSampler:
 
         # Reading videos slows down as more frames have been read, so read them in chunks.
         frame_batch_size = 2000
-        cur_end_frame = min(frame_batch_size, self.end_frame)
+        cur_end_frame = min(self.begin_frame + frame_batch_size, self.end_frame+1)
         process1 = (
             ffmpeg
             .input(self.path)
             # Read the next chunk
-            .trim(start_frame=0, end_frame=cur_end_frame)
+            .trim(start_frame=self.begin_frame, end_frame=cur_end_frame)
             # Scale
             .filter('scale', math.floor(self.scale*self.width), -1)
             # The crop is automatically centered if the x and y parameters are not used.
@@ -306,12 +308,12 @@ class VideoSampler:
                         # Let the previous process end.
                         process1.wait()
                         # Go to the next chunk
-                        next_end_frame = min(cur_end_frame+frame_batch_size, self.end_frame)
+                        next_end_frame = min(cur_end_frame+frame_batch_size, self.end_frame+1)
                         process1 = (
                             ffmpeg
                             .input(self.path)
                             # Read the next chunk
-                            .trim(start_frame=cur_end_frame+1, end_frame=next_end_frame)
+                            .trim(start_frame=cur_end_frame, end_frame=next_end_frame)
                             # Scale
                             .filter('scale', math.floor(self.scale*self.width), -1)
                             # The crop is automatically centered if the x and y parameters are not used.
@@ -339,10 +341,11 @@ class VideoSampler:
                         return
                 # If multiple frames are being returned then concat them along the channel
                 # dimension. Otherwise just return the single frame.
-                if 1 == self.frames_per_sample:
-                    yield partial_sample[0], self.path, sample_frames
-                else:
-                    yield torch.cat(partial_sample), self.path, sample_frames
+                if frame < self.end_frame:
+                    if 1 == self.frames_per_sample:
+                        yield partial_sample[0], self.path, sample_frames
+                    else:
+                        yield torch.cat(partial_sample), self.path, sample_frames
             print(f"Collected {target_idx + 1} frames.")
             print(f"The final frame was {frame}")
             # Read any remaining samples
