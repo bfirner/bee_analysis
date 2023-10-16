@@ -203,7 +203,7 @@ def trainEpoch(net, optimizer, scaler, label_handler,
     print(f"Training results:")
     print(train_stats.makeResults())
     if worst_training is not None:
-        worst_training.save(epoch)
+        worst_training.save()
 
 
 def evalEpoch(net, label_handler, eval_stats, eval_dataloader, vector_range, train_frames, normalize_images, loss_fn, nn_postprocess):

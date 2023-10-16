@@ -103,7 +103,7 @@ parser.add_argument(
     default=False,
     action="store_true",
     help=("Normalize the outputs: output = (output - mean) / stddev. "
-        "This will read the entire dataset to find these values. After training the final weights will be adjusted so that no additional processing is required."))
+        "This will read the entire dataset to find these values, delaying initial training."))
 parser.add_argument(
     '--modeltype',
     type=str,
@@ -501,9 +501,6 @@ for i in range(label_size):
     class_names.append(f"{i}")
 
 if not args.no_train:
-    if args.save_worst_n is not None:
-        print(f"Saving {args.save_worst_n} highest error training images to {worst_training.worstn_path}.")
-
     # Gradient scaler for mixed precision training
     if use_amp:
         scaler = torch.cuda.amp.GradScaler()
@@ -517,8 +514,8 @@ if not args.no_train:
         worst_training = None
         if args.save_worst_n:
             worst_training = WorstExamples(
-                args.outname.split('.')[0] + "-worstN-train", class_names, save_worst_n)
-            print(f"Saving {save_worst_n} highest error training images to {worst_training.worstn_path}.")
+                args.outname.split('.')[0] + "-worstN-train-epoch{}", class_names, args.save_worst_n, epoch)
+            print(f"Saving {args.save_worst_n} highest error training images to {worst_training.worstn_path}.")
         print(f"Starting epoch {epoch}")
         trainEpoch(net=net, optimizer=optimizer, scaler=scaler, label_handler=label_handler,
                 train_stats=totals, dataloader=dataloader, vector_range=vector_range, train_frames=in_frames,
