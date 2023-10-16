@@ -344,9 +344,12 @@ class WorstExamples:
         elif nn_output > self.worstn[label][0].score:
             heapq.heapreplace(self.worstn[label], MinNode(nn_output, image, metadata, None))
 
-    def save(self, epoch):
+    def save(self, epoch=None):
         """Save worst examples for an epoch and then clear current results."""
-        worstn_path_epoch = os.path.join(self.worstn_path, f"epoch_{epoch}")
+        if epoch is not None:
+            worstn_path_epoch = os.path.join(self.worstn_path, f"epoch_{epoch}")
+        else:
+            worstn_path_epoch = self.worstn_path
         # Create the directory if it does not exist
         try:
             os.mkdir(worstn_path_epoch)
