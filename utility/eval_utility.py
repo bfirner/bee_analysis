@@ -96,6 +96,9 @@ class RegressionResults:
                     str(stats[1].max())+self.units[row])
         return out_str
 
+    def mean(self):
+        return self.prediction_overall.mean()
+
     def update(self, predictions, labels):
         """ Update the statistics matrix with a new set of predictions and labels.
 
