@@ -12,43 +12,56 @@ import itertools
 import math
 import torch
 import torch.nn as nn
+import torchvision.ops as ops
 
 
 class BenNet(nn.Module):
     """A small residual network."""
 
-    def createResLayer(self, i, out_size=None):
+    def createResLayer(self, layer_idx, out_size=None):
         """
         This is similar to the createResLayer function in resnet.py.
+        It creates the non-skip pathway of the residual layers, which consist of two convolutions.
         Arguments:
-            i          (int): Current layer index.
+            layer_idx  (int): Current layer index.
             out_size (tuple): Height and width of the current feature maps.
         Returns:
             tuple(nn.Sequential, tuple(int, int)): A tuple of the convolution layer and output size.
         """
         block = []
-        for j in range(2):
-            input_size = self.channels[i]
-            out_channels = self.channels[i]
-            if j > 0:
-                out_channels = self.channels[i+1]
-                stride = self.strides[i]
-            else:
-                # The stride is always one inside of a block.
+        for residual_conv_index in range(2):
+            input_size = self.channels[layer_idx]
+            out_channels = self.channels[layer_idx]
+            if residual_conv_index == 0:
+                # The stride is always one to avoid shrinking the image before the layer convolution
+                # of the residual
                 stride = 1
+                # If this is the very first convolution being done to the input image then expand
+                # the channels in the first convolution.
+                if layer_idx == 0:
+                    out_channels = self.channels[layer_idx+1]
+            else:
+                out_channels = self.channels[layer_idx+1]
+                stride = self.strides[layer_idx]
+                # On the first convolution done to the image the channels were expanded in the first
+                # convolution of the residual layer
+                if layer_idx == 0:
+                    input_size = self.channels[layer_idx+1]
             # The outputs of the previous layer are combined if this layer consumes data from the other
             # GPU as well.
             block.append(nn.Conv2d(
                 in_channels=input_size, out_channels=out_channels,
-                kernel_size=self.kernels[i], stride=stride, padding=self.padding[i]))
+                kernel_size=self.kernels[layer_idx], stride=stride, padding=self.padding[layer_idx]))
             #block[-1].bias.fill_(0)
-            #block[-1].weight.fill_(math.sqrt(input_size * self.kernels[i]**2))
+            #block[-1].weight.fill_(math.sqrt(input_size * self.kernels[layer_idx]**2))
             if out_size is not None:
-                out_size = (int((out_size[0] + 2 * self.padding[i] - self.kernels[i])/stride + 1),
-                            int((out_size[1] + 2 * self.padding[i] - self.kernels[i])/stride + 1))
+                out_size = (int((out_size[0] + 2 * self.padding[layer_idx] - self.kernels[layer_idx])/stride + 1),
+                            int((out_size[1] + 2 * self.padding[layer_idx] - self.kernels[layer_idx])/stride + 1))
             # Batch norm comes after the activation layer
             block.append(nn.ReLU())
             block.append(nn.BatchNorm2d(out_channels))
+        if self.stochastic_depth[layer_idx] is not None:
+            block.append(ops.StochasticDepth(p=self.stochastic_depth[layer_idx], mode='batch'))
 
         return nn.Sequential(*block), out_size
 
@@ -72,6 +85,7 @@ class BenNet(nn.Module):
         Override this function to change internal layer parameters.
         """
         self.channels = (self.in_dimensions[0], 48, 72, 96, 128, 192, 256, 256)
+        self.stochastic_depth = [None, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4]
         # The first layer quickly reduces the size of feature maps.
         # The stride of 2 is used whenever the feature map size doubles to keep computation roughly
         # the same.
@@ -91,17 +105,22 @@ class BenNet(nn.Module):
         Arguments:
             out_size (list[int]): The width and height of feature maps after convolutions.
         """
-        # Now the residual layers
+        # Create the residual layers
         for i in range(len(self.kernels) - self.non_res_layers):
+            # The skip projection using a 1x1 kernel
             projection = nn.Conv2d(in_channels=self.channels[i],
                 out_channels=self.channels[i+1], stride=2, padding=0, kernel_size=1)
             self.shortcut_projections.append(
                 nn.Sequential(projection, nn.BatchNorm2d(self.channels[i+1])))
+            self.post_residuals.append(
+                nn.Sequential((nn.LeakyReLU()), nn.Dropout2d(p=0.5)))
 
+            # The non-skip layer with two convolutions.
             layer, out_size = self.createResLayer(i, out_size)
             self.output_sizes.append(out_size)
             self.model.append(layer)
 
+        # Create the regular, non-residual convolution layers
         for i in range(len(self.kernels) - self.non_res_layers, len(self.kernels)):
             block = []
 
@@ -116,7 +135,7 @@ class BenNet(nn.Module):
                         int((out_size[1] + 2 * self.padding[i] - self.kernels[i])/self.strides[i] + 1))
             self.output_sizes.append(out_size)
             # Batch norm comes after the activation layer
-            block.append(nn.ReLU())
+            block.append(nn.LeakyReLU())
             block.append(nn.BatchNorm2d(out_channels))
             block.append(nn.Dropout2d(p=0.5))
             self.model.append(nn.Sequential(*block))
@@ -170,6 +189,7 @@ class BenNet(nn.Module):
         # used to increase dimensions, or all shortcuts can be projections. The second option was
         # used in the original paper (see section "Identity vs. Projection Shortcuts").
         self.shortcut_projections = nn.ModuleList()
+        self.post_residuals = nn.ModuleList()
 
         self.initializeSizes()
 
@@ -180,6 +200,7 @@ class BenNet(nn.Module):
         # Initialize in a no_grad section so that we can fill in some initial values for the bias
         # tensors.
         with torch.no_grad():
+            self.initial_batch_norm = nn.BatchNorm2d(in_dimensions[0])
             out_size = self.createInternalResLayers(out_size)
 
             self.neck = nn.Flatten()
@@ -188,6 +209,7 @@ class BenNet(nn.Module):
             linear_input_size = out_size[0]*out_size[1]*self.channels[-1] + vector_input_size
             self.classifier = nn.Sequential(
                 self.createLinearLayer(num_inputs=linear_input_size, num_outputs=256),
+                #nn.Dropout1d(p=0.25),
                 self.createLinearLayer(num_inputs=256, num_outputs=256),
                 self.createLinearLayer(num_inputs=256, num_outputs=128),
                 self.createLinearLayer(num_inputs=128, num_outputs=96),
@@ -195,8 +217,6 @@ class BenNet(nn.Module):
                 # No softmax at the end. To train a single label classifier use CrossEntropyLoss
                 # rather than NLLLoss. This allows for multi-label classifiers trained with BCELoss.
             )
-            self.activation = nn.ReLU()
-            self.dropout = nn.Dropout2d(p=0.5)
 
             self.createVisMaskLayers(self.output_sizes)
 
@@ -204,6 +224,7 @@ class BenNet(nn.Module):
     #TODO AMP
     #@autocast()
     def forward(self, x, vector_input=None):
+        x = self.initial_batch_norm(x)
         # The initial block of the model is not a residual layer, but then there is a skip
         # connection for every pair of layers after that.
         for idx in range(len(self.model) - self.non_res_layers):
@@ -211,7 +232,7 @@ class BenNet(nn.Module):
             proj = self.shortcut_projections[idx](x)
             # Add the shortcut and the output of the convolutions, then pass through activation and
             # dropout layers.
-            x = self.dropout(self.activation(y + proj))
+            x = self.post_residuals[idx](y + proj)
 
         for layer in self.model[-self.non_res_layers:]:
             x = layer(x)
@@ -225,8 +246,9 @@ class BenNet(nn.Module):
         x = self.classifier(x)
         return x
 
-    def vis_forward(self, x):
+    def vis_forward(self, x, vector_input=None):
         """Forward and calculate a visualization mask of the convolution layers."""
+        x = self.initial_batch_norm(x)
         conv_outputs = []
         # The initial block of the model is not a residual layer, but then there is a skip
         # connection for every pair of layers after that.
@@ -235,7 +257,7 @@ class BenNet(nn.Module):
             proj = self.shortcut_projections[idx](x)
             # Add the shortcut and the output of the convolutions, then pass through activation and
             # dropout layers.
-            x = self.dropout(self.activation(y + proj))
+            x = self.post_residuals[idx](y + proj)
             conv_outputs.append(x)
 
         for layer in self.model[-self.non_res_layers:]:
@@ -261,6 +283,26 @@ class BenNet(nn.Module):
 
         x = self.classifier(x)
         return x, mask
+
+    def produceFeatureMaps(self, x):
+        """Produce and return max pooled feature maps from all of the convolution layers."""
+        maps = []
+        x = self.initial_batch_norm(x)
+        # The initial block of the model is not a residual layer, but then there is a skip
+        # connection for every pair of layers after that.
+        for idx in range(len(self.model) - self.non_res_layers):
+            y = self.model[idx](x)
+            proj = self.shortcut_projections[idx](x)
+            # Add the shortcut and the output of the convolutions, then pass through activation and
+            # dropout layers.
+            x = self.post_residuals[idx](y + proj)
+            maps.append(x)
+
+        for layer in self.model[-self.non_res_layers:]:
+            x = layer(x)
+            maps.append(x)
+
+        return maps
 
 class TinyBenNet(BenNet):
     """A version of the network for tiny images, like MNIST."""

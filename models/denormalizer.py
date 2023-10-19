@@ -26,8 +26,8 @@ class Denormalizer(nn.Module):
         self.stddevs = nn.parameter.Parameter(stddevs)
 
     def forward(self, x):
-        # TODO FIXME with torch.nograd():
-        return x * self.stddevs + self.means
+        # Forward without changing the means and stddevs
+        return x * self.stddevs.detach() + self.means.detach()
 
 
 class Normalizer(nn.Module):
@@ -49,4 +49,4 @@ class Normalizer(nn.Module):
 
     def forward(self, x):
         # TODO FIXME with torch.nograd():
-        return (x - self.means) * self.inv_stddevs
+        return (x - self.means.detach()) * self.inv_stddevs.detach()

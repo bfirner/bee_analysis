@@ -6,6 +6,8 @@ Utility functions for PyTorch training
 import datetime
 import torch
 
+# Helper function to convert to images
+from torchvision import transforms
 from utility.dataset_utility import extractVectors
 
 
@@ -29,8 +31,9 @@ def updateWithScaler(loss_fn, net, image_input, vector_input, labels, scaler, op
         else:
             out = net.forward(image_input.contiguous(), vector_input.contiguous())
 
-    loss = loss_fn(out, labels.half())
-    scaler.scale(loss).backward()
+        loss = loss_fn(out, labels.half())
+
+    scaler.scale(loss.half()).backward()
     scaler.step(optimizer)
     # Important Note: Sometimes the scaler starts off with a value that is too high. This
     # causes the loss to be NaN and the batch loss is not actually propagated. The scaler
@@ -128,6 +131,8 @@ class LabelHandler():
     def names(self):
         return self.label_names
 
+epoch = 0
+
 
 def trainEpoch(net, optimizer, scaler, label_handler,
         train_stats, dataloader, vector_range, train_frames, normalize_images, loss_fn, nn_postprocess,
@@ -139,6 +144,8 @@ def trainEpoch(net, optimizer, scaler, label_handler,
     save_worst_n      (int): Save the N worst images. Skipped if None.
     skip_metadata    (bool): True to skip loading metadata, slightly speeding training.
     """
+    global epoch
+    epoch += 1
     net.train()
     for batch_num, dl_tuple in enumerate(dataloader):
         dateNow = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
@@ -147,8 +154,17 @@ def trainEpoch(net, optimizer, scaler, label_handler,
 
         optimizer.zero_grad()
         # For debugging purposes
-        # img = transforms.ToPILImage()(dl_tuple[0][0]).convert('RGB')
-        # img.save(f"batch_{batch_num}.png")
+        if epoch == 99:
+            img = transforms.ToPILImage()(dl_tuple[0][0]).convert('RGB')
+            img.save("batch_{}_idx_{}.png".format(batch_num, 0))
+        #img = transforms.ToPILImage()(dl_tuple[0][0]).convert('RGB')
+        #img.save("batch_{}_idx_{}_epoch_{}.png".format(batch_num, 0, epoch))
+        #img = transforms.ToPILImage()(dl_tuple[0][1]).convert('RGB')
+        #img.save("batch_{}_idx_{}_epoch_{}.png".format(batch_num, 1, epoch))
+        #img = transforms.ToPILImage()(dl_tuple[0][2]).convert('RGB')
+        #img.save("batch_{}_idx_{}_epoch_{}.png".format(batch_num, 2, epoch))
+        #img = transforms.ToPILImage()(dl_tuple[0][3]).convert('RGB')
+        #img.save("batch_{}_idx_{}_epoch_{}.png".format(batch_num, 3, epoch))
         # Decoding only the luminance channel means that the channel dimension has gone away here.
         if 1 == train_frames:
             net_input = dl_tuple[0].unsqueeze(1).cuda()
@@ -157,15 +173,29 @@ def trainEpoch(net, optimizer, scaler, label_handler,
             for i in range(train_frames):
                 raw_input.append(dl_tuple[i].unsqueeze(1).cuda())
             net_input = torch.cat(raw_input, dim=1)
-        # Normalize inputs: input = (input - mean)/stddev
-        if normalize_images:
-            v, m = torch.var_mean(net_input)
-            net_input = (net_input - m) / v
+        with torch.no_grad():
+            # Normalize inputs: input = (input - mean)/stddev
+            if normalize_images:
+                v, m = torch.var_mean(net_input)
+                net_input = (net_input - m) / v
 
-        labels = extractVectors(dl_tuple, label_handler.range()).cuda()
-        vector_inputs=None
-        if vector_range.start != vector_range.stop:
-            vector_inputs = extractVectors(dl_tuple, vector_range).cuda()
+            labels = extractVectors(dl_tuple, label_handler.range()).cuda()
+            vector_inputs=None
+            if vector_range.start != vector_range.stop:
+                vector_inputs = extractVectors(dl_tuple, vector_range).cuda()
+
+            # TODO FIXME Remove debugging code
+            if epoch == 99:
+                net.eval()
+                maps = net.produceFeatureMaps(net_input[0:1,:,:,:])
+                for i, fmap in enumerate(maps):
+                    # Put all of the maps onto the same channel and save them as an image
+                    tiled_shape = (1, fmap.size(1)*fmap.size(2), fmap.size(3))
+                    new_view = fmap.reshape(tiled_shape)
+                    img = transforms.ToPILImage()(new_view).convert('L')
+                    img.save("batch_{}_idx_{}_features_{}.png".format(batch_num, 0, i))
+                del maps
+                net.train()
 
         if scaler is not None:
             out, loss = updateWithScaler(loss_fn, net, net_input, vector_inputs,

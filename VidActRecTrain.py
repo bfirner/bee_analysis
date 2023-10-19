@@ -26,8 +26,6 @@ import torch
 import torch.cuda.amp
 import webdataset as wds
 from collections import namedtuple
-# Helper function to convert to images
-from torchvision import transforms
 
 from utility.dataset_utility import (extractVectors, getImageSize, getVectorSize)
 from utility.eval_utility import (ConfusionMatrix, OnlineStatistics, RegressionResults, WorstExamples)
