@@ -218,10 +218,10 @@ with open(sbatch_filename,'w') as sbatch_file:
             batchFile.write("export PATH=" + python3PathData + ":$PATH \n")
             batchFile.write("echo start-is: `date` \n \n") # add start timestamp 
             command_to_run = dataPrepCommand.replace('$DATAPREPPROGRAM',dataPrepProgram)
-            command_to_run = command_to_run.replace('$WIDTH',width) 
-            command_to_run = command_to_run.replace('$HEIGHT',height)
-            command_to_run = command_to_run.replace('$X_OFFSET',crop_x_offset)            
-            command_to_run = command_to_run.replace('$Y_OFFSET',crop_y_offset)            
+            command_to_run = command_to_run.replace('$WIDTH',str(width))
+            command_to_run = command_to_run.replace('$HEIGHT',str(height))
+            command_to_run = command_to_run.replace('$X_OFFSET',str(crop_x_offset))
+            command_to_run = command_to_run.replace('$Y_OFFSET',str(crop_y_offset))
             command_to_run = command_to_run.replace('$DATASETNAME',baseName + '_' + str(dataset_num+1) )
             batchFile.write(command_to_run + " \n \n")
             batchFile.write("echo end-is: `date` \n \n") # add end timestamp 
