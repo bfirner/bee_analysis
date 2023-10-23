@@ -124,6 +124,10 @@ batchdir = args.batchdir
 seed = args.seed
 training_filename=args.training + '.sh'
 model_name = args.model
+width = args.width
+height = args.height
+crop_x_offset = args.crop_x_offset
+crop_y_offset = args.crop_y_offset
 
 # get the list of files from the dataset
 print("datset is %s" % (datacsvname))
