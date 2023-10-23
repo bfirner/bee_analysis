@@ -39,7 +39,7 @@ dataPrepProgram = os.path.join(program_dir, "VidActRecDataprep.py")
 trainProgram =  os.path.join(program_dir, 'VidActRecTrain.py')
 
 # command to run the data prep program
-dataPrepCommand = 'python3 $DATAPREPPROGRAM --width 400 --height 400 --resize-strategy crop --samples 500 --crop_noise 20 --out_channels 1 --frames_per_sample 1 $DATASETNAME.csv $DATASETNAME.tar'
+dataPrepCommand = 'python3 $DATAPREPPROGRAM --width $WIDTH --height $HEIGHT --crop_x_offset $X_OFFSET --crop_y_offset $Y_OFFSET --resize-strategy crop --samples 500 --crop_noise 20 --out_channels 1 --frames_per_sample 1 $DATASETNAME.csv $DATASETNAME.tar'
 # command to run the evaluation and training program 
 trainCommand    = 'srun -G 1 python3 $TRAINPROGRAM --not_deterministic --epochs 10 --modeltype $MODEL --evaluate' # <eval-set> <a-set> <b-set> ... 
 
@@ -92,6 +92,30 @@ parser.add_argument(
     default=False,
     action="store_true",
     help="Set to finish after splitting the csv.")
+parser.add_argument(
+    '--width',
+    type=int,
+    required=False,
+    default=400,
+    help='Width of output images (obtained via cropping, after applying scale).')
+parser.add_argument(
+    '--height',
+    type=int,
+    required=False,
+    default=400,
+    help='Height of output images (obtained via cropping, after applying scale).')
+parser.add_argument(
+    '--crop_x_offset',
+    type=int,
+    required=False,
+    default=0,
+    help='The offset (in pixels) of the crop location on the original image in the x dimension.')
+parser.add_argument(
+    '--crop_y_offset',
+    type=int,
+    required=False,
+    default=0,
+    help='The offset (in pixels) of the crop location on the original image in the y dimension.')
 
 args = parser.parse_args()
 datacsvname = args.datacsv
@@ -190,6 +214,10 @@ with open(sbatch_filename,'w') as sbatch_file:
             batchFile.write("export PATH=" + python3PathData + ":$PATH \n")
             batchFile.write("echo start-is: `date` \n \n") # add start timestamp 
             command_to_run = dataPrepCommand.replace('$DATAPREPPROGRAM',dataPrepProgram)
+            command_to_run = command_to_run.replace('$WIDTH,width) 
+            command_to_run = command_to_run.replace('$HEIGHT,height)
+            command_to_run = command_to_run.replace('$X_OFFSET,crop_x_offset)            
+            command_to_run = command_to_run.replace('$Y_OFFSET,crop_y_offset)            
             command_to_run = command_to_run.replace('$DATASETNAME',baseName + '_' + str(dataset_num+1) )
             batchFile.write(command_to_run + " \n \n")
             batchFile.write("echo end-is: `date` \n \n") # add end timestamp 
