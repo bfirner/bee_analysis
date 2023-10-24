@@ -41,7 +41,8 @@ trainProgram =  os.path.join(program_dir, 'VidActRecTrain.py')
 # command to run the data prep program
 dataPrepCommand = 'python3 $DATAPREPPROGRAM --width $WIDTH --height $HEIGHT --crop_x_offset $X_OFFSET --crop_y_offset $Y_OFFSET --resize-strategy crop --samples 500 --crop_noise 10 --out_channels 1 --frames_per_sample 1 $DATASETNAME.csv $DATASETNAME.tar'
 # command to run the evaluation and training program 
-trainCommand    = 'srun -G 1 python3 $TRAINPROGRAM --not_deterministic --epochs 10 --modeltype $MODEL --evaluate' # <eval-set> <a-set> <b-set> ... 
+#trainCommand    = 'srun -G 1 python3 $TRAINPROGRAM --not_deterministic --epochs 10 --modeltype $MODEL --evaluate' # <eval-set> <a-set> <b-set> ... 
+trainCommand    = 'python3 $TRAINPROGRAM --not_deterministic --epochs 10 --modeltype $MODEL --evaluate' # <eval-set> <a-set> <b-set> ...
 
 #python verion to run the data prep program
 python3PathData = '/koko/system/anaconda/envs/python38/bin'
@@ -225,7 +226,7 @@ with open(sbatch_filename,'w') as sbatch_file:
             command_to_run = command_to_run.replace('$DATASETNAME',baseName + '_' + str(dataset_num+1) )
             batchFile.write(command_to_run + " \n \n")
             batchFile.write("echo end-is: `date` \n \n") # add end timestamp 
-            sbatch_file.write("sbatch -o " + baseName + '_datalog_' + str(dataset_num+1) + ".log " + slurm_job_filename + " \n")
+            sbatch_file.write("sbatch -o " + baseName + '_datalog_' + str(dataset_num) + ".log " + slurm_job_filename + " \n")
 
         # open the batch file that runs the testing and training commands 
         with open(train_job_filename,'w') as trainFile:
