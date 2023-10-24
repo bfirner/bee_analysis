@@ -54,6 +54,8 @@ class BenNet(nn.Module):
                 kernel_size=self.kernels[layer_idx], stride=stride, padding=self.padding[layer_idx]))
             #block[-1].bias.fill_(0)
             #block[-1].weight.fill_(math.sqrt(input_size * self.kernels[layer_idx]**2))
+            #torch.nn.init.uniform_(block[-1].bias, 0.5, 1.0)
+            #torch.nn.init.normal_(block[-1].weight, 0.0, 0.1)
             if out_size is not None:
                 out_size = (int((out_size[0] + 2 * self.padding[layer_idx] - self.kernels[layer_idx])/stride + 1),
                             int((out_size[1] + 2 * self.padding[layer_idx] - self.kernels[layer_idx])/stride + 1))
@@ -78,6 +80,8 @@ class BenNet(nn.Module):
                 in_features=num_inputs, out_features=num_outputs),
             nn.ReLU(),
         )
+        #torch.nn.init.uniform_(layer[0].bias, 0.5, 1.0)
+        #torch.nn.init.normal_(layer[0].weight, 0.0, 1.0)
         return layer
 
     def initializeSizes(self):
@@ -85,7 +89,8 @@ class BenNet(nn.Module):
         Override this function to change internal layer parameters.
         """
         self.channels = (self.in_dimensions[0], 48, 72, 96, 128, 192, 256, 256)
-        self.stochastic_depth = [None, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4]
+        #self.stochastic_depth = [None, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4]
+        self.stochastic_depth = [None, None, None, None, None, None, None]
         # The first layer quickly reduces the size of feature maps.
         # The stride of 2 is used whenever the feature map size doubles to keep computation roughly
         # the same.
@@ -113,7 +118,7 @@ class BenNet(nn.Module):
             self.shortcut_projections.append(
                 nn.Sequential(projection, nn.BatchNorm2d(self.channels[i+1])))
             self.post_residuals.append(
-                nn.Sequential((nn.LeakyReLU()), nn.Dropout2d(p=0.5)))
+                nn.Sequential((nn.ReLU()), nn.Dropout2d(p=0.0)))
 
             # The non-skip layer with two convolutions.
             layer, out_size = self.createResLayer(i, out_size)
@@ -131,13 +136,15 @@ class BenNet(nn.Module):
                 kernel_size=self.kernels[i], stride=self.strides[i], padding=self.padding[i]))
             #block[-1].bias.fill_(0)
             #block[-1].weight.fill_(math.sqrt(input_size * self.kernels[i]**2))
+            #torch.nn.init.uniform_(block[-1].bias, 0.5, 1.0)
+            #torch.nn.init.normal_(block[-1].weight, 0.0, 0.1)
             out_size = (int((out_size[0] + 2 * self.padding[i] - self.kernels[i])/self.strides[i] + 1),
                         int((out_size[1] + 2 * self.padding[i] - self.kernels[i])/self.strides[i] + 1))
             self.output_sizes.append(out_size)
             # Batch norm comes after the activation layer
-            block.append(nn.LeakyReLU())
+            block.append(nn.ReLU())
             block.append(nn.BatchNorm2d(out_channels))
-            block.append(nn.Dropout2d(p=0.5))
+            block.append(nn.Dropout2d(p=0.0))
             self.model.append(nn.Sequential(*block))
 
         # The output size of the final channels
@@ -200,10 +207,10 @@ class BenNet(nn.Module):
         # Initialize in a no_grad section so that we can fill in some initial values for the bias
         # tensors.
         with torch.no_grad():
-            self.initial_batch_norm = nn.BatchNorm2d(in_dimensions[0])
+            self.initial_batch_norm = nn.Sequential(nn.BatchNorm2d(in_dimensions[0]))
             out_size = self.createInternalResLayers(out_size)
 
-            self.neck = nn.Flatten()
+            self.neck = nn.Sequential(nn.Flatten())
 
             # Linear layers accept the flattened feature maps.
             linear_input_size = out_size[0]*out_size[1]*self.channels[-1] + vector_input_size

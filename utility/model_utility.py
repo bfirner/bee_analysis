@@ -59,7 +59,7 @@ def createModel(model_type, in_channels, frame_height, frame_width, output_size,
 def restoreModel(resume_from, net):
     """Restore a trained model"""
     checkpoint = torch.load(resume_from)
-    net.load_state_dict(checkpoint["model_dict"])
+    net.load_state_dict(state_dict=checkpoint["model_dict"], strict=True)
 
 
 def restoreModelAndState(resume_from, net, optimizer):
