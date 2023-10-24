@@ -173,7 +173,7 @@ currentDir = os.getcwd()
 
 # Write out the split csv files.
 for dataset_num in range(numOfSets):
-    dataset_filename = baseName + '_' + str(dataset_num+1) + '.csv'
+    dataset_filename = baseName + '_' + str(dataset_num) + '.csv'
     base_row = setNum * numFilesPerSet
     with open(dataset_filename,'w') as dsetFile:
         # write out the header row at the top of the set 
@@ -208,8 +208,8 @@ with open(sbatch_filename,'w') as sbatch_file:
     trainCommand = trainCommand.replace('$MODEL',model_name)
     
     for dataset_num in range(numOfSets):
-        slurm_job_filename = baseName + '_' + str(dataset_num+1) + '.sh'
-        train_job_filename = 'train' + '_' + str(dataset_num+1) + '.sh'
+        slurm_job_filename = baseName + '_' + str(dataset_num) + '.sh'
+        train_job_filename = 'train' + '_' + str(dataset_num) + '.sh'
 
         # write to the batch file that builds the data set 
         with open(slurm_job_filename,'w') as batchFile:
@@ -223,7 +223,7 @@ with open(sbatch_filename,'w') as sbatch_file:
             command_to_run = command_to_run.replace('$HEIGHT',str(height))
             command_to_run = command_to_run.replace('$X_OFFSET',str(crop_x_offset))
             command_to_run = command_to_run.replace('$Y_OFFSET',str(crop_y_offset))
-            command_to_run = command_to_run.replace('$DATASETNAME',baseName + '_' + str(dataset_num+1) )
+            command_to_run = command_to_run.replace('$DATASETNAME',baseName + '_' + str(dataset_num) )
             batchFile.write(command_to_run + " \n \n")
             batchFile.write("echo end-is: `date` \n \n") # add end timestamp 
             sbatch_file.write("sbatch -o " + baseName + '_datalog_' + str(dataset_num) + ".log " + slurm_job_filename + " \n")
@@ -238,9 +238,9 @@ with open(sbatch_filename,'w') as sbatch_file:
             trainFile.write("export PATH=" + python3PathTrain + ":$PATH \n")
             trainFile.write("echo start-is: `date` \n \n") # add start timestamp 
             traincommand_local = trainCommand.replace('$TRAINPROGRAM',trainProgram)
-            trainCommand_local = trainCommand + ' ' + baseName +  '_' + str(dataset_num+1) + '.tar'
+            trainCommand_local = trainCommand + ' ' + baseName +  '_' + str(dataset_num) + '.tar'
             for trainingSetNum in range(numOfSets):
-                if int(trainingSetNum) != int(dataset_num+1):
+                if int(trainingSetNum) != int(dataset_num):
                     trainCommand_local = trainCommand_local + ' ' + baseName +  '_' + str(trainingSetNum) + '.tar'
 
             trainFile.write(trainCommand_local +  "\n") # write the training command to the training command
