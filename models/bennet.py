@@ -227,7 +227,6 @@ class BenNet(nn.Module):
 
             self.createVisMaskLayers(self.output_sizes)
 
-
     #TODO AMP
     #@autocast()
     def forward(self, x, vector_input=None):
@@ -310,6 +309,107 @@ class BenNet(nn.Module):
             maps.append(x)
 
         return maps
+
+
+class CompactingBenNet(BenNet):
+    """A version of the network that squeezes features vertically and horizontally before
+    flattening."""
+
+    def __init__(self, in_dimensions, out_classes, vector_input_size=0):
+        """
+        Arguments:
+            in_dimensions (tuple(int)): Tuple of channels, height, and width.
+            out_classes          (int): The number of output classes.
+            vector_input_size    (int): The number of vector inputs to the linear layers.
+        """
+        super(CompactingBenNet, self).__init__(in_dimensions=in_dimensions, out_classes=out_classes,
+            vector_input_size=vector_input_size)
+
+        # TODO Replace the neck with a parallel horizontal and vertical convolutions that remove
+        # some of the spatial information from the remaining pixels in the feature maps
+        # This is to make it easier to do operations upon the embedded space.
+        # Then replace the first linear layer of the network with a layer that has the correct input
+        # size
+        self.height_collapsing_conv = nn.Conv2d(
+            in_channels=self.channels[-1], out_channels=self.channels[-1],
+            kernel_size=(self.output_sizes[-1][0], 1))
+        self.width_collapsing_conv = nn.Conv2d(
+            in_channels=self.channels[-1], out_channels=self.channels[-1],
+            kernel_size=(1, self.output_sizes[-1][1]))
+
+        # The new input has a single entry per row and column for each channel
+        linear_input_size = (self.output_sizes[-1][0] + self.output_sizes[-1][1]) * self.channels[-1] + vector_input_size
+        self.classifier[0] = self.createLinearLayer(num_inputs=linear_input_size, num_outputs=256)
+
+    #TODO AMP
+    #@autocast()
+    def forward(self, x, vector_input=None):
+        x = self.initial_batch_norm(x)
+        # The initial block of the model is not a residual layer, but then there is a skip
+        # connection for every pair of layers after that.
+        for idx in range(len(self.model) - self.non_res_layers):
+            y = self.model[idx](x)
+            proj = self.shortcut_projections[idx](x)
+            # Add the shortcut and the output of the convolutions, then pass through activation and
+            # dropout layers.
+            x = self.post_residuals[idx](y + proj)
+
+        for layer in self.model[-self.non_res_layers:]:
+            x = layer(x)
+
+        vertical_features = self.height_collapsing_conv(x)
+        horizontal_features = self.width_collapsing_conv(x)
+
+        # Flatten
+        x = torch.cat((self.neck(vertical_features), self.neck(horizontal_features)), dim=1)
+
+        if vector_input is not None:
+            x = torch.cat((x, vector_input), dim=1)
+
+        x = self.classifier(x)
+        return x
+
+    def vis_forward(self, x, vector_input=None):
+        """Forward and calculate a visualization mask of the convolution layers."""
+        x = self.initial_batch_norm(x)
+        conv_outputs = []
+        # The initial block of the model is not a residual layer, but then there is a skip
+        # connection for every pair of layers after that.
+        for idx in range(len(self.model) - self.non_res_layers):
+            y = self.model[idx](x)
+            proj = self.shortcut_projections[idx](x)
+            # Add the shortcut and the output of the convolutions, then pass through activation and
+            # dropout layers.
+            x = self.post_residuals[idx](y + proj)
+            conv_outputs.append(x)
+
+        for layer in self.model[-self.non_res_layers:]:
+            x = layer(x)
+            conv_outputs.append(x)
+
+        # Go backwards to create the visualization mask
+        mask = None
+        for i, features in enumerate(reversed(conv_outputs)):
+            avg_outputs = torch.mean(conv_outputs[-(1+i)], dim=1, keepdim=True)
+            if mask is None:
+                mask = self.vis_layers[-(1+i)](avg_outputs)
+            else:
+                mask = self.vis_layers[-(1+i)](mask * avg_outputs)
+            # Keep the maximum value of the mask at 1
+            mask = mask / mask.max()
+
+        vertical_features = self.height_collapsing_conv(x)
+        horizontal_features = self.width_collapsing_conv(x)
+
+        # Flatten
+        x = self.neck(torch.cat(vertical_features, horizontal_features), dim=1)
+
+        if vector_input is not None:
+            x = torch.cat((x, vector_input), dim=1)
+
+        x = self.classifier(x)
+        return x, mask
+
 
 class TinyBenNet(BenNet):
     """A version of the network for tiny images, like MNIST."""

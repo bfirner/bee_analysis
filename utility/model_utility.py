@@ -3,7 +3,7 @@ import numpy
 import torch
 
 from models.alexnet import AlexLikeNet
-from models.bennet import BenNet
+from models.bennet import BenNet, CompactingBenNet
 from models.denormalizer import (Denormalizer, Normalizer)
 from models.resnet import (ResNet18, ResNet34)
 from models.resnext import (ResNext18, ResNext34, ResNext50)
@@ -21,6 +21,8 @@ def createModel2(model_type, other_args):
         net = ResNet34(**other_args).cuda()
     elif 'bennet' == model_type:
         net = BenNet(**other_args).cuda()
+    elif 'compactingbennet' == model_type:
+        net = CompactingBenNet(**other_args).cuda()
     return net
 
 
