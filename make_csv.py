@@ -63,7 +63,7 @@ def _find_latest_video(
         pathlib.Path: said video file name.
     """
     epoch_timestamp = datetime.strptime(logged_timestamp, LOG_TIME_FORMAT).timestamp()
-    latest_filename = file_epoch_map_df.loc[file_epoch_map_df['epoch_ts'] < epoch_timestamp, 'filename'].iloc[np.argmin(np.abs(file_epoch_map_df.loc[file_epoch_map_df['epoch_ts'] < epoch_timestamp, 'epoch_ts'] - epoch_timestamp))]
+    latest_filename = file_epoch_map_df.loc[file_epoch_map_df['epoch_ts'] <= epoch_timestamp, 'filename'].iloc[np.argmin(np.abs(file_epoch_map_df.loc[file_epoch_map_df['epoch_ts'] <= epoch_timestamp, 'epoch_ts'] - epoch_timestamp))]
     return latest_filename
 
 def map_file_names_to_epoch(counts_df: pd.DataFrame) -> pd.DataFrame:
