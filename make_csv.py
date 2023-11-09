@@ -263,11 +263,16 @@ def run(
     output_dir: pathlib.Path = typer.Argument(
         ..., help = "Path to output dataset.csv"
     )
+
+    prepend_path: pathlib.Path = typer.Argument(
+        ..., help = "Path to prepend files for dataset.csv"
+    )
 ):
     events_df = parse_logs(files_dir)
     counts_df = parse_frame_counts(files_dir)
     file_epoch_map_df = map_file_names_to_epoch(counts_df)
     labels = run_thru_events(events_df, counts_df, file_epoch_map_df, fps)
+    
     labels.to_csv(output_dir / "dataset.csv", index=False)
     
 if __name__ == "__main__":

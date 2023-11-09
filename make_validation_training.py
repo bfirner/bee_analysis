@@ -32,8 +32,8 @@ import sys
 
 
 # Get the program dir to use the current versions of the data preparation and training scripts
-program_dir = pathlib.Path(__file__).parent.resolve()
-# The data preparation python program 
+# The data preparation python program
+program_dir = '/research/projects/grail/rmartin/analysis-results/code/bee_analysis'
 dataPrepProgram = os.path.join(program_dir, "VidActRecDataprep.py")
 # The training python program 
 trainProgram =  os.path.join(program_dir, 'VidActRecTrain.py')
@@ -42,7 +42,7 @@ trainProgram =  os.path.join(program_dir, 'VidActRecTrain.py')
 dataPrepCommand = 'python3 $DATAPREPPROGRAM --width $WIDTH --height $HEIGHT --crop_x_offset $X_OFFSET --crop_y_offset $Y_OFFSET --resize-strategy crop --samples 500 --crop_noise 10 --out_channels 1 --frames_per_sample 1 $DATASETNAME.csv $DATASETNAME.tar'
 # command to run the evaluation and training program 
 #trainCommand    = 'srun -G 1 python3 $TRAINPROGRAM --not_deterministic --epochs 10 --modeltype $MODEL --evaluate' # <eval-set> <a-set> <b-set> ... 
-trainCommand    = 'python3 $TRAINPROGRAM --not_deterministic --epochs 10 --modeltype $MODEL --evaluate' # <eval-set> <a-set> <b-set> ...
+trainCommand    = 'python3 $TRAINPROGRAM --not_deterministic --epochs 10 --modeltype $MODEL --label_offset $LABEL_OFFSET --evaluate' # <eval-set> <a-set> <b-set> ...
 
 #python verion to run the data prep program
 python3PathData = '/koko/system/anaconda/envs/python38/bin'
@@ -117,6 +117,18 @@ parser.add_argument(
     required=False,
     default=0,
     help='The offset (in pixels) of the crop location on the original image in the y dimension.')
+parser.add_argument(
+    '--label_offset',
+    required=False,
+    default=1,
+    type=int,
+    help='The starting value of classes when training with cls labels (the labels value is "cls").')
+parser.add_argument(
+    '--training_only',
+    type=bool,
+    required=False,
+    default=False,
+    help='only generate the training set files.')
 
 args = parser.parse_args()
 datacsvname = args.datacsv
@@ -129,6 +141,8 @@ width = args.width
 height = args.height
 crop_x_offset = args.crop_x_offset
 crop_y_offset = args.crop_y_offset
+label_offset =  args.label_offset 
+training_only = args.training_only
 
 # get the list of files from the dataset
 print("datset is %s" % (datacsvname))
@@ -233,17 +247,18 @@ with open(sbatch_filename,'w') as sbatch_file:
             trainFile.write("#!/usr/bin/bash \n")
             #trainFile.write("#SBATCH --gpus-per-node=1 \n")
             trainFile.write("# command to run \n \n")
-            trainFile.write("export TRAINPROGRAM=\"VidActRecTrain.py\"\n")
+            trainFile.write("export TRAINPROGRAM=" + trainProgram + "\n")
             trainFile.write("cd " + currentDir + " \n")
             trainFile.write("export PATH=" + python3PathTrain + ":$PATH \n")
             trainFile.write("echo start-is: `date` \n \n") # add start timestamp 
             traincommand_local = trainCommand.replace('$TRAINPROGRAM',trainProgram)
-            trainCommand_local = trainCommand + ' ' + baseName +  '_' + str(dataset_num) + '.tar'
+            traincommand_local = traincommand_local.replace('$LABEL_OFFSET',str(label_offset))
+            traincommand_local = traincommand_local + ' ' + baseName +  '_' + str(dataset_num) + '.tar'
             for trainingSetNum in range(numOfSets):
                 if int(trainingSetNum) != int(dataset_num):
-                    trainCommand_local = trainCommand_local + ' ' + baseName +  '_' + str(trainingSetNum) + '.tar'
+                    traincommand_local = traincommand_local + ' ' + baseName +  '_' + str(trainingSetNum) + '.tar'
 
-            trainFile.write(trainCommand_local +  "\n") # write the training command to the training command
+            trainFile.write(traincommand_local +  "\n") # write the training command to the training command
             trainFile.write("echo end-is: `date` \n \n") # add end timestamp
             training_batch_file.write("sbatch -G 1 -o " + baseName + '_trainlog_' + str(dataset_num)+ ".log " + train_job_filename + " \n") # add end timestamp to training file
 

@@ -145,13 +145,19 @@ with open(args.datalist, newline='') as datacsv:
             print(f"Row '{row}' does not have the correct number of columns (4).")
         else:
             path = row[file_col]
-            sampler = VideoSampler(
-                video_path=path, num_samples=args.samples, frames_per_sample=args.frames_per_sample,
-                frame_interval=args.interval, out_width=args.width, out_height=args.height,
-                crop_noise=args.crop_noise, scale=args.scale, crop_x_offset=args.crop_x_offset,
-                crop_y_offset=args.crop_y_offset, channels=args.out_channels,
-                begin_frame=row[beginf_col], end_frame=row[endf_col],
-                bg_subtract=args.background_subtraction)
+            try: 
+                sampler = VideoSampler(
+                    video_path=path, num_samples=args.samples, frames_per_sample=args.frames_per_sample,
+                    frame_interval=args.interval, out_width=args.width, out_height=args.height,
+                    crop_noise=args.crop_noise, scale=args.scale, crop_x_offset=args.crop_x_offset,
+                    crop_y_offset=args.crop_y_offset, channels=args.out_channels,
+                    begin_frame=row[beginf_col], end_frame=row[endf_col],
+                    bg_subtract=args.background_subtraction)
+            except ffmpeg.Error as e:
+                print('stdout:', e.stdout.decode('utf8'))
+                print('stderr:', e.stderr.decode('utf8'))
+                os.exit(-1)
+                
             for sample_num, frame_data in enumerate(sampler):
                 frame, video_path, frame_num = frame_data
                 base_name = os.path.basename(video_path).replace(' ', '_').replace('.', '_')
