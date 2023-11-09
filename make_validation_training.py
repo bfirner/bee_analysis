@@ -142,7 +142,7 @@ with open(datacsvname) as datacsv:
     # Remove all spaces from the header strings
     header = [''.join(col.split(' ')) for col in header]
     print("header is %s" % (header))
-    file_col = header.index('file')
+    file_col = header.index('filename')
     class_col = header.index('class')
     beginf_col = header.index('beginframe')
     endf_col = header.index('endframe')
