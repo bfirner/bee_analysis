@@ -310,6 +310,26 @@ class BenNet(nn.Module):
 
         return maps
 
+    def forwardToFeatures(self, x):
+        """Produce and return the feature maps before the linear layers."""
+        x = self.initial_batch_norm(x)
+        # The initial block of the model is not a residual layer, but then there is a skip
+        # connection for every pair of layers after that.
+        for idx in range(len(self.model) - self.non_res_layers):
+            y = self.model[idx](x)
+            proj = self.shortcut_projections[idx](x)
+            # Add the shortcut and the output of the convolutions, then pass through activation and
+            # dropout layers.
+            x = self.post_residuals[idx](y + proj)
+
+        for layer in self.model[-self.non_res_layers:]:
+            x = layer(x)
+
+        # Flatten
+        x = self.neck(x)
+
+        return x
+
 
 class CompactingBenNet(BenNet):
     """A version of the network that squeezes features vertically and horizontally before
@@ -367,6 +387,28 @@ class CompactingBenNet(BenNet):
             x = torch.cat((x, vector_input), dim=1)
 
         x = self.classifier(x)
+        return x
+
+    def forwardToFeatures(self, x):
+        """Produce and return the feature maps before the linear layers."""
+        x = self.initial_batch_norm(x)
+        # The initial block of the model is not a residual layer, but then there is a skip
+        # connection for every pair of layers after that.
+        for idx in range(len(self.model) - self.non_res_layers):
+            y = self.model[idx](x)
+            proj = self.shortcut_projections[idx](x)
+            # Add the shortcut and the output of the convolutions, then pass through activation and
+            # dropout layers.
+            x = self.post_residuals[idx](y + proj)
+
+        for layer in self.model[-self.non_res_layers:]:
+            x = layer(x)
+
+        vertical_features = self.height_collapsing_conv(x)
+        horizontal_features = self.width_collapsing_conv(x)
+
+        # Flatten
+        x = torch.cat((self.neck(vertical_features), self.neck(horizontal_features)), dim=1)
         return x
 
     def vis_forward(self, x, vector_input=None):
