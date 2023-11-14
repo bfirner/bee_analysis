@@ -6,9 +6,13 @@ import numpy as np
 
 LOG_TIME_FORMAT = "%Y%m%d_%H%M%S"
 FILE_TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
-DEFAULT_VIDEO_LENGTH = 1200 # number of seconds
+DEFAULT_VIDEO_LENGTH = 1201 # number of seconds
 
 app = typer.Typer()
+
+pd.set_option('display.max_columns', None)  # or 1000
+pd.set_option('display.max_rows', None)  # or 1000
+pd.set_option('display.max_colwidth', None)
 
 def _assert_logs(files_dir: pathlib.Path):
     assert (files_dir / "logNeg.txt").is_file()
@@ -29,11 +33,11 @@ def parse_logs(files_dir: pathlib.Path) -> pd.DataFrame:
 
     Args:
         files_dir: directory containing all data
-    
+
     Returns:
         pd.DataFrame: contains all of the various events sorted by time
     """
-    _assert_logs(files_dir) 
+    _assert_logs(files_dir)
     events_list = []
     for file_path in files_dir.glob("*.txt"):
         event_type = file_path.stem
@@ -58,7 +62,7 @@ def _find_latest_video(
     Args:
         logged_timestamp: timestamp from the log*.txt
         file_epoch_map_df: contains the filename to epoch time mappings
-    
+
     Returns:
         pathlib.Path: said video file name.
     """
@@ -71,7 +75,7 @@ def map_file_names_to_epoch(counts_df: pd.DataFrame) -> pd.DataFrame:
 
     Args:
         counts_df: use filenames from here to map to epoch
-    
+
     Returns:
         file_epoch_map_df: contains the filename - epoch map.
     """
@@ -98,11 +102,11 @@ def _add_event_end_info(events_df: pd.DataFrame, counts_df: pd.DataFrame, fps: i
         events_df: contains the sorted log files events
         counts_df: contains the total frame counts per video from counts.csv
         fps: frames per second
-    
+
     Returns:
         events_df: updated dataframe
     """
-    events_df["end_ts"] = events_df["ts"].shift(-1) 
+    events_df["end_ts"] = events_df["ts"].shift(-1)
     last_video_name = str(counts_df.iloc[-1]["filename"])
     last_video_name = last_video_name.split("/")[-1].replace(".h264", "")[:-7]
     last_video_datetime_obj = datetime.strptime(last_video_name, FILE_TIME_FORMAT)
@@ -115,16 +119,17 @@ def _add_event_end_info(events_df: pd.DataFrame, counts_df: pd.DataFrame, fps: i
 def _add_video_end_info(file_epoch_map_df: pd.DataFrame, counts_df: pd.DataFrame, fps: int) -> pd.DataFrame:
     """Add extra column to file_epoch_map_df with the ending timestamp of each video.
 
-    Just copy the next row's start timestamp and for the last row calculate using frame count.
+    Calculate the video end info from framecount.
 
     Args:
         file_epoch_map_df: contains the filename to epoch time mappings
         counts_df: contains the total frame counts per video from counts.csv
         fps: frames per second
-    
+
     Returns:
         file_epoch_map_df: updated dataframe
     """
+
     file_epoch_map_df["length"] = file_epoch_map_df["epoch_ts"].shift(-1) - file_epoch_map_df["epoch_ts"]
     file_epoch_map_df.iloc[-1, file_epoch_map_df.columns.get_loc("length")] = counts_df.iloc[-1]["frames"] / fps
     file_epoch_map_df["end_epoch_ts"] = file_epoch_map_df["epoch_ts"].shift(-1)
@@ -134,14 +139,18 @@ def _add_video_end_info(file_epoch_map_df: pd.DataFrame, counts_df: pd.DataFrame
     new_last_video_datetime = last_video_datetime_obj + timedelta(seconds= int(counts_df.iloc[-1]["frames"]/fps))
 
     file_epoch_map_df.iloc[-1, file_epoch_map_df.columns.get_loc("end_epoch_ts")] = new_last_video_datetime.timestamp()
-
     return file_epoch_map_df
 
-def _filter_events(labels_list):
+def _filter_events(labels_list, fps):
+    filtered_list = []
     for idx, label in enumerate(labels_list):
         if label["beginframe"] > label["endframe"]:
-            del labels_list[idx]
-
+            continue
+        elif label["beginframe"] > DEFAULT_VIDEO_LENGTH * fps:
+            continue
+        else:
+            filtered_list.append(label)
+    return filtered_list
 
 def event_type_to_class_num(event_type):
     """ convert a string event type to a class number
@@ -178,11 +187,9 @@ def run_thru_events(events_df: pd.DataFrame, counts_df: pd.DataFrame, file_epoch
     Returns:
         pd.DataFrame: contains all of the labels for the start and stop frames for the videos corresponding to each event.
     """
-    
+
     file_epoch_map_df = _add_video_end_info(file_epoch_map_df, counts_df, fps)
-    
     events_df = _add_event_end_info(events_df, counts_df, fps)
-    
     labels_list = []
     for index, row in events_df.iterrows():
         label = {
@@ -193,9 +200,9 @@ def run_thru_events(events_df: pd.DataFrame, counts_df: pd.DataFrame, file_epoch
         }
         starting_video = _find_latest_video(row["ts"], file_epoch_map_df)
         starting_video_info = file_epoch_map_df[file_epoch_map_df["filename"] == starting_video]
-        starting_video_ts = int(starting_video_info["epoch_ts"].item())
-        starting_video_length = int(starting_video_info["length"].item())
-        starting_video_end_ts = int(starting_video_info["end_epoch_ts"].item())
+        starting_video_ts = int(starting_video_info["epoch_ts"])
+        starting_video_length = int(starting_video_info["length"])
+        starting_video_end_ts = int(starting_video_info["end_epoch_ts"])
         event_ts = int(datetime.strptime(row["ts"], LOG_TIME_FORMAT).timestamp())
         event_end_ts = int(datetime.strptime(row["end_ts"], LOG_TIME_FORMAT).timestamp())
 
@@ -203,8 +210,8 @@ def run_thru_events(events_df: pd.DataFrame, counts_df: pd.DataFrame, file_epoch
         label["class"] = event_type_to_class_num(row["event_type"])
         label["beginframe"] = int(event_ts - starting_video_ts) * fps
 
-        if event_end_ts - starting_video_end_ts < 0: # means that there are logged events where there are no videos recorded
-            print(f"Missing videos after {starting_video}")
+        if starting_video_end_ts - event_ts < 0: # means that there are logged events where there are no videos recorded
+            print(f"Missing videos after {starting_video}, {event_ts}, {starting_video_end_ts}, {starting_video_end_ts - event_ts}")
             continue
 
         if (event_end_ts > starting_video_end_ts):
@@ -219,7 +226,11 @@ def run_thru_events(events_df: pd.DataFrame, counts_df: pd.DataFrame, file_epoch
                     "beginframe" : None,
                     "endframe" : None
                 }
+                if video_index >= len(file_epoch_map_df):
+                    break
+
                 overflowing_label["filename"] = file_epoch_map_df.iloc[video_index]["filename"]
+
                 overflowing_label["class"] = event_type_to_class_num(row["event_type"])
                 overflowing_label["beginframe"] = min(4, int(leftover_seconds * fps)) # incase leftover is less than the 4 frame buffer
                 if leftover_seconds < file_epoch_map_df.iloc[video_index]["length"]: # if leftover event spans many videos
@@ -228,29 +239,18 @@ def run_thru_events(events_df: pd.DataFrame, counts_df: pd.DataFrame, file_epoch
                 else:
                     overflowing_label["endframe"] = int(counts_df[counts_df["filename"]==overflowing_label["filename"]]["frames"].item())
                     leftover_seconds -= file_epoch_map_df.iloc[video_index]["length"]
-                    
+
                 labels_list.append(overflowing_label)
                 video_index+=1
         else:
             label["endframe"] = int(event_end_ts - starting_video_ts) * fps
 
         labels_list.append(label)
-    _filter_events(labels_list)
+    labels_list = _filter_events(labels_list, fps)
     return pd.DataFrame(labels_list).sort_values(by="filename")
 
-        
-# def run(
-#     fps: int = typer.Argument(
-#         24, help = "Need to specify fps for video since there's no metadata."
-#     ),
-#     files_dir: pathlib.Path = typer.Argument(
-#         ..., help = "Must contain videos, logNeg.txt, logPos.txt, logNo.txt"
-#     ),
-#     output_dir: pathlib.Path = typer.Argument(
-#         ..., help = "Path to output dataset.csv"
-#     )
-#):
-        
+
+
 
 @app.command()
 def run(
@@ -263,17 +263,12 @@ def run(
     output_dir: pathlib.Path = typer.Argument(
         ..., help = "Path to output dataset.csv"
     )
-
-    prepend_path: pathlib.Path = typer.Argument(
-        ..., help = "Path to prepend files for dataset.csv"
-    )
 ):
     events_df = parse_logs(files_dir)
     counts_df = parse_frame_counts(files_dir)
     file_epoch_map_df = map_file_names_to_epoch(counts_df)
     labels = run_thru_events(events_df, counts_df, file_epoch_map_df, fps)
-    
     labels.to_csv(output_dir / "dataset.csv", index=False)
-    
+
 if __name__ == "__main__":
     app()
