@@ -34,7 +34,7 @@ from utility.train_utility import (LabelHandler, evalEpoch, trainEpoch, updateWi
 
 from models.alexnet import AlexLikeNet
 from models.bennet import BenNet
-from models.denormalizer import Denormalizer, Normalizer
+from models.modules import Denormalizer, Normalizer
 from models.resnet import (ResNet18, ResNet34)
 from models.resnext import (ResNext18, ResNext34, ResNext50)
 from models.convnext import (ConvNextExtraTiny, ConvNextTiny, ConvNextSmall, ConvNextBase)
