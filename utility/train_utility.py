@@ -46,7 +46,7 @@ def updateWithScaler(loss_fn, net, image_input, vector_input, labels, scaler, op
 
     return out, loss
 
-def updateWithoutScaler(loss_fn, net, image_input, vector_input, labels, optimizer):
+def updateWithoutScalerOriginal(loss_fn, net, image_input, vector_input, labels, optimizer):
     """Update without any scaling from mixed precision training.
 
     Arguments:
@@ -64,6 +64,50 @@ def updateWithoutScaler(loss_fn, net, image_input, vector_input, labels, optimiz
         out = net(image_input.contiguous(), vector_input.contiguous())
 
     loss = loss_fn(out, labels)
+    loss.backward()
+    optimizer.step()
+
+    return out, loss
+
+def updateWithoutScaler(loss_fn, net, image_input, vector_input, labels, optimizer):
+    """Update without any scaling from mixed precision training.
+
+    Arguments:
+        loss_fn          (function): The loss function used during training.
+        net       (torch.nn.Module): The network to train.
+        image_input  (torch.tensor): Planar (3D) input to the network.
+        vector_input (torch.tensor): Vector (1D) input to the network.
+        labels       (torch.tensor): Desired network output.
+        optimizer     (torch.optim): Optimizer
+    """
+    optimizer.zero_grad()
+    #if vector_input is None:
+    #    out = net(image_input.contiguous())
+    #else:
+    #    out = net(image_input.contiguous(), vector_input.contiguous())
+
+    # TODO FIXME Just experimenting with covariance matrix loss thingy
+    if vector_input is None:
+        features = net.forwardToFeatures(image_input.contiguous())
+        out = net.classifier(features)
+    else:
+        features = net.forwardToFeatures(image_input.contiguous())
+        out = net.classifier(torch.cat((features, vector_input), dim=1))
+    cor_matrix = features.T.cov()
+    cor_loss = 0.01 * (cor_matrix - torch.eye(cor_matrix.size(1)).cuda()).mean().abs()
+    loss = loss_fn(out, labels) + cor_loss
+
+    # TODO FIXME Adding loss to weights, again as an experiment
+    # Nope, this causes regression to the mean
+    #if vector_input is None:
+    #    out = net(image_input.contiguous())
+    #else:
+    #    out = net(image_input.contiguous(), vector_input.contiguous())
+    #layer_norm = torch.linalg.matrix_norm(net.neck[0].weight).sum() + torch.linalg.matrix_norm(net.neck[1].weight).sum()
+    #loss = loss_fn(out, labels) + 0.001 * layer_norm
+
+
+
     loss.backward()
     optimizer.step()
 

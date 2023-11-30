@@ -14,6 +14,8 @@ import torch
 import torch.nn as nn
 import torchvision.ops as ops
 
+from models.modules import MaxThresholding, PresolvedConv2d, PresolvedLinear
+
 
 class BenNet(nn.Module):
     """A small residual network."""
@@ -114,7 +116,7 @@ class BenNet(nn.Module):
         for i in range(len(self.kernels) - self.non_res_layers):
             # The skip projection using a 1x1 kernel
             projection = nn.Conv2d(in_channels=self.channels[i],
-                out_channels=self.channels[i+1], stride=2, padding=0, kernel_size=1)
+                out_channels=self.channels[i+1], stride=self.strides[i], padding=0, kernel_size=1)
             self.shortcut_projections.append(
                 nn.Sequential(projection, nn.BatchNorm2d(self.channels[i+1])))
             self.post_residuals.append(
@@ -131,6 +133,7 @@ class BenNet(nn.Module):
 
             input_size = self.channels[i]
             out_channels = self.channels[i + 1]
+
             block.append(nn.Conv2d(
                 in_channels=input_size, out_channels=out_channels,
                 kernel_size=self.kernels[i], stride=self.strides[i], padding=self.padding[i]))
@@ -143,7 +146,11 @@ class BenNet(nn.Module):
             self.output_sizes.append(out_size)
             # Batch norm comes after the activation layer
             block.append(nn.ReLU())
-            block.append(nn.BatchNorm2d(out_channels))
+            # TODO FIXME Trying no last batch norm to allow more discretized signal to escape the
+            # convolutions. Early experiments show a small shift towards the local mean, e.g.
+            # reduced fitting to the training set.
+            if i+2 < len(self.kernels):
+                block.append(nn.BatchNorm2d(out_channels))
             block.append(nn.Dropout2d(p=0.0))
             self.model.append(nn.Sequential(*block))
 
@@ -335,6 +342,25 @@ class CompactingBenNet(BenNet):
     """A version of the network that squeezes features vertically and horizontally before
     flattening."""
 
+    def initializeSizes(self):
+        """
+        Preserve the spatial dimensions and sacrifice channel counts.
+        """
+        self.channels = (self.in_dimensions[0], 24, 36, 48, 64, 128, 128, 128)
+        #self.stochastic_depth = [None, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4]
+        self.stochastic_depth = [None, None, None, None, None, None, None]
+        # The first layer quickly reduces the size of feature maps.
+        # The stride of 2 is used whenever the feature map size doubles to keep computation roughly
+        # the same.
+        self.kernels = (3, 3, 3, 3, 3, 3, 3)
+        self.strides = (2, 2, 1, 1, 1, 1, 1)
+        self.padding = (1, 1, 1, 1, 1, 1, 1)
+        self.non_res_layers = 2
+        # The sizes of the consecutive 3x3 convolutions in the residual layers are equivalent to a
+        # 5x5 convolution
+        self.vis_mask_sizes = (5, 5, 3, 3, 3, 3, 3)
+        assert(len(self.kernels) == len(self.strides) == len(self.padding) == len(self.vis_mask_sizes))
+
     def __init__(self, in_dimensions, out_classes, vector_input_size=0):
         """
         Arguments:
@@ -350,38 +376,175 @@ class CompactingBenNet(BenNet):
         # This is to make it easier to do operations upon the embedded space.
         # Then replace the first linear layer of the network with a layer that has the correct input
         # size
-        self.height_collapsing_conv = nn.Conv2d(
-            in_channels=self.channels[-1], out_channels=self.channels[-1],
-            kernel_size=(self.output_sizes[-1][0], 1))
-        self.width_collapsing_conv = nn.Conv2d(
-            in_channels=self.channels[-1], out_channels=self.channels[-1],
-            kernel_size=(1, self.output_sizes[-1][1]))
+        #self.height_collapsing_conv = nn.Conv2d(
+        #    in_channels=self.channels[-1], out_channels=self.channels[-1],
+        #    kernel_size=(self.output_sizes[-1][0], 1))
+        #self.width_collapsing_conv = nn.Conv2d(
+        #    in_channels=self.channels[-1], out_channels=self.channels[-1],
+        #    kernel_size=(1, self.output_sizes[-1][1]))
+        # TODO FIXME Trying to bottleneck the number of features, dividing by 2 and then 4 in the
+        # compacting convolutions
+        self.presolve = False
+        if not self.presolve:
+            self.neck = torch.nn.Sequential(
+                # Collapse the height so that there is a single row per channel
+                nn.Conv2d(
+                    in_channels=self.channels[-1], out_channels=self.channels[-1]//2,
+                    kernel_size=(self.output_sizes[-1][0], 1)),
+                # Collapse the width so that there is a single pixel per channel
+                nn.Conv2d(
+                    in_channels=self.channels[-1]//2, out_channels=self.channels[-1]//4,
+                    kernel_size=(1, self.output_sizes[-1][1])),
+                nn.Flatten())
 
-        # The new input has a single entry per row and column for each channel
-        linear_input_size = (self.output_sizes[-1][0] + self.output_sizes[-1][1]) * self.channels[-1] + vector_input_size
-        self.classifier[0] = self.createLinearLayer(num_inputs=linear_input_size, num_outputs=256)
+            # The new input has a single entry per row and column for each channel
+            #linear_input_size = (self.output_sizes[-1][0] + self.output_sizes[-1][1]) * self.channels[-1] + vector_input_size
+            linear_input_size = self.channels[-1]//4 + vector_input_size
+            self.classifier[0] = self.createLinearLayer(num_inputs=linear_input_size, num_outputs=256)
+        else:
+            # Replace the last ReLU of the convolution block with a Sigmoid
+            #self.model[-1][1] = torch.nn.Sigmoid()
+            # We assume that the y solution and x solution will both appear in the features of
+            # channel 0. The desire is that the feature map be 0 except where the tip of the robot
+            # is present.
+            # The bobot is approaching from the right. x in the image is -x of the robot.
+            # y in the image is y of the robot.
+            # Weights should end up with size: [out_channels, in_channels, height, width]
+            original_height = in_dimensions[1]
+            #y_scaling = self.output_sizes[-1][0] / original_height
+            y_scaling = 1. / self.output_sizes[-1][0]
+
+            original_width = in_dimensions[2]
+            #x_scaling = self.output_sizes[-1][1] / original_width
+            x_scaling = 1. / self.output_sizes[-1][1]
+
+            vertical_weights = torch.cat((
+                # This is the kernel across the y dimension to deduce the y offset
+                torch.cat((
+                    torch.arange(0., self.output_sizes[-1][0]).view(1, 1, -1, 1)*y_scaling*y_scaling,
+                    #torch.zeros(self.output_sizes[-1][0]).view(1, 1, -1, 1)*y_scaling,
+                    torch.zeros(1, self.channels[-1]-1, self.output_sizes[-1][0], 1),
+                    ), dim=1
+                ),
+                # This is the kernel to pass through the values that will be used to deduce the x
+                # offset
+                torch.cat((
+                    torch.ones(1, 1, self.output_sizes[-1][0], 1)*x_scaling*x_scaling,
+                    #torch.zeros(1, 1, self.output_sizes[-1][0], 1),
+                    torch.zeros(1, self.channels[-1]-1, self.output_sizes[-1][0], 1),
+                    ), dim=1),
+                ), dim=0)
+
+            horizontal_weights = torch.cat((
+                # This is the kernel to preserve the discovered y value in the first channel
+                torch.cat((
+                    torch.ones(1, 1, 1, self.output_sizes[-1][1]),
+                    #torch.zeros(1, 1, 1, self.output_sizes[-1][1]),
+                    torch.zeros(1, self.channels[-1]//2 - 1, 1, self.output_sizes[-1][1]),
+                    ), dim=1
+                ),
+                # This is the kernel to deduce the x value from the second input channel
+                # The x-scaling was already applies in the weights for the previous layer
+                torch.cat((
+                    torch.zeros(1, 1, 1, self.output_sizes[-1][1]),
+                    # There should have only been one kernel that picked up values in the previous
+                    # layer, but initially that won't be true. To compensate, scale by the number of
+                    # possible nonzero outputs (which is the width)
+                    torch.arange(self.output_sizes[-1][1], 0., -1.).view(1, 1, 1, -1)/self.output_sizes[-1][1],
+                    #torch.ones(self.output_sizes[-1][1]).view(1, 1, 1, -1),
+                    torch.zeros(1, self.channels[-1]//2 - 2, 1, self.output_sizes[-1][1]),
+                    ), dim=1),
+                ), dim=0)
+
+            # The y values are 0 in the middle of the range of motion
+            #vertical_bias = torch.tensor([-original_height/2, 0])
+            vertical_bias = torch.tensor([0., 0.])
+            horizontal_bias = torch.tensor([(-original_height/2.) * y_scaling * y_scaling,0.])
+            self.neck = torch.nn.Sequential(
+                # TODO This can probably be removed now that the bias was adjusted. Try adjusting
+                # the weight again as well. The proper weight should account for about n^2 because
+                # the sum of n elements is about n*(n+1)/2
+                #MaxThresholding(alpha=0.25),
+                # Collapse the height so that there is a single row per channel
+                # This should also solve for the current y value
+                PresolvedConv2d(
+                    in_channels=self.channels[-1], out_channels=self.channels[-1]//2,
+                    presolved_weights=vertical_weights, presolved_bias=vertical_bias,
+                    kernel_size=(self.output_sizes[-1][0], 1)),
+                # Collapse the width so that there is a single pixel per channel
+                # This should also solve for the current x value and pass the solved y value through
+                PresolvedConv2d(
+                    in_channels=self.channels[-1]//2, out_channels=self.channels[-1]//4,
+                    presolved_weights=horizontal_weights, presolved_bias=horizontal_bias,
+                    kernel_size=(1, self.output_sizes[-1][1])),
+                nn.Flatten())
+
+            # The new input has a single entry per row and column for each channel
+            linear_input_size = self.channels[-1]//4 + vector_input_size
+            # There are multiple linear layers. The first one will just preserve the current value
+            # solved for y and x
+            linear_y = [1.] + [0.] * (linear_input_size-1)
+            linear_x = [0.] + [1.] + [0.] * (linear_input_size-2)
+            classifier_weights = torch.tensor([linear_y, linear_x])
+            classifier_bias = torch.zeros(2)
+            self.classifier[0] = nn.Sequential(
+                PresolvedLinear(
+                    in_features=linear_input_size, out_features=256,
+                    presolved_weights=classifier_weights, presolved_bias=classifier_bias),
+                nn.ReLU(),
+            )
+
+            linear_y = [1.] + [0.] * (256-1)
+            linear_x = [0.] + [1.] + [0.] * (256-2)
+            classifier_weights = torch.tensor([linear_y, linear_x])
+            classifier_bias = torch.zeros(2)
+            self.classifier[1] = nn.Sequential(
+                PresolvedLinear(
+                    in_features=256, out_features=256,
+                    presolved_weights=classifier_weights, presolved_bias=classifier_bias),
+                nn.ReLU(),
+            )
+
+            linear_y = [1.] + [0.] * (256-1)
+            linear_x = [0.] + [1.] + [0.] * (256-2)
+            classifier_weights = torch.tensor([linear_y, linear_x])
+            classifier_bias = torch.zeros(2)
+            self.classifier[2] = nn.Sequential(
+                PresolvedLinear(
+                    in_features=256, out_features=128,
+                    presolved_weights=classifier_weights, presolved_bias=classifier_bias),
+                nn.ReLU(),
+            )
+
+            linear_y = [1.] + [0.] * (128-1)
+            linear_x = [0.] + [1.] + [0.] * (128-2)
+            classifier_weights = torch.tensor([linear_y, linear_x])
+            classifier_bias = torch.zeros(2)
+            self.classifier[3] = nn.Sequential(
+                PresolvedLinear(
+                    in_features=128, out_features=96,
+                    presolved_weights=classifier_weights, presolved_bias=classifier_bias),
+                nn.ReLU(),
+            )
+
+            # Initialize the weights for layers after the presolved inputs to be quite low
+            #torch.nn.init.uniform_(block[-1].bias, 0.5, 1.0)
+            torch.nn.init.normal_(self.neck[0].learned_conv.weight, 0.0, 0.001)
+            torch.nn.init.uniform_(self.neck[0].learned_conv.bias, -0.1, 0.1)
+            torch.nn.init.normal_(self.neck[1].learned_conv.weight[:,0:2], 0.0, 0.00001)
+            torch.nn.init.normal_(self.neck[1].learned_conv.weight[:,3:], 0.0, 0.01)
+            #torch.nn.init.uniform_(self.neck[1].learned_conv.bias, -0.1, 0.1)
+            torch.nn.init.normal_(self.classifier[0][0].learned_linear.weight[:,0:2], 0.0, 0.00001)
+            #torch.nn.init.uniform_(self.classifier[0][0].learned_linear.bias, -0.1, 0.1)
+            torch.nn.init.normal_(self.classifier[1][0].learned_linear.weight[:,0:2], 0.0, 0.00001)
+            #torch.nn.init.uniform_(self.classifier[1][0].learned_linear.bias, -0.1, 0.1)
+            torch.nn.init.normal_(self.classifier[2][0].learned_linear.weight[:,0:2], 0.0, 0.00001)
+            #torch.nn.init.uniform_(self.classifier[2][0].learned_linear.bias, -0.1, 0.1)
 
     #TODO AMP
     #@autocast()
     def forward(self, x, vector_input=None):
-        x = self.initial_batch_norm(x)
-        # The initial block of the model is not a residual layer, but then there is a skip
-        # connection for every pair of layers after that.
-        for idx in range(len(self.model) - self.non_res_layers):
-            y = self.model[idx](x)
-            proj = self.shortcut_projections[idx](x)
-            # Add the shortcut and the output of the convolutions, then pass through activation and
-            # dropout layers.
-            x = self.post_residuals[idx](y + proj)
-
-        for layer in self.model[-self.non_res_layers:]:
-            x = layer(x)
-
-        vertical_features = self.height_collapsing_conv(x)
-        horizontal_features = self.width_collapsing_conv(x)
-
-        # Flatten
-        x = torch.cat((self.neck(vertical_features), self.neck(horizontal_features)), dim=1)
+        x = self.forwardToFeatures(x)
 
         if vector_input is not None:
             x = torch.cat((x, vector_input), dim=1)
@@ -404,11 +567,19 @@ class CompactingBenNet(BenNet):
         for layer in self.model[-self.non_res_layers:]:
             x = layer(x)
 
-        vertical_features = self.height_collapsing_conv(x)
-        horizontal_features = self.width_collapsing_conv(x)
+        #vertical_features = self.height_collapsing_conv(x)
+        #horizontal_features = self.width_collapsing_conv(x)
 
         # Flatten
-        x = torch.cat((self.neck(vertical_features), self.neck(horizontal_features)), dim=1)
+        #x = torch.cat((self.neck(vertical_features), self.neck(horizontal_features)), dim=1)
+        # The features are flattened by the large horizontal and vertical kernels in the neck
+        x = self.neck(x)
+        #for i, layer in enumerate(self.neck):
+        #    import sys
+        #    x = layer(x)
+        #    sys.stderr.write("max in layer {} is {}\n".format(i, torch.max(x.flatten(1), dim=1)[0]))
+        #    print("max in layer {} is {}\n".format(i, torch.max(x.flatten(1), dim=1)[0]))
+
         return x
 
     def vis_forward(self, x, vector_input=None):
@@ -440,11 +611,12 @@ class CompactingBenNet(BenNet):
             # Keep the maximum value of the mask at 1
             mask = mask / mask.max()
 
-        vertical_features = self.height_collapsing_conv(x)
-        horizontal_features = self.width_collapsing_conv(x)
+        #vertical_features = self.height_collapsing_conv(x)
+        #horizontal_features = self.width_collapsing_conv(x)
 
         # Flatten
-        x = self.neck(torch.cat(vertical_features, horizontal_features), dim=1)
+        #x = self.neck(torch.cat(vertical_features, horizontal_features), dim=1)
+        x = self.neck(x)
 
         if vector_input is not None:
             x = torch.cat((x, vector_input), dim=1)

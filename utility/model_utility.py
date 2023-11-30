@@ -4,7 +4,8 @@ import torch
 
 from models.alexnet import AlexLikeNet
 from models.bennet import BenNet, CompactingBenNet
-from models.denormalizer import (Denormalizer, Normalizer)
+from models.dragonfly import DFNet
+from models.modules import (Denormalizer, Normalizer)
 from models.resnet import (ResNet18, ResNet34)
 from models.resnext import (ResNext18, ResNext34, ResNext50)
 from models.convnext import (ConvNextExtraTiny, ConvNextTiny, ConvNextSmall, ConvNextBase)
@@ -23,6 +24,8 @@ def createModel2(model_type, other_args):
         net = BenNet(**other_args).cuda()
     elif 'compactingbennet' == model_type:
         net = CompactingBenNet(**other_args).cuda()
+    elif 'dragonfly' == model_type:
+        net = DFNet(**other_args).cuda()
     return net
 
 
