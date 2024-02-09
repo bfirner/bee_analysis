@@ -7,7 +7,7 @@ Torch, torchvision, ffmpeg (or possibly ffmpeg-python), and webdataset.
 
 In general, install through pip3 or conda:
 
-> pip3 install torch torchvission webdataset ffmpeg
+> pip3 install torch torchvision webdataset ffmpeg
 
 See https://pytorch.org/get-started/locally/ for additional installation instructions
 
