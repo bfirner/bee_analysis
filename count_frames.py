@@ -12,30 +12,24 @@ import sys
 import os
 import subprocess
 
-parallel_command = [  "/research/projects/grail/rmartin/bin/parallel","--jobs","60","--results","pcounts.csv","ffprobe","-v","error","-select_streams","v:0","-count_frames","-show_entries","stream=nb_read_frames","-of","csv=p=0",":::" ]
+paralell_command_count = [  "/research/projects/grail/rmartin/bin/parallel","--jobs","60","--results","pcounts.csv","ffprobe","-v","error","-select_streams","v:0","-count_frames","-show_entries","stream=nb_read_frames","-of","csv=p=0",":::" ]
+
+paralell_command_noBg = [  "/research/projects/grail/rmartin/bin/parallel","--jobs","15","--results","pcounts.csv","/koko/system/anaconda/envs/python38/bin/python3", "/research/projects/grail/rmartin/analysis-results/code/bee_analysis/RemoveBackground.py","--input","{}","--output","{}.avi","--lognum","100000",":::" ]
+
+#/common/home/rmartin/.bash_H.rlab2:awk -F, '{print $1}' < dataset-time.csv | sed 's/\/research\/projects\/grail\/rmartin\/bee-videos\/yard\/2023-10-18_2023-10-21/../g' | parallel --jobs 20 /koko/system/anaconda/envs/python38/bin/python3 ~/grail/analysis-results/code/bee_analysis5/RemoveBackground.py --input  {} --output {}.avi --lognum 100000
 
 cleanup_shell_cmd = "awk -F, '{printf(\"%s,%s\\n\",$10,$11)} ' < pcounts.csv  | sed 's/V1/filename/g' | sed 's/Stdout/frames/g' | sed 's/\",\"/XYZ/g' | sed s/,//g | egrep 'frames|h264' | sed 's/\"//g' | sed 's/XYZ/,/g' | sed 's/frames/,frames/' > counts.csv"
 
-# change the dataset.csv format to the one used by vidrecdataprep 
-# cat dataset.csv | sed 's/logNeg/1/g' | sed 's/logNo/2/g' | sed 's/logPos/3/g' > dataset-labeled.csv
-
-# crop frame 50-51 from the dataset 
-# ffmpeg -i '2023-08-16 22:54:11.976395.h264' -vf 'select=between(n\,50\,51)' -vsync 0 -start_number 50 frames%d.png
-
-#identify -verbose frames50.png
-
-#convert original.jpg -crop 640x620+0+0 cropped.jpg 
-#Assuming that you always know the size of your image you can do it like this: convert original.jpg -crop 640x620+0+0 cropped.jpg
-#With the -crop operator you specify the size of the cut out image and the offset from the upper left corner of the old image.
-
-#convert frames50.png -crop 900x400+30+120 cropped.jpg 
-
 def main():
-    if len(sys.argv) == 2:
-        dir = sys.argv[1]
-    else:
+    bgalg = 'keepBg' 
+    if len(sys.argv) == 0:
         dir = "."
-
+    elif len(sys.argv) == 1:
+        dir = sys.argv[1]
+    elif len(sys.argv) == 2:
+        dir = sys.argv[1]
+        bgalg = sys.argv[2]
+        
     # cd to the current directory 
     try:
         os.chdir(dir)
@@ -47,11 +41,11 @@ def main():
     # append the list to the parallel command args
     
     for filename in h264_files:
-        parallel_command.append(filename)
+        paralell_command_count.append(filename)
 
-    print ("about to run ffprobe in parallel: ", parallel_command)
+    print ("about to run ffprobe in parallel: ", paralell_command_count)
     # run the parallel command 
-    process = subprocess.Popen(parallel_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    process = subprocess.Popen(paralell_command_count, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout, stderr = process.communicate()
 
     # Decode the output and split it into lines
