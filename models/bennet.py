@@ -232,7 +232,22 @@ class BenNet(nn.Module):
                 # rather than NLLLoss. This allows for multi-label classifiers trained with BCELoss.
             )
 
+            self.vector_preprocess = nn.Sequential()
+            # Almost always drop out the vector inputs so that they only have a very slight
+            # modulatory effect upon training but can still be used during inference.
+            #self.vector_preprocess = nn.Sequential(nn.Dropout1d(p=0.90))
+
             self.createVisMaskLayers(self.output_sizes)
+
+    def normalizeVectorInputs(self, vector_means, vector_stddevs):
+        """Normalize vector inputs by setting weights to 1/stddevs and and biases to -means"""
+
+        # The vector inputs are appended to the flattened outputs of the convolutional layer.
+        # Implement this in the first layer after vector input concatenation
+        # TODO This may not work nicely with the vector_preprocess layer, if that is doing anything
+        with torch.no_grad():
+            self.classifier[0][0].bias[-len(vector_means):] = -1 * torch.tensor(vector_means).to(self.classifier[0][0].bias.device)
+            self.classifier[0][0].weight[:,-len(vector_stddevs):] = 1.0 / torch.tensor(vector_stddevs).to(self.classifier[0][0].weight.device)
 
     #TODO AMP
     #@autocast()
@@ -254,7 +269,7 @@ class BenNet(nn.Module):
         x = self.neck(x)
 
         if vector_input is not None:
-            x = torch.cat((x, vector_input), dim=1)
+            x = torch.cat((x, self.vector_preprocess(vector_input)), dim=1)
 
         x = self.classifier(x)
         return x
@@ -292,7 +307,7 @@ class BenNet(nn.Module):
         x = self.neck(x)
 
         if vector_input is not None:
-            x = torch.cat((x, vector_input), dim=1)
+            x = torch.cat((x, self.vector_preprocess(vector_input)), dim=1)
 
         x = self.classifier(x)
         return x, mask
@@ -547,7 +562,7 @@ class CompactingBenNet(BenNet):
         x = self.forwardToFeatures(x)
 
         if vector_input is not None:
-            x = torch.cat((x, vector_input), dim=1)
+            x = torch.cat((x, self.vector_preprocess(vector_input)), dim=1)
 
         x = self.classifier(x)
         return x
@@ -619,7 +634,7 @@ class CompactingBenNet(BenNet):
         x = self.neck(x)
 
         if vector_input is not None:
-            x = torch.cat((x, vector_input), dim=1)
+            x = torch.cat((x, self.vector_preprocess(vector_input)), dim=1)
 
         x = self.classifier(x)
         return x, mask
