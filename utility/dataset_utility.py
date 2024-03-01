@@ -5,12 +5,19 @@ Utility functions for dataloading with webdatasets.
 """
 import torch
 import webdataset as wds
+import numpy
+
+from torch import tensor, Tensor
+
+from utility.flatbin_dataset import FlatbinDataset
 
 
 def decodeUTF8ListOrNumber(encoded_str):
     """Decode a utf8 encoded list of floats that is currently in a string."""
     if encoded_str[0] == '[':
-        return torch.tensor([float(data) for data in encoded_str[1:-1].split(', ')])
+        return torch.tensor(eval(encoded_str)).to(torch.float)
+    elif encoded_str[:len("tensor")] == "tensor":
+        return eval(encoded_str).to(torch.float)
     else:
         return torch.tensor([float(encoded_str)])
 
@@ -25,21 +32,53 @@ def decodeUTF8Strings(encoding):
     return [torch.cat([decodeUTF8ListOrNumber(data).unsqueeze(0) for data in element]) for element in decoded_strs]
 
 
-def extractVectors(dl_tuple, vector_range):
+def extractUnflatVectors(dl_tuple, vector_range):
     """Extract and concat the labels from the tuple returned by the dataloader.
 
     Arguments:
         dl_tuple    (tuple): Tuple from the dataloader iterator.
-        vector_range (slice): Range that corresponds to labels.
+        vector_range (slice): Slice that corresponds to labels.
     Returns
         torch.tensor
     """
     # Concat along the first non-batch dimension, but don't concat if there is only a single tensor.
     labels = dl_tuple[vector_range]
-    # TODO Data is currently encoded as utf8 strings, which is great for debugging but terrible
+    # Data from webdatasets are encoded as utf8 strings, which is great for debugging but terrible
     # for decoding.
-    tensors = decodeUTF8Strings(labels)
+    if not isinstance(labels[0], torch.Tensor):
+        tensors = decodeUTF8Strings(labels)
+    else:
+        tensors = labels
+    # Return the unconcatenated tensors.
+    return tensors
+
+
+def extractVectors(dl_tuple, vector_range):
+    """Extract and concat the labels from the tuple returned by the dataloader.
+
+    Arguments:
+        dl_tuple    (tuple): Tuple from the dataloader iterator.
+        vector_range (slice): Slice that corresponds to labels.
+    Returns
+        torch.tensor
+    """
+    tensors = extractUnflatVectors(dl_tuple, vector_range)
+    # Concat along the first non-batch dimension
     return torch.cat(tensors, 1)
+
+
+def makeDataset(data_path, decode_strs):
+    """Return a dataloader for either a webdataset or a flat binary file."""
+    if (isinstance(data_path, str) and data_path.endswith(".tar")) or data_path[0].endswith(".tar"):
+        # Check the size of the labels
+        dataset = (
+            wds.WebDataset(data_path)
+            .decode("l")
+            .to_tuple(*decode_strs)
+        )
+        return dataset
+    else:
+        return FlatbinDataset(data_path, decode_strs)
 
 
 def getVectorSize(data_path, decode_strs, vector_range):
@@ -51,19 +90,18 @@ def getVectorSize(data_path, decode_strs, vector_range):
     Returns:
         label_size  (int): The size of labels in the dataset.
     """
-    # Check the size of the labels
-    test_dataset = (
-        wds.WebDataset(data_path)
-        #.decode("l")
-        .to_tuple(*decode_strs)
-    )
-    test_dataloader = torch.utils.data.DataLoader(test_dataset, num_workers=0, batch_size=1)
-    dl_tuple = next(test_dataloader.__iter__())
-    labels = extractVectors(dl_tuple, vector_range)
-    if 1 == labels.dim():
-        return 1
+    dataset = makeDataset(data_path, decode_strs)
+    if isinstance(dataset, FlatbinDataset):
+        return sum([dataset.getDataSize(index) for index in range(vector_range.start, vector_range.stop)])
     else:
-        return labels.size(1)
+        test_dataloader = torch.utils.data.DataLoader(dataset, num_workers=0, batch_size=1)
+
+        dl_tuple = next(test_dataloader.__iter__())
+        labels = extractVectors(dl_tuple, vector_range)
+        if 1 == labels.dim():
+            return 1
+        else:
+            return labels.size(1)
 
 
 def getImageSize(data_path, decode_strs):
@@ -74,12 +112,12 @@ def getImageSize(data_path, decode_strs):
     Returns:
         image_size  (int): The size of images in the dataset.
     """
-    # Check the size of the images
-    test_dataset = (
-        wds.WebDataset(data_path)
-        .decode("l")
-        .to_tuple(*decode_strs)
-    )
-    test_dataloader = torch.utils.data.DataLoader(test_dataset, num_workers=0, batch_size=1)
-    dl_tuple = next(test_dataloader.__iter__())
-    return dl_tuple[0].size()
+    # We are assuming that there is the image name in the first entry of decode strs.
+    # This function is a bit hacky
+    dataset = makeDataset(data_path, decode_strs)
+    if isinstance(dataset, FlatbinDataset):
+        return dataset.getDataSize(0)
+    else:
+        test_dataloader = torch.utils.data.DataLoader(dataset, num_workers=0, batch_size=1)
+        dl_tuple = next(test_dataloader.__iter__())
+        return dl_tuple[0].size()

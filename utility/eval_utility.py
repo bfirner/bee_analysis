@@ -106,16 +106,17 @@ class RegressionResults:
             predictions (torch.tensor): [batch, size] predictions.
             labels      (torch.tensor): [batch, size] labels.
         """
-        avg_error = 0
-        for batch in range(predictions.size(0)):
-            for row, stat in enumerate(self.prediction_statistics):
-                error = predictions[batch][row] - labels[batch][row]
-                stat.sample(error.item())
-                avg_error += error.item() / len(self.prediction_statistics)
-            self.prediction_overall.sample(avg_error)
-        for batch in range(labels.size(0)):
-            for row, stat in enumerate(self.label_statistics):
-                stat.sample(labels[batch][row].item())
+        with torch.no_grad():
+            avg_error = 0
+            for batch in range(predictions.size(0)):
+                for row, stat in enumerate(self.prediction_statistics):
+                    error = predictions[batch][row] - labels[batch][row]
+                    stat.sample(error.item())
+                    avg_error += error.item() / len(self.prediction_statistics)
+                self.prediction_overall.sample(avg_error)
+            for batch in range(labels.size(0)):
+                for row, stat in enumerate(self.label_statistics):
+                    stat.sample(labels[batch][row].item())
 
     def makeResults(self):
         """Generate human readable results.
@@ -165,29 +166,30 @@ class ConfusionMatrix:
         """
         # TODO FIXME Need to add two confusion matrices, one raw and one with a new column for low
         # confidence (e.g. no prediction)
-        self.prediction_count += labels.size(0)
-        prediction_indices = torch.argmax(predictions, 1)
-        for prediction_index, label in zip(prediction_indices, labels):
-            false_negatives = []
-            false_positives = []
-            for cidx in range(label.size(0)):
-                # If this is the correct label and the prediction
-                if 1 == label[cidx] and cidx == prediction_index:
-                    self.correct_count += 1
-                    self.cmatrix[cidx][prediction_index] += 1
-                    self.true_positives[cidx] += 1
-                # If this is the correct label but not the prediction
-                elif 1 == label[cidx] and cidx != prediction_index:
-                    self.cmatrix[cidx][prediction_index] += 1
-                    false_negatives.append(cidx)
-                    self.false_negatives[cidx] += 1
-                # If this is the wrong label but was the prediction
-                elif 0 == label[cidx] and cidx == prediction_index:
-                    false_positives.append(cidx)
-                    self.false_positives[cidx] += 1
-                # Wrong label and not predicted
-                else:
-                    self.true_negatives[cidx] += 1
+        with torch.no_grad():
+            self.prediction_count += labels.size(0)
+            prediction_indices = torch.argmax(predictions, 1)
+            for prediction_index, label in zip(prediction_indices, labels):
+                false_negatives = []
+                false_positives = []
+                for cidx in range(label.size(0)):
+                    # If this is the correct label and the prediction
+                    if 1 == label[cidx] and cidx == prediction_index:
+                        self.correct_count += 1
+                        self.cmatrix[cidx][prediction_index] += 1
+                        self.true_positives[cidx] += 1
+                    # If this is the correct label but not the prediction
+                    elif 1 == label[cidx] and cidx != prediction_index:
+                        self.cmatrix[cidx][prediction_index] += 1
+                        false_negatives.append(cidx)
+                        self.false_negatives[cidx] += 1
+                    # If this is the wrong label but was the prediction
+                    elif 0 == label[cidx] and cidx == prediction_index:
+                        false_positives.append(cidx)
+                        self.false_positives[cidx] += 1
+                    # Wrong label and not predicted
+                    else:
+                        self.true_negatives[cidx] += 1
 
     def accuracy(self):
         """Return the accuracy of predictions in this ConfusionMatrix.
