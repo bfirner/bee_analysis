@@ -4,7 +4,7 @@
 Utility functions and classes for video processing
 """
 
-import ffmpeg
+import cv2
 import math
 import numpy
 import random
@@ -48,6 +48,10 @@ def getVideoInfo(video_path):
         int: Height
         int: The total number of frames.
     """
+    # TODO FIXME Replace with opencv using:
+    #    get(cv.CAP_PROP_FRAME_COUNT)
+    #    get(cv.CAP_PROP_FRAME_HEIGHT)
+    #    get(cv.CAP_PROP_FRAME_WIDTH)
     # Following advice from https://kkroening.github.io/ffmpeg-python/index.html
     # First find the size, then set up a stream.
     probe = ffmpeg.probe(video_path)['streams'][0]
@@ -86,6 +90,32 @@ def getVideoInfo(video_path):
                 break
         total_frames = frame
     return width, height, total_frames
+
+
+def processImage(scaled_dimensions, out_dimensions, crop_coords, img) -> torch.Tensor:
+    """Convert the given openCV image into a torch tensor.
+    Scale
+    Arguments:
+        scaled_dimensions (height, width):
+        out_dimensions (c, height, width):
+        crop_coords (y, x):
+        img:
+    """
+    # The internet
+    # (https://stackoverflow.com/questions/23853632/which-kind-of-interpolation-best-for-resizing-image
+    # from https://docs.opencv.org/3.4/da/d54/group__imgproc__transform.html#ga47a974309e9102f5f08231edc7e7529d)
+    # suggests using INTER_AREA when downscaling images.
+    scaled_image = cv2.resize(img, (scaled_dimensions[1], scaled_dimensions[0]), interpolation=cv2.INTER_AREA)
+    # Remember that the opencv image format has channels last
+    y_crop = slice(crop_coords[0], crop_coords[0] + out_dimensions[1])
+    x_crop = slice(crop_coords[1], crop_coords[1] + out_dimensions[2])
+    cropped_image = scaled_image[y_crop, x_crop, :]
+    if out_dimensions[0] > 1:
+        # Take three channels, don't attempt to take an alpha channel
+        return numpy.array([cropped_image[:,:,channel] for channel in range(3)])
+    else:
+        # Preserve the channel dimension after reducing to a single channel
+        return numpy.expand_dims(cv2.cvtColor(cropped_image, cv2.COLOR_BGR2GRAY).astype('float32'), axis=0)
 
 
 class VideoSampler:
@@ -197,64 +227,70 @@ class VideoSampler:
         in_width = self.out_width + 2 * self.crop_noise
         in_height = self.out_height + 2 * self.crop_noise
 
+        # Use OpenCV for video reading
+        # An additional crop will follow if noise is being used.
+        out_dimensions = (self.channels, in_height, in_width)
+        scaled_dimensions = (math.floor(self.scale * self.height), math.floor(self.scale * self.width))
+        crop_coords = (self.crop_y, self.crop_x)
+
         # Initialize the background subtractor
         if (self.bg_subtractor is not None):
+            # This bitwise_and will be needed later.
             from cv2 import (bitwise_and)
-            # Read in a few hundred frames
-            process1 = (
-                ffmpeg
-                .input(self.path)
-                # 400 is the default window for background subtractors
-                .trim(start_frame=self.begin_frame, end_frame=self.begin_frame + 400)
-                # Scale
-                .filter('scale', math.floor(self.scale*self.width), -1)
-                # The crop is automatically centered if the x and y parameters are not used.
-                .filter('crop', out_w=in_width, out_h=in_height, x=self.crop_x, y=self.crop_y)
-            )
-            if self.normalize:
-                # Full independence between color channels. The bee videos are basically a single color.
-                # Otherwise normalizing the channels independently may not be a good choice.
-                process1 = process1.filter('normalize', independence=1.0)
+            v_stream = cv2.VideoCapture(self.path)
+            v_stream.set(cv2.CAP_PROP_POS_FRAMES, self.begin_frame)
 
-            process1 = (
-                process1
-                # YUV444p is the alternative to rgb24, but the pretrained network expects rgb images.
-                #.output('pipe:', format='rawvideo', pix_fmt='yuv444p')
-                .output('pipe:', format='rawvideo', pix_fmt=pix_fmt)
-                .run_async(pipe_stdout=True, quiet=True)
-            )
-            in_bytes = process1.stdout.read(in_width * in_height * self.channels)
-            if in_bytes:
-                # Convert to numpy and feed to the background subtraction algorithm
-                np_frame = numpy.frombuffer(in_bytes, numpy.uint8)
-                fgMask = self.bg_subtractor.apply(np_frame)
+            # 400 is the default window to initialize background subtractors
+            count = 0
+            while v_stream.grab() and count < min(400, self.end_frame):
+                retval, image = v_stream.retrieve()
+                count += 1
 
-        # Reading videos slows down as more frames have been read, so read them in chunks.
-        frame_batch_size = 2000
-        cur_end_frame = min(self.begin_frame + frame_batch_size, self.end_frame+1)
-        process1 = (
-            ffmpeg
-            .input(self.path)
-            # Read the next chunk
-            .trim(start_frame=self.begin_frame, end_frame=cur_end_frame)
-            # Scale
-            .filter('scale', math.floor(self.scale*self.width), -1)
-            # The crop is automatically centered if the x and y parameters are not used.
-            .filter('crop', out_w=in_width, out_h=in_height, x=self.crop_x, y=self.crop_y)
-            # Full independence between color channels. The bee videos are basically a single color.
-            # Otherwise normalizing the channels independently may not be a good choice.
-        )
-        if self.normalize:
-            # Full independence between color channels. The bee videos are basically a single color.
-            # Otherwise normalizing the channels independently may not be a good choice.
-            process1 = process1.filter('normalize', independence=1.0)
-        process1 = (
-            process1
-            # YUV444p is the alternative to rgb24, but the pretrained network expects rgb images.
-            #.output('pipe:', format='rawvideo', pix_fmt='yuv444p')
-            .output('pipe:', format='rawvideo', pix_fmt=pix_fmt)
-            .run_async(pipe_stdout=True, quiet=True)
-        )
+                processed_image = processImage(scaled_dimensions, out_dimensions, crop_coords, image)
+
+                # Go through background subtraction without doing any normalization
+                fgMask = self.bg_subtractor.apply(processed_image.astype(numpy.uint8))
+
+            v_stream.release()
+
+        v_stream = cv2.VideoCapture(self.path)
+        v_stream.set(cv2.CAP_PROP_POS_FRAMES, self.begin_frame)
+
+        while v_stream.get(cv2.CAP_PROP_POS_FRAMES) <= self.end_frame:
+            # Get ready to fetch the next frame
+            partial_sample = []
+            sample_frames = []
+            # Use the same crop location for each sample in multiframe sequences.
+            rand_crop_x = random.choice(range(0, 2 * self.crop_noise + 1))
+            rand_crop_y = random.choice(range(0, 2 * self.crop_noise + 1))
+            next_frame = v_stream.get(cv2.CAP_PROP_POS_FRAMES)
+            while len(partial_sample) < self.frames_per_sample and next_frame <= self.end_frame:
+                retval, image = v_stream.retrieve()
+                processed_image = processImage(scaled_dimensions, out_dimensions, crop_coords, image)
+
+                if self.bg_subtractor is not None:
+                    fgMask = self.bg_subtractor.apply(processed_image.astype(numpy.uint8))
+
+                # Should this frame be sampled?
+                sample_in_progress = 0 < len(partial_sample)
+                if ((next_frame == target_frame or
+                    (sample_in_progress and (next_frame - target_frame) % (self.frame_interval + 1) == 0))):
+
+                    # Apply background subtraction if requested
+                    if self.bg_subtractor is not None:
+                        # Curious use of a bitwise and involving the image and itself. Could use
+                        # a masked select instead.
+                        masked = bitwise_and(processed_image, processed_image, mask=fgMask)
+                        processed_image = masked.clip(max=255).astype(numpy.uint8)
+                    
+                    if self.normalize:
+                        # Full independence between color channels. May not always be the correct
+                        # choice. Here, normalization means correcting the range to be from 0 to 255
+                        for channel in processed_image.shape[0]:
+                            chan_min = processed_image[channel].min()
+                            chan_max = processed_image[channel].max()
+                            processed_image[channel] = ((processed_image_channel - chan_min) * (255/(chan_max - chan_min))).astype(numpy.uint8)
+
         # Generator loop
         # TODO FIXME Use the sampling options
         # The first frame will be frame number 1

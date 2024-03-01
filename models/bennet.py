@@ -120,7 +120,7 @@ class BenNet(nn.Module):
             self.shortcut_projections.append(
                 nn.Sequential(projection, nn.BatchNorm2d(self.channels[i+1])))
             self.post_residuals.append(
-                nn.Sequential((nn.ReLU()), nn.Dropout2d(p=0.0)))
+                nn.Sequential((nn.ReLU()), nn.Dropout2d(p=0.5)))
 
             # The non-skip layer with two convolutions.
             layer, out_size = self.createResLayer(i, out_size)
@@ -151,7 +151,7 @@ class BenNet(nn.Module):
             # reduced fitting to the training set.
             if i+2 < len(self.kernels):
                 block.append(nn.BatchNorm2d(out_channels))
-            block.append(nn.Dropout2d(p=0.0))
+            block.append(nn.Dropout2d(p=0.5))
             self.model.append(nn.Sequential(*block))
 
         # The output size of the final channels
@@ -214,7 +214,7 @@ class BenNet(nn.Module):
         # Initialize in a no_grad section so that we can fill in some initial values for the bias
         # tensors.
         with torch.no_grad():
-            self.initial_batch_norm = nn.Sequential(nn.BatchNorm2d(in_dimensions[0]))
+            #self.initial_batch_norm = nn.Sequential(nn.BatchNorm2d(in_dimensions[0]))
             out_size = self.createInternalResLayers(out_size)
 
             self.neck = nn.Sequential(nn.Flatten())
@@ -246,13 +246,14 @@ class BenNet(nn.Module):
         # Implement this in the first layer after vector input concatenation
         # TODO This may not work nicely with the vector_preprocess layer, if that is doing anything
         with torch.no_grad():
-            self.classifier[0][0].bias[-len(vector_means):] = -1 * torch.tensor(vector_means).to(self.classifier[0][0].bias.device)
+            # Bias to +1 because of ReLUs
+            self.classifier[0][0].bias[-len(vector_means):] = 1.0 + -1 * torch.tensor(vector_means).to(self.classifier[0][0].bias.device)
             self.classifier[0][0].weight[:,-len(vector_stddevs):] = 1.0 / torch.tensor(vector_stddevs).to(self.classifier[0][0].weight.device)
 
     #TODO AMP
     #@autocast()
     def forward(self, x, vector_input=None):
-        x = self.initial_batch_norm(x)
+        #x = self.initial_batch_norm(x)
         # The initial block of the model is not a residual layer, but then there is a skip
         # connection for every pair of layers after that.
         for idx in range(len(self.model) - self.non_res_layers):
@@ -276,7 +277,7 @@ class BenNet(nn.Module):
 
     def vis_forward(self, x, vector_input=None):
         """Forward and calculate a visualization mask of the convolution layers."""
-        x = self.initial_batch_norm(x)
+        #x = self.initial_batch_norm(x)
         conv_outputs = []
         # The initial block of the model is not a residual layer, but then there is a skip
         # connection for every pair of layers after that.
@@ -315,7 +316,7 @@ class BenNet(nn.Module):
     def produceFeatureMaps(self, x):
         """Produce and return max pooled feature maps from all of the convolution layers."""
         maps = []
-        x = self.initial_batch_norm(x)
+        #x = self.initial_batch_norm(x)
         # The initial block of the model is not a residual layer, but then there is a skip
         # connection for every pair of layers after that.
         for idx in range(len(self.model) - self.non_res_layers):
@@ -334,7 +335,7 @@ class BenNet(nn.Module):
 
     def forwardToFeatures(self, x):
         """Produce and return the feature maps before the linear layers."""
-        x = self.initial_batch_norm(x)
+        #x = self.initial_batch_norm(x)
         # The initial block of the model is not a residual layer, but then there is a skip
         # connection for every pair of layers after that.
         for idx in range(len(self.model) - self.non_res_layers):
@@ -569,7 +570,7 @@ class CompactingBenNet(BenNet):
 
     def forwardToFeatures(self, x):
         """Produce and return the feature maps before the linear layers."""
-        x = self.initial_batch_norm(x)
+        #x = self.#initial_batch_norm(x)
         # The initial block of the model is not a residual layer, but then there is a skip
         # connection for every pair of layers after that.
         for idx in range(len(self.model) - self.non_res_layers):
@@ -599,7 +600,7 @@ class CompactingBenNet(BenNet):
 
     def vis_forward(self, x, vector_input=None):
         """Forward and calculate a visualization mask of the convolution layers."""
-        x = self.initial_batch_norm(x)
+        #x = self.initial_batch_norm(x)
         conv_outputs = []
         # The initial block of the model is not a residual layer, but then there is a skip
         # connection for every pair of layers after that.

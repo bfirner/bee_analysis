@@ -81,21 +81,22 @@ def updateWithoutScaler(loss_fn, net, image_input, vector_input, labels, optimiz
         optimizer     (torch.optim): Optimizer
     """
     optimizer.zero_grad()
-    #if vector_input is None:
-    #    out = net(image_input.contiguous())
-    #else:
-    #    out = net(image_input.contiguous(), vector_input.contiguous())
+    if vector_input is None:
+        out = net(image_input.contiguous())
+    else:
+        out = net(image_input.contiguous(), vector_input.contiguous())
+    loss = loss_fn(out, labels)
 
     # TODO FIXME Just experimenting with covariance matrix loss thingy
-    if vector_input is None:
-        features = net.forwardToFeatures(image_input.contiguous())
-        out = net.classifier(features)
-    else:
-        features = net.forwardToFeatures(image_input.contiguous())
-        out = net.classifier(torch.cat((features, vector_input), dim=1))
-    cor_matrix = features.T.cov()
-    cor_loss = 0.01 * (cor_matrix - torch.eye(cor_matrix.size(1)).cuda()).mean().abs()
-    loss = loss_fn(out, labels) + cor_loss
+    #if vector_input is None:
+    #    features = net.forwardToFeatures(image_input.contiguous())
+    #    out = net.classifier(features)
+    #else:
+    #    features = net.forwardToFeatures(image_input.contiguous())
+    #    out = net.classifier(torch.cat((features, vector_input), dim=1))
+    #cor_matrix = features.T.cov()
+    #cor_loss = 0.01 * (cor_matrix - torch.eye(cor_matrix.size(1)).cuda()).mean().abs()
+    #loss = loss_fn(out, labels) + cor_loss
 
     # TODO FIXME Adding loss to weights, again as an experiment
     # Nope, this causes regression to the mean
@@ -176,12 +177,28 @@ class LabelHandler():
     def names(self):
         return self.label_names
 
+
+def createPositionMask(height, width):
+    """Create a positional mask that can be inserted with the image."""
+    with torch.no_grad():
+        mask = torch.zeros(1, height, width)
+        mid_y = 0.5 * height
+        mid_x = 0.5 * width
+        for y in range(height):
+            for x in range(width):
+                # By taking the difference of one pixel to the next the CNN can discover the pixel
+                # position relative to the center of the image.
+                mask[0,y,x] = abs(y/height - 0.5)**2 + abs(x/width - 0.5)**2
+        return mask
+
+
+# TODO This bit of state need not be a global variable. The caller of trainEpoch can track this.
 epoch = 0
 
 
 def trainEpoch(net, optimizer, scaler, label_handler,
         train_stats, dataloader, vector_range, train_frames, normalize_images, loss_fn, nn_postprocess,
-        worst_training, skip_metadata):
+        encode_position, worst_training, skip_metadata):
     """
 
     evaluate         (bool): True to run an evaluation after every training epoch.
@@ -192,29 +209,42 @@ def trainEpoch(net, optimizer, scaler, label_handler,
     global epoch
     epoch += 1
     net.train()
+    position_mask = None
     for batch_num, dl_tuple in enumerate(dataloader):
         dateNow = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
         if ( (batch_num % 1000) == 1):
             print ("Log: at batch %d at %s" % (batch_num,dateNow))
 
-        # Decoding only the luminance channel means that the channel dimension has gone away here.
-        if 1 == train_frames:
-            net_input = dl_tuple[0].unsqueeze(1).cuda()
-        else:
-            raw_input = []
-            for i in range(train_frames):
-                raw_input.append(dl_tuple[i].unsqueeze(1).cuda())
-            net_input = torch.cat(raw_input, dim=1)
-        # Normalize inputs: input = (input - mean)/stddev
-        if normalize_images:
-            with torch.no_grad():
-                v, m = torch.var_mean(net_input)
-                net_input = (net_input - m) / v
+        # No gradients for setup stuff
+        with torch.no_grad():
+            # Decoding only the luminance channel means that the channel dimension has gone away here.
+            if 1 == train_frames:
+                if 3 == dl_tuple[0].dim():
+                    net_input = dl_tuple[0].unsqueeze(1).cuda()
+                else:
+                    net_input = dl_tuple[0].cuda()
+            else:
+                raw_input = []
+                for i in range(train_frames):
+                    if 3 == dl_tuple[i].dim():
+                        raw_input.append(dl_tuple[i].unsqueeze(1).cuda())
+                    else:
+                        raw_input.append(dl_tuple[i].cuda())
+                net_input = torch.cat(raw_input, dim=1)
+            # Normalize inputs: input = (input - mean)/stddev
+            if normalize_images:
+                    v, m = torch.var_mean(net_input)
+                    net_input = (net_input - m) / v
 
-        labels = extractVectors(dl_tuple, label_handler.range()).cuda()
-        vector_inputs=None
-        if vector_range.start != vector_range.stop:
-            vector_inputs = extractVectors(dl_tuple, vector_range).cuda()
+            if encode_position:
+                if position_mask is None:
+                    position_mask = createPositionMask(net_input.size(-2), net_input.size(-1)).cuda()
+                net_input = torch.cat((net_input, position_mask.expand(net_input.size(0), -1, -1, -1)), dim=1)
+
+            labels = extractVectors(dl_tuple, label_handler.range()).cuda()
+            vector_inputs=None
+            if vector_range.start != vector_range.stop:
+                vector_inputs = extractVectors(dl_tuple, vector_range).cuda()
 
         # Example of how to save images for debugging purposes
         # if epoch == 1 and batch_num == 0:
@@ -234,10 +264,10 @@ def trainEpoch(net, optimizer, scaler, label_handler,
         # Fill in the confusion matrix and worst examples.
         with torch.no_grad():
             # The postprocessesing could include Softmax, denormalization, etc.
-            post_out = nn_postprocess(out)
+            post_out = nn_postprocess(out.detach())
             # Labels may also require postprocessing, for example to convert to a one-hot
             # encoding.
-            post_labels = label_handler.preeval(labels)
+            post_labels = label_handler.preeval(labels.detach())
 
             # Update training statistics
             train_stats.update(predictions=post_out, labels=post_labels)
@@ -246,7 +276,7 @@ def trainEpoch(net, optimizer, scaler, label_handler,
                 if skip_metadata:
                     metadata = [""] * labels.size(0)
                 else:
-                    metadata = dl_tuple[metadata_index]
+                    metadata = dl_tuple[metadata_index.detach()]
                 # For each item in the batch see if it requires an update to the worst examples
                 # If the DNN should have predicted this image was a member of the labelled class
                 # then see if this image should be inserted into the worst_n queue for the
