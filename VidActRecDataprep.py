@@ -78,13 +78,13 @@ parser.add_argument(
     type=int,
     required=False,
     default=0,
-    help='The offset (in pixels) of the crop location on the original image in the x dimension.')
+    help='The offset (in pixels) of the crop location on the scaled image in the x dimension.')
 parser.add_argument(
     '--crop_y_offset',
     type=int,
     required=False,
     default=0,
-    help='The offset (in pixels) of the crop location on the original image in the y dimension.')
+    help='The offset (in pixels) of the crop location on the scaled image in the y dimension.')
 parser.add_argument(
     '--interval',
     type=int,
