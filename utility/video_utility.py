@@ -48,47 +48,11 @@ def getVideoInfo(video_path):
         int: Height
         int: The total number of frames.
     """
-    # TODO FIXME Replace with opencv using:
-    #    get(cv.CAP_PROP_FRAME_COUNT)
-    #    get(cv.CAP_PROP_FRAME_HEIGHT)
-    #    get(cv.CAP_PROP_FRAME_WIDTH)
-    # Following advice from https://kkroening.github.io/ffmpeg-python/index.html
-    # First find the size, then set up a stream.
-    probe = ffmpeg.probe(video_path)['streams'][0]
-    width = probe['width']
-    height = probe['height']
-
-    if 'duration' in probe:
-        numer, denom = probe['avg_frame_rate'].split('/')
-        frame_rate = float(numer) / float(denom)
-        duration = float(probe['duration'])
-        # The duration does not count the first frame (e.g. a 0 duration video can still have 1
-        # frame, and a 30fps video with 1 second of elapsed duration will have 31 frames.)
-        total_frames = 1 + math.floor(duration * frame_rate)
-    else:
-        # If the duration is not in the probe then we will need to read through the entire video
-        # to get the number of frames.
-        # It is possible that the "quiet" option to the python ffmpeg library may have a buffer
-        # size problem as the output does not go to /dev/null to be discarded. The workaround
-        # would be to manually poll the buffer.
-        process1 = (
-            ffmpeg
-            .input(video_path)
-            .output('pipe:', format='rawvideo', pix_fmt='gray')
-            #.output('pipe:', format='rawvideo', pix_fmt='yuv420p')
-            .run_async(pipe_stdout=True, quiet=True)
-        )
-        # Count frames
-        frame = 0
-        while True:
-            # Using pix_fmt='gray' we should get a single channel of 8 bits per pixel
-            in_bytes = process1.stdout.read(width * height)
-            if in_bytes:
-                frame += 1
-            else:
-                process1.wait()
-                break
-        total_frames = frame
+    v_stream = cv2.VideoCapture(video_path)
+    width = int(v_stream.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(v_stream.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total_frames = int(v_stream.get(cv2.CAP_PROP_FRAME_COUNT))
+    v_stream.release()
     return width, height, total_frames
 
 
@@ -111,7 +75,8 @@ def processImage(scaled_dimensions, out_dimensions, crop_coords, img) -> torch.T
     x_crop = slice(crop_coords[1], crop_coords[1] + out_dimensions[2])
     cropped_image = scaled_image[y_crop, x_crop, :]
     if out_dimensions[0] > 1:
-        # Take three channels, don't attempt to take an alpha channel
+        # Take three channels, don't attempt to take an alpha channel. Put the channel dimension
+        # first.
         return numpy.array([cropped_image[:,:,channel] for channel in range(3)])
     else:
         # Preserve the channel dimension after reducing to a single channel
@@ -173,6 +138,7 @@ class VideoSampler:
         else:
             self.crop_noise = crop_noise
 
+        print("The crop offsets are {} and {}".format(crop_x_offset, crop_y_offset))
         self.out_width, self.out_height, self.crop_x, self.crop_y = vidSamplingCommonCrop(
             self.height, self.width, out_height, out_width, self.scale, crop_x_offset, crop_y_offset)
 
@@ -255,137 +221,78 @@ class VideoSampler:
 
         v_stream = cv2.VideoCapture(self.path)
         v_stream.set(cv2.CAP_PROP_POS_FRAMES, self.begin_frame)
+        next_frame = self.begin_frame
 
-        while v_stream.get(cv2.CAP_PROP_POS_FRAMES) <= self.end_frame:
+        total_sampled = 0
+        # Use the same crop location for each sample in multiframe sequences. Recalculate after
+        # sampling.
+        rand_crop_x = random.choice(range(0, 2 * self.crop_noise + 1))
+        rand_crop_y = random.choice(range(0, 2 * self.crop_noise + 1))
+        next_frame = int(v_stream.get(cv2.CAP_PROP_POS_FRAMES))
+        while next_frame <= self.end_frame and total_sampled < len(target_samples) and v_stream.grab():
+            retval, image = v_stream.retrieve()
             # Get ready to fetch the next frame
             partial_sample = []
             sample_frames = []
-            # Use the same crop location for each sample in multiframe sequences.
-            rand_crop_x = random.choice(range(0, 2 * self.crop_noise + 1))
-            rand_crop_y = random.choice(range(0, 2 * self.crop_noise + 1))
-            next_frame = v_stream.get(cv2.CAP_PROP_POS_FRAMES)
-            while len(partial_sample) < self.frames_per_sample and next_frame <= self.end_frame:
-                retval, image = v_stream.retrieve()
+            sample_in_progress = 0 < len(partial_sample)
+            frame_target_offset = next_frame - target_samples[total_sampled]
+
+            if (0 == frame_target_offset or
+                (sample_in_progress and (frame_target_offset % (self.frame_interval + 1)) == 0)):
+
+                # Expand to add a channel dimension after the image is processed
+                processed_image = numpy.expand_dims(processImage(scaled_dimensions, out_dimensions, crop_coords, image), axis=0)
+
+                if self.bg_subtractor is not None:
+                    fgMask = self.bg_subtractor.apply(processed_image.astype(numpy.uint8))
+
+                # Apply background subtraction if requested
+                if self.bg_subtractor is not None:
+                    # Curious use of a bitwise and involving the image and itself. Could use
+                    # a masked select instead.
+                    masked = bitwise_and(processed_image, processed_image, mask=fgMask)
+                    processed_image = masked.clip(max=255).astype(numpy.uint8)
+
+                if self.normalize:
+                    # Full independence between color channels. May not always be the correct
+                    # choice. Here, normalization means correcting the range to be from 0 to 255
+                    for channel in processed_image.shape[0]:
+                        chan_min = processed_image[channel].min()
+                        chan_max = processed_image[channel].max()
+                        processed_image[channel] = ((processed_image_channel - chan_min) * (255/(chan_max - chan_min))).astype(numpy.uint8)
+
+                # Convert to torch with a random crop and add this sample to the collection
+                torch_frame = torch.tensor(
+                    data = processed_image[:, rand_crop_y:rand_crop_y+self.out_height, rand_crop_x:rand_crop_x+self.out_width, :],
+                    dtype = torch.uint8).contiguous()
+                partial_sample.append(torch_frame)
+                sample_frames.append(str(next_frame))
+            elif self.bg_subtractor is not None:
+                # We have to process the image even if it isn't used when using the background
+                # subtractor
                 processed_image = processImage(scaled_dimensions, out_dimensions, crop_coords, image)
 
                 if self.bg_subtractor is not None:
                     fgMask = self.bg_subtractor.apply(processed_image.astype(numpy.uint8))
 
-                # Should this frame be sampled?
-                sample_in_progress = 0 < len(partial_sample)
-                if ((next_frame == target_frame or
-                    (sample_in_progress and (next_frame - target_frame) % (self.frame_interval + 1) == 0))):
+            # Get the next frame's number for the next loop iteration
+            next_frame = int(v_stream.get(cv2.CAP_PROP_POS_FRAMES))
 
-                    # Apply background subtraction if requested
-                    if self.bg_subtractor is not None:
-                        # Curious use of a bitwise and involving the image and itself. Could use
-                        # a masked select instead.
-                        masked = bitwise_and(processed_image, processed_image, mask=fgMask)
-                        processed_image = masked.clip(max=255).astype(numpy.uint8)
-                    
-                    if self.normalize:
-                        # Full independence between color channels. May not always be the correct
-                        # choice. Here, normalization means correcting the range to be from 0 to 255
-                        for channel in processed_image.shape[0]:
-                            chan_min = processed_image[channel].min()
-                            chan_max = processed_image[channel].max()
-                            processed_image[channel] = ((processed_image_channel - chan_min) * (255/(chan_max - chan_min))).astype(numpy.uint8)
-
-        # Generator loop
-        # TODO FIXME Use the sampling options
-        # The first frame will be frame number 1
-        frame = 0
-        # Need to read in all frames.
-        in_bytes = True
-        while in_bytes:
-            for target_idx, target_frame in enumerate(target_samples):
-                # Get ready to fetch the next frame
+            # If a full sample was collected, yield it.
+            # If multiple frames are being returned then concat them along the channel
+            # dimension. Otherwise just return the single frame.
+            if len(partial_sample) == self.frames_per_sample:
+                total_sampled += 1
+                if 1 == self.frames_per_sample:
+                    yield partial_sample[0], self.path, sample_frames
+                else:
+                    yield torch.cat(partial_sample), self.path, sample_frames
                 partial_sample = []
-                sample_frames = []
-                # Use the same crop location for each sample in multiframe sequences.
-                crop_x = random.choice(range(0, 2 * self.crop_noise + 1))
-                crop_y = random.choice(range(0, 2 * self.crop_noise + 1))
-                while len(partial_sample) < self.frames_per_sample and frame < self.end_frame:
-                    in_bytes = process1.stdout.read(in_width * in_height * self.channels)
-                    if in_bytes:
-                        # Numpy frame conversion either happens during background subtraction or
-                        # later during sampling
-                        np_frame = None
-                        # Apply background subtraction if requested
-                        if self.bg_subtractor is not None:
-                            # Convert to numpy
-                            np_frame = numpy.frombuffer(in_bytes, numpy.uint8)
-                            fgMask = self.bg_subtractor.apply(np_frame)
-                            # Curious use of a bitwise and involving the image and itself. Could use
-                            # a masked select instead.
-                            masked = bitwise_and(np_frame, np_frame, mask=fgMask)
-                            np_frame = masked.clip(max=255).astype(numpy.uint8)
-
-                        # Check if this frame will be sampled.
-                        # The sample number is from the list of available samples, starting from 0. Add the
-                        # begin frame to get the actual desired frame number.
-                        # Making some variables here for clarity below
-                        sample_in_progress = 0 < len(partial_sample)
-                        if ((frame == target_frame or
-                            (sample_in_progress and (frame - target_frame) %
-                            (self.frame_interval + 1) == 0))):
-                            # Convert to numpy, and then to torch.
-                            if np_frame is None:
-                                np_frame = numpy.frombuffer(in_bytes, numpy.uint8)
-                            in_frame = torch.tensor(data=np_frame, dtype=torch.uint8,
-                                ).reshape([1, in_height, in_width, self.channels])
-                            # Apply the random crop
-                            in_frame = in_frame[:, crop_y:crop_y+self.out_height, crop_x:crop_x+self.out_width, :]
-                            in_frame = in_frame.permute(0, 3, 1, 2).to(dtype=torch.float)
-                            partial_sample.append(in_frame)
-                            sample_frames.append(str(frame))
-                        frame += 1
-                    elif (cur_end_frame < self.end_frame):
-                        # Let the previous process end.
-                        process1.wait()
-                        # Go to the next chunk
-                        next_end_frame = min(cur_end_frame+frame_batch_size, self.end_frame+1)
-                        process1 = (
-                            ffmpeg
-                            .input(self.path)
-                            # Read the next chunk
-                            .trim(start_frame=cur_end_frame, end_frame=next_end_frame)
-                            # Scale
-                            .filter('scale', math.floor(self.scale*self.width), -1)
-                            # The crop is automatically centered if the x and y parameters are not used.
-                            .filter('crop', out_w=in_width, out_h=in_height, x=self.crop_x, y=self.crop_y)
-                            # Full independence between color channels. The bee videos are basically a single color.
-                            # Otherwise normalizing the channels independently may not be a good choice.
-                        )
-                        if self.normalize:
-                            # Full independence between color channels. The bee videos are basically a single color.
-                            # Otherwise normalizing the channels independently may not be a good choice.
-                            process1 = process1.filter('normalize', independence=1.0)
-                        process1 = (
-                            process1
-                            # YUV444p is the alternative to rgb24, but the pretrained network expects rgb images.
-                            #.output('pipe:', format='rawvideo', pix_fmt='yuv444p')
-                            .output('pipe:', format='rawvideo', pix_fmt=pix_fmt)
-                            .run_async(pipe_stdout=True, quiet=True)
-                        )
-                        cur_end_frame = next_end_frame
-                    else:
-                        # Somehow we reached the end of the video without collected all of the samples.
-                        print(f"Warning: reached the end of the video but only collected {target_idx}/{self.num_samples} samples")
-                        print(f"Warning: ended during sample beginning with frame {target_frame} on frame {frame}")
-                        process1.wait()
-                        return
-                # If multiple frames are being returned then concat them along the channel
-                # dimension. Otherwise just return the single frame.
-                if frame < self.end_frame:
-                    if 1 == self.frames_per_sample:
-                        yield partial_sample[0], self.path, sample_frames
-                    else:
-                        yield torch.cat(partial_sample), self.path, sample_frames
-            print(f"Collected {target_idx + 1} frames.")
-            print(f"The final frame was {frame}")
-            # Read any remaining samples
-            while in_bytes:
-                in_bytes = process1.stdout.read(self.out_width * self.out_height * self.channels)
-            process1.wait()
-            return
+                # Use the same crop location for each sample in multiframe sequences. Recalculate after
+                # sampling.
+                rand_crop_x = random.choice(range(0, 2 * self.crop_noise + 1))
+                rand_crop_y = random.choice(range(0, 2 * self.crop_noise + 1))
+        print(f"Video utility collected {total_sampled} samples.")
+        print(f"The final frame was {next_frame}")
+        v_stream.release()
+        return
