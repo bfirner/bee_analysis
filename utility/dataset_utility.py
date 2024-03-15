@@ -81,6 +81,26 @@ def makeDataset(data_path, decode_strs):
         return FlatbinDataset(data_path, decode_strs)
 
 
+def getUnflatVectorSize(data_path, decode_strs, vector_range):
+    """
+    Arguments:
+        data_path   (str or list[str]): Path to webdataset tar file(s).
+        decode_strs              (str): Decode string for dataset loading.
+        vector_range           (slice): The index range of the vectors to check
+    Returns:
+        label_sizes  (list[int]): The sizes of labels in the dataset.
+    """
+    dataset = makeDataset(data_path, decode_strs)
+    if isinstance(dataset, FlatbinDataset):
+        return [dataset.getDataSize(index) for index in range(vector_range.start, vector_range.stop)]
+    else:
+        test_dataloader = torch.utils.data.DataLoader(dataset, num_workers=0, batch_size=1)
+
+        dl_tuple = next(test_dataloader.__iter__())
+        vectors = extractUnflatVectors(dl_tuple, vector_range)
+        return [1 if vector.dim() == 1 else vector.size(1) for vector in vectors]
+
+
 def getVectorSize(data_path, decode_strs, vector_range):
     """
     Arguments:

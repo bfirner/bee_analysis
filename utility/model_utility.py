@@ -93,3 +93,16 @@ def restoreNormalizers(resume_from):
         Normalizer(means=nsd['means'], stddevs=1.0/nsd['inv_stddevs']),
         Denormalizer(means=dsd['means'], stddevs=dsd['stddevs']),
     )
+
+
+def getLabelLocations(metadata):
+    """Get the label locations, a list of int and slice values, given a model's metadata."""
+    output_locations = {}
+    out_idx = 0
+    for output_name, output_size in zip(metadata['labels'], metadata['label_sizes']):
+        if 1 == output_size:
+            output_locations[output_name] = out_idx
+        else:
+            output_locations[output_name] = slice(out_idx, out_idx + output_size)
+        out_idx += output_size
+    return output_locations
