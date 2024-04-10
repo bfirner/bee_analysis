@@ -87,6 +87,23 @@ class FlatbinDataset(torch.utils.data.IterableDataset):
                     self.data_handlers.append(functools.partial(tensor_handler, data_length))
                     self.data_indices.append(self.desired_data.index(self.header_names[-1]))
                     self.data_sizes.append(data_length)
+            # Write a function to skip an entry. This is used when there are multiple dataloading
+            # threads so they are skipping sections that other threads are loading.
+            chunk_sizes = []
+            for size in self.data_sizes:
+                # png with variable size
+                if size is None:
+                    chunk_sizes.append(None)
+                elif 0 == len(chunk_sizes) or chunk_sizes[-1] is None:
+                    chunk_sizes.append(size)
+                else:
+                    chunk_sizes[-1] += size
+            self.skip_fns = []
+            for size in chunk_sizes:
+                if size is None:
+                    self.skip_fns.append(skip_image)
+                else:
+                    self.skip_fns.append(functools.partial(skip_tensor, size))
 
             # The file position is now at the first entry, ready for reading
             # Remember it for future training epochs
@@ -153,23 +170,31 @@ class FlatbinDataset(torch.utils.data.IterableDataset):
                 read_interval = worker_info.num_workers
                 read_offset = worker_info.id
             # Also prepare a buffer for all data that was requested
+            cur_offset = 0
             while completed < self.total_samples:
-                return_data = [None] * (len(self.desired_data) - self.desired_data.count(None))
-                for idx, handler in enumerate(self.data_handlers):
-                    if self.data_indices[idx] is not None:
-                        #return_data[self.data_indices[idx]] = torch.tensor(handler(binfile))
-                        # Numpy tensors should be automatically converted to torch
-                        return_data[self.data_indices[idx]] = handler(binfile).copy()
-                    else:
-                        # This will be a handler to skip the data
-                        handler(binfile)
+                # Skip for any workers ahead of this one
+                if read_offset > (completed % read_interval):
+                    for skip in self.skip_fns:
+                        skip(binfile)
+                # This sample is handled by this worker
+                elif read_offset == (completed % read_interval):
+                    return_data = [None] * (len(self.desired_data) - self.desired_data.count(None))
+                    for idx, handler in enumerate(self.data_handlers):
+                        if self.data_indices[idx] is not None:
+                            #return_data[self.data_indices[idx]] = torch.tensor(handler(binfile))
+                            # Numpy tensors should be automatically converted to torch in the default
+                            # collate function
+                            return_data[self.data_indices[idx]] = handler(binfile).copy()
+                        else:
+                            # This will be a handler to skip the data
+                            handler(binfile)
+                    yield return_data
+                # Skip samples handled by later workers
+                else:
+                    for skip in self.skip_fns:
+                        skip(binfile)
 
                 completed += 1
-                yield return_data
-                # Trying to hint to python to clean up some memory
-                #for data in return_data:
-                #    del data
-                #del return_data
 
     #def __next__(self):
     #    if self.completed == self.total_samples:
