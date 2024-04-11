@@ -283,6 +283,12 @@ def saveWorstN(worstn, worstn_path, classname):
             # Save the mask
             mask_img = transforms.ToPILImage()(node.mask.data).convert('L')
             mask_img.save(f"{worstn_path}/class-{classname}_time-{timestamp}_score-{node.score}_mask.png")
+            # Also save the image with the mask an overlay
+            overlay_tensor = transforms.PILToTensor()(img.convert("RGB"))
+            overlay_tensor[1] += transforms.PILToTensor()(mask_img)[0]
+            overlay_img = transforms.ToPILImage()(overlay_tensor)
+            overlay_img.save(f"{worstn_path}/class-{classname}_time-{timestamp}_score-{node.score}_overlay.png")
+
 
 class WorstExamples:
     """Class to store the worst (or best) examples during training or validation."""
