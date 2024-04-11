@@ -198,7 +198,7 @@ epoch = 0
 
 def trainEpoch(net, optimizer, scaler, label_handler,
         train_stats, dataloader, vector_range, train_frames, normalize_images, loss_fn, nn_postprocess,
-        encode_position, worst_training, skip_metadata):
+        encode_position, worst_training, skip_metadata, best_training=None):
     """
 
     evaluate         (bool): True to run an evaluation after every training epoch.
@@ -272,7 +272,7 @@ def trainEpoch(net, optimizer, scaler, label_handler,
             # Update training statistics
             train_stats.update(predictions=post_out, labels=post_labels)
 
-            if worst_training is not None:
+            if worst_training is not None or best_training is not None:
                 if skip_metadata:
                     metadata = [""] * labels.size(0)
                 else:
@@ -283,17 +283,32 @@ def trainEpoch(net, optimizer, scaler, label_handler,
                 # labelled class based upon the DNN output for this class.
                 input_images = dl_tuple[0]
                 for i in range(post_labels.size(0)):
-                    # TODO FIXME This is assuming that this is a classification task. For
-                    # regression tasks, the simple loss number should be used.
-                    label = torch.argwhere(post_labels[i])[0].item()
-                    worst_training.test(label, post_out[i][label].item(), input_images[i], metadata[i])
+                    # Finding the max output for a class assumes that this is a classification task.
+                    # For regression tasks, the simple loss number should be used.
+                    if 'MSELoss()' != str(loss_fn):
+                        label = torch.argwhere(post_labels[i])[0].item()
+                        if worst_training is not None:
+                            worst_training.test(label, post_out[i][label].item(), input_images[i], metadata[i])
+                        if best_training is not None:
+                            best_training.test(label, post_out[i][label].item(), input_images[i], metadata[i])
+                    else:
+                        for out_idx in range(post_labels[i].size()[0]):
+                            # Making the error a negative value here for the purpose of comparisons
+                            # within the worst examples class
+                            error = -abs(post_out[i][out_idx] - post_labels[i][out_idx])
+                            if worst_training is not None:
+                                worst_training.test(out_idx, error, input_images[i], metadata[i])
+                            if best_training is not None:
+                                best_training.test(out_idx, error, input_images[i], metadata[i])
     print(f"Training results:")
     print(train_stats.makeResults())
     if worst_training is not None:
         worst_training.save()
+    if best_training is not None:
+        best_training.save()
 
 
-def evalEpoch(net, label_handler, eval_stats, eval_dataloader, vector_range, train_frames, normalize_images, loss_fn, nn_postprocess):
+def evalEpoch(net, label_handler, eval_stats, eval_dataloader, vector_range, train_frames, normalize_images, loss_fn, nn_postprocess, worst_eval=None, best_eval=None):
     net.eval()
     with torch.no_grad():
         for batch_num, dl_tuple in enumerate(eval_dataloader):
@@ -327,7 +342,37 @@ def evalEpoch(net, label_handler, eval_stats, eval_dataloader, vector_range, tra
 
                 # Update training statistics
                 eval_stats.update(predictions=post_out, labels=post_labels)
+                # Worst and best examples
+                if worst_eval is not None or best_eval is not None:
+                    metadata = [""] * labels.size(0)
+                    # For each item in the batch see if it requires an update to the worst examples
+                    # If the DNN should have predicted this image was a member of the labelled class
+                    # then see if this image should be inserted into the worst_n queue for the
+                    # labelled class based upon the DNN output for this class.
+                    input_images = dl_tuple[0]
+                    for i in range(post_labels.size(0)):
+                        # Finding the max output for a class assumes that this is a classification task.
+                        # For regression tasks, the simple loss number should be used.
+                        if 'MSELoss()' != str(loss_fn):
+                            label = torch.argwhere(post_labels[i])[0].item()
+                            if worst_eval is not None:
+                                worst_eval.test(label, post_out[i][label].item(), input_images[i], metadata[i])
+                            if best_eval is not None:
+                                best_eval.test(label, post_out[i][label].item(), input_images[i], metadata[i])
+                        else:
+                            for out_idx in range(post_labels[i].size()[0]):
+                                # Making the error a negative value here for the purpose of comparisons
+                                # within the worst examples class
+                                error = -abs(post_out[i][out_idx] - post_labels[i][out_idx])
+                                if worst_eval is not None:
+                                    worst_eval.test(out_idx, error, input_images[i], metadata[i])
+                                if best_eval is not None:
+                                    best_eval.test(out_idx, error, input_images[i], metadata[i])
         # Print evaluation information
         print(f"Evaluation results:")
         print(eval_stats.makeResults())
+        if worst_eval is not None:
+            worst_eval.save()
+        if best_eval is not None:
+            best_eval.save()
     net.train()
