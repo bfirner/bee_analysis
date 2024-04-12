@@ -274,7 +274,7 @@ def trainEpoch(net, optimizer, scaler, label_handler,
 
             if worst_training is not None or best_training is not None:
                 if skip_metadata:
-                    metadata = [""] * labels.size(0)
+                    metadata = [",,batch_{}-{}".format(batch_num, i) for i in range(labels.size(0))]
                 else:
                     metadata = dl_tuple[metadata_index.detach()]
                 # For each item in the batch see if it requires an update to the worst examples
@@ -344,7 +344,7 @@ def evalEpoch(net, label_handler, eval_stats, eval_dataloader, vector_range, tra
                 eval_stats.update(predictions=post_out, labels=post_labels)
                 # Worst and best examples
                 if worst_eval is not None or best_eval is not None:
-                    metadata = [""] * labels.size(0)
+                    metadata = [",,batch_{}-{}".format(batch_num, i) for i in range(labels.size(0))]
                     # For each item in the batch see if it requires an update to the worst examples
                     # If the DNN should have predicted this image was a member of the labelled class
                     # then see if this image should be inserted into the worst_n queue for the

@@ -331,10 +331,10 @@ class WorstExamples:
 
         # If there are empty slots then just insert.
         if len(self.worstn[label]) < self.n:
-            heapq.heappush(self.worstn[label], MaxNode(nn_output, image, metadata, None))
+            heapq.heappush(self.worstn[label], MinNode(nn_output, image, metadata, None))
         # Otherwise check to see if this should be inserted
         elif nn_output < self.worstn[label][0].score:
-            heapq.heapreplace(self.worstn[label], MaxNode(nn_output, image, metadata, None))
+            heapq.heapreplace(self.worstn[label], MinNode(nn_output, image, metadata, None))
 
     def greater_than_test(self, label, nn_output, image, metadata):
         """Test and possibly insert a new example.
@@ -350,10 +350,10 @@ class WorstExamples:
 
         # If there are empty slots then just insert.
         if len(self.worstn[label]) < self.n:
-            heapq.heappush(self.worstn[label], MinNode(nn_output, image, metadata, None))
+            heapq.heappush(self.worstn[label], MaxNode(nn_output, image, metadata, None))
         # Otherwise check to see if this should be inserted
         elif nn_output > self.worstn[label][0].score:
-            heapq.heapreplace(self.worstn[label], MinNode(nn_output, image, metadata, None))
+            heapq.heapreplace(self.worstn[label], MaxNode(nn_output, image, metadata, None))
 
     def save(self, epoch=None):
         """Save worst examples for an epoch and then clear current results."""
