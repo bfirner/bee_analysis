@@ -268,13 +268,14 @@ class MinNode:
     def __lt__(self, other):
         return self.score > other.score
 
-def saveWorstN(worstn, worstn_path, classname):
+def saveWorstN(worstn, worstn_path, classname, vis_func = None):
     """Saves samples from the priority queue worstn into the given path.
 
     Arguments:
         worstn (List[MaxNode or MinNode]): List of nodes with data to save.
         worstn_path                 (str): Path to save outputs.
         classname                   (str): Classname for these images.
+        vis_func               (function): Extra processing to display the label and DNN output on the image.
     """
     for i, node in enumerate(worstn):
         img = transforms.ToPILImage()(node.image).convert('L')
@@ -292,21 +293,24 @@ def saveWorstN(worstn, worstn_path, classname):
             overlay_tensor[1] += transforms.PILToTensor()(mask_img)[0]
             overlay_img = transforms.ToPILImage()(overlay_tensor)
             overlay_img.save(f"{worstn_path}/class-{classname}_time-{timestamp}_score-{node.score}_overlay.png")
+        if vis_func is not None:
+            # Generate the visualization image
+            filename = f"{worstn_path}/class-{classname}_time-{timestamp}_score-{node.score}_labelvis.png"
+            vis_img = vis_func(filename, node.image, node.label, node.prediction)
 
 
 class WorstExamples:
     """Class to store the worst (or best) examples during training or validation."""
 
-    def __init__(self, path, class_names, num_to_save, worst_mode = True, vis_processing = None):
+    def __init__(self, path, class_names, num_to_save, worst_mode = True, vis_func = None):
         """
 
         Arguments:
-            path (str): Path to save outputs.
+            path          (str): Path to save outputs.
             class_names ([str]):
-            num_to_save (int):
-            worst_mode (bool): True to save the worst examples, false to save the best.
-            vis_processing (function): Extra processing to display the label and DNN output on the
-                                       image.
+            num_to_save   (int):
+            worst_mode   (bool): True to save the worst examples, false to save the best.
+            vis_func (function): Extra processing to display the label and DNN output on the image.
         """
         self.worstn_path = path
         # Create the directory if it does not exist
@@ -323,6 +327,8 @@ class WorstExamples:
         else:
             self.test = self.less_than_test
 
+        self.vis_func = vis_func
+
     def less_than_test(self, label_position, label_value, nn_output, image, metadata):
         """Test and possibly insert a new example.
 
@@ -335,7 +341,7 @@ class WorstExamples:
         """
         # Insert into an empty heap or replace the largest value in the minheap and heapify. The
         # greatest value is in the first position.
-        error = abs(label_value - nn_output)
+        error = abs(label_value[label_position] - nn_output[label_position])
 
         # If there are empty slots then just insert.
         if len(self.worstn[label_position]) < self.n:
@@ -356,7 +362,7 @@ class WorstExamples:
         """
         # Insert into an empty heap or replace the smallest value in the maxheap and heapify. The
         # greatest value is in the first position.
-        error = abs(label_value - nn_output)
+        error = abs(label_value[label_position] - nn_output[label_position])
 
         # If there are empty slots then just insert.
         if len(self.worstn[label_position]) < self.n:
@@ -377,4 +383,4 @@ class WorstExamples:
         except FileExistsError:
             pass
         for i, classname in enumerate(self.class_names):
-            saveWorstN(worstn=self.worstn[i], worstn_path=worstn_path_epoch, classname=classname)
+            saveWorstN(worstn=self.worstn[i], worstn_path=worstn_path_epoch, classname=classname, vis_func=self.vis_func)
