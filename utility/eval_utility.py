@@ -244,9 +244,11 @@ class ConfusionMatrix:
 # Need a special comparison function that won't attempt to do something that tensors do not
 # support. Used if args.save_top_n or args.save_worst_n are used.
 class MaxNode:
-    def __init__(self, score, data, metadata, mask):
+    def __init__(self, score, label, prediction, image, metadata, mask):
         self.score = score
-        self.data = data
+        self.label = label
+        self.prediction = prediction
+        self.image = image
         self.metadata = metadata
         self.mask = mask
 
@@ -255,9 +257,11 @@ class MaxNode:
 
 # Turns the heapq from a max heap into a min heap by using greater than in the less than operator.
 class MinNode:
-    def __init__(self, score, data, metadata, mask):
+    def __init__(self, score, label, prediction, image, metadata, mask):
         self.score = score
-        self.data = data
+        self.label = label
+        self.prediction = prediction
+        self.image = image
         self.metadata = metadata
         self.mask = mask
 
@@ -273,7 +277,7 @@ def saveWorstN(worstn, worstn_path, classname):
         classname                   (str): Classname for these images.
     """
     for i, node in enumerate(worstn):
-        img = transforms.ToPILImage()(node.data).convert('L')
+        img = transforms.ToPILImage()(node.image).convert('L')
         if 0 < len(node.metadata):
             timestamp = node.metadata.split(',')[2].replace(' ', '_')
         else:
@@ -293,7 +297,7 @@ def saveWorstN(worstn, worstn_path, classname):
 class WorstExamples:
     """Class to store the worst (or best) examples during training or validation."""
 
-    def __init__(self, path, class_names, num_to_save, worst_mode = True):
+    def __init__(self, path, class_names, num_to_save, worst_mode = True, vis_processing = None):
         """
 
         Arguments:
@@ -301,6 +305,8 @@ class WorstExamples:
             class_names ([str]):
             num_to_save (int):
             worst_mode (bool): True to save the worst examples, false to save the best.
+            vis_processing (function): Extra processing to display the label and DNN output on the
+                                       image.
         """
         self.worstn_path = path
         # Create the directory if it does not exist
@@ -313,50 +319,54 @@ class WorstExamples:
         self.n = num_to_save
         self.class_names = class_names
         if worst_mode:
-            self.test = self.less_than_test
-        else:
             self.test = self.greater_than_test
+        else:
+            self.test = self.less_than_test
 
-    def less_than_test(self, label, nn_output, image, metadata):
+    def less_than_test(self, label_position, label_value, nn_output, image, metadata):
         """Test and possibly insert a new example.
 
         Arguments:
-            label       (int): Desired model class output
-            nn_output (float): Model output for this class
-            image    (tensor): Image for this example
-            metadata   (dict): Metadata for this example
+            label_position (int): Desired model class output
+            label_value  (float): Desired value for this label
+            nn_output    (float): Model output for this class
+            image       (tensor): Image for this example
+            metadata      (dict): Metadata for this example
         """
-        # Insert into an empty heap or replace the smallest value and
-        # heapify. The smallest value is in the first position.
+        # Insert into an empty heap or replace the largest value in the minheap and heapify. The
+        # greatest value is in the first position.
+        error = abs(label_value - nn_output)
 
         # If there are empty slots then just insert.
-        if len(self.worstn[label]) < self.n:
-            heapq.heappush(self.worstn[label], MinNode(nn_output, image, metadata, None))
+        if len(self.worstn[label_position]) < self.n:
+            heapq.heappush(self.worstn[label_position], MinNode(error, label_value, nn_output, image, metadata, None))
         # Otherwise check to see if this should be inserted
-        elif nn_output < self.worstn[label][0].score:
-            heapq.heapreplace(self.worstn[label], MinNode(nn_output, image, metadata, None))
+        elif error < self.worstn[label_position][0].score:
+            heapq.heapreplace(self.worstn[label_position], MinNode(error, label_value, nn_output, image, metadata, None))
 
-    def greater_than_test(self, label, nn_output, image, metadata):
+    def greater_than_test(self, label_position, label_value, nn_output, image, metadata):
         """Test and possibly insert a new example.
 
         Arguments:
-            label       (int): Desired model class output
-            nn_output (float): Model output for this class
-            image    (tensor): Image for this example
-            metadata   (dict): Metadata for this example
+            label_position (int): Desired model class output
+            label_value  (float): Desired value for this label
+            nn_output    (float): Model output for this class
+            image       (tensor): Image for this example
+            metadata      (dict): Metadata for this example
         """
-        # Insert into an empty heap or replace the smallest value and
-        # heapify. The smallest value is in the first position.
+        # Insert into an empty heap or replace the smallest value in the maxheap and heapify. The
+        # greatest value is in the first position.
+        error = abs(label_value - nn_output)
 
         # If there are empty slots then just insert.
-        if len(self.worstn[label]) < self.n:
-            heapq.heappush(self.worstn[label], MaxNode(nn_output, image, metadata, None))
+        if len(self.worstn[label_position]) < self.n:
+            heapq.heappush(self.worstn[label_position], MaxNode(error, label_value, nn_output, image, metadata, None))
         # Otherwise check to see if this should be inserted
-        elif nn_output > self.worstn[label][0].score:
-            heapq.heapreplace(self.worstn[label], MaxNode(nn_output, image, metadata, None))
+        elif error > self.worstn[label_position][0].score:
+            heapq.heapreplace(self.worstn[label_position], MaxNode(error, label_value, nn_output, image, metadata, None))
 
     def save(self, epoch=None):
-        """Save worst examples for an epoch and then clear current results."""
+        """Save worst examples for an epoch."""
         if epoch is not None:
             worstn_path_epoch = os.path.join(self.worstn_path, f"epoch_{epoch}")
         else:
