@@ -283,23 +283,14 @@ def trainEpoch(net, optimizer, scaler, label_handler,
                 # labelled class based upon the DNN output for this class.
                 input_images = dl_tuple[0]
                 for i in range(post_labels.size(0)):
-                    # Finding the max output for a class assumes that this is a classification task.
-                    # For regression tasks, the simple loss number should be used.
-                    if 'MSELoss()' != str(loss_fn):
-                        label = torch.argwhere(post_labels[i])[0].item()
+                    # For both regression and classification just check the error per output
+                    # The best and worst comparisons use absolute values, so just get a difference
+                    for label_idx in range(post_labels[i].size()[0]):
                         if worst_training is not None:
-                            worst_training.test(label, post_out[i][label].item(), input_images[i], metadata[i])
+                            worst_training.test(label_idx, post_labels[i][label_idx], post_out[i][label_idx], input_images[i], metadata[i])
                         if best_training is not None:
-                            best_training.test(label, post_out[i][label].item(), input_images[i], metadata[i])
-                    else:
-                        for out_idx in range(post_labels[i].size()[0]):
-                            # Making the error a negative value here for the purpose of comparisons
-                            # within the worst examples class
-                            error = -abs(post_out[i][out_idx] - post_labels[i][out_idx])
-                            if worst_training is not None:
-                                worst_training.test(out_idx, error, input_images[i], metadata[i])
-                            if best_training is not None:
-                                best_training.test(out_idx, error, input_images[i], metadata[i])
+                            best_training.test(label_idx, post_labels[i][label_idx], post_out[i][label_idx], input_images[i], metadata[i])
+
     print(f"Training results:")
     print(train_stats.makeResults())
     if worst_training is not None:
@@ -351,23 +342,13 @@ def evalEpoch(net, label_handler, eval_stats, eval_dataloader, vector_range, tra
                     # labelled class based upon the DNN output for this class.
                     input_images = dl_tuple[0]
                     for i in range(post_labels.size(0)):
-                        # Finding the max output for a class assumes that this is a classification task.
-                        # For regression tasks, the simple loss number should be used.
-                        if 'MSELoss()' != str(loss_fn):
-                            label = torch.argwhere(post_labels[i])[0].item()
-                            if worst_eval is not None:
-                                worst_eval.test(label, post_out[i][label].item(), input_images[i], metadata[i])
-                            if best_eval is not None:
-                                best_eval.test(label, post_out[i][label].item(), input_images[i], metadata[i])
-                        else:
-                            for out_idx in range(post_labels[i].size()[0]):
-                                # Making the error a negative value here for the purpose of comparisons
-                                # within the worst examples class
-                                error = -abs(post_out[i][out_idx] - post_labels[i][out_idx])
-                                if worst_eval is not None:
-                                    worst_eval.test(out_idx, error, input_images[i], metadata[i])
-                                if best_eval is not None:
-                                    best_eval.test(out_idx, error, input_images[i], metadata[i])
+                        # For both regression and classification just check the error per output
+                        # The best and worst comparisons use absolute values, so just get a difference
+                        for label_idx in range(post_labels[i].size()[0]):
+                            if worst_training is not None:
+                                worst_training.test(label_idx, post_labels[i][label_idx], post_out[i][label_idx], input_images[i], metadata[i])
+                            if best_training is not None:
+                                best_training.test(label_idx, post_labels[i][label_idx], post_out[i][label_idx], input_images[i], metadata[i])
         # Print evaluation information
         print(f"Evaluation results:")
         print(eval_stats.makeResults())
