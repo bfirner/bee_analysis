@@ -287,9 +287,9 @@ def trainEpoch(net, optimizer, scaler, label_handler,
                     # The best and worst comparisons use absolute values, so just get a difference
                     for label_idx in range(post_labels[i].size()[0]):
                         if worst_training is not None:
-                            worst_training.test(label_idx, post_labels[i][label_idx], post_out[i][label_idx], input_images[i], metadata[i])
+                            worst_training.test(label_idx, post_labels[i].tolist(), post_out[i].tolist(), input_images[i], metadata[i])
                         if best_training is not None:
-                            best_training.test(label_idx, post_labels[i][label_idx], post_out[i][label_idx], input_images[i], metadata[i])
+                            best_training.test(label_idx, post_labels[i].tolist(), post_out[i].tolist(), input_images[i], metadata[i])
 
     print(f"Training results:")
     print(train_stats.makeResults())
@@ -345,10 +345,10 @@ def evalEpoch(net, label_handler, eval_stats, eval_dataloader, vector_range, tra
                         # For both regression and classification just check the error per output
                         # The best and worst comparisons use absolute values, so just get a difference
                         for label_idx in range(post_labels[i].size()[0]):
-                            if worst_training is not None:
-                                worst_training.test(label_idx, post_labels[i][label_idx], post_out[i][label_idx], input_images[i], metadata[i])
-                            if best_training is not None:
-                                best_training.test(label_idx, post_labels[i][label_idx], post_out[i][label_idx], input_images[i], metadata[i])
+                            if worst_eval is not None:
+                                worst_eval.test(label_idx, post_labels[i].tolist(), post_out[i].tolist(), input_images[i], metadata[i])
+                            if best_eval is not None:
+                                best_eval.test(label_idx, post_labels[i].tolist(), post_out[i].tolist(), input_images[i], metadata[i])
         # Print evaluation information
         print(f"Evaluation results:")
         print(eval_stats.makeResults())
