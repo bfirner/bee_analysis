@@ -198,7 +198,7 @@ epoch = 0
 
 def trainEpoch(net, optimizer, scaler, label_handler,
         train_stats, dataloader, vector_range, train_frames, normalize_images, loss_fn, nn_postprocess,
-        encode_position, worst_training, skip_metadata, best_training=None):
+        encode_position, worst_training, skip_metadata, best_training=None, device='cuda'):
     """
 
     evaluate         (bool): True to run an evaluation after every training epoch.
@@ -220,16 +220,16 @@ def trainEpoch(net, optimizer, scaler, label_handler,
             # Decoding only the luminance channel means that the channel dimension has gone away here.
             if 1 == train_frames:
                 if 3 == dl_tuple[0].dim():
-                    net_input = dl_tuple[0].unsqueeze(1).cuda()
+                    net_input = dl_tuple[0].unsqueeze(1).to(device)
                 else:
-                    net_input = dl_tuple[0].cuda()
+                    net_input = dl_tuple[0].to(device)
             else:
                 raw_input = []
                 for i in range(train_frames):
                     if 3 == dl_tuple[i].dim():
-                        raw_input.append(dl_tuple[i].unsqueeze(1).cuda())
+                        raw_input.append(dl_tuple[i].unsqueeze(1).to(device))
                     else:
-                        raw_input.append(dl_tuple[i].cuda())
+                        raw_input.append(dl_tuple[i].to(device))
                 net_input = torch.cat(raw_input, dim=1)
             # Normalize inputs: input = (input - mean)/stddev
             if normalize_images:
@@ -238,13 +238,13 @@ def trainEpoch(net, optimizer, scaler, label_handler,
 
             if encode_position:
                 if position_mask is None:
-                    position_mask = createPositionMask(net_input.size(-2), net_input.size(-1)).cuda()
+                    position_mask = createPositionMask(net_input.size(-2), net_input.size(-1)).to(device)
                 net_input = torch.cat((net_input, position_mask.expand(net_input.size(0), -1, -1, -1)), dim=1)
 
-            labels = extractVectors(dl_tuple, label_handler.range()).cuda()
+            labels = extractVectors(dl_tuple, label_handler.range()).to(device)
             vector_inputs=None
             if vector_range.start != vector_range.stop:
-                vector_inputs = extractVectors(dl_tuple, vector_range).cuda()
+                vector_inputs = extractVectors(dl_tuple, vector_range).to(device)
 
         # Example of how to save images for debugging purposes
         # if epoch == 1 and batch_num == 0:
@@ -299,16 +299,17 @@ def trainEpoch(net, optimizer, scaler, label_handler,
         best_training.save()
 
 
-def evalEpoch(net, label_handler, eval_stats, eval_dataloader, vector_range, train_frames, normalize_images, loss_fn, nn_postprocess, worst_eval=None, best_eval=None):
+def evalEpoch(net, label_handler, eval_stats, eval_dataloader, vector_range, train_frames,
+        normalize_images, loss_fn, nn_postprocess, worst_eval=None, best_eval=None, device='cuda'):
     net.eval()
     with torch.no_grad():
         for batch_num, dl_tuple in enumerate(eval_dataloader):
             if 1 == train_frames:
-                net_input = dl_tuple[0].unsqueeze(1).cuda()
+                net_input = dl_tuple[0].unsqueeze(1).to(device)
             else:
                 raw_input = []
                 for i in range(train_frames):
-                    raw_input.append(dl_tuple[i].unsqueeze(1).cuda())
+                    raw_input.append(dl_tuple[i].unsqueeze(1).to(device))
                 net_input = torch.cat(raw_input, dim=1)
             # Normalize inputs: input = (input - mean)/stddev
             if normalize_images:
@@ -318,9 +319,9 @@ def evalEpoch(net, label_handler, eval_stats, eval_dataloader, vector_range, tra
             with torch.cuda.amp.autocast():
                 vector_input=None
                 if vector_range.start != vector_range.stop:
-                    vector_input = extractVectors(dl_tuple, vector_range).cuda()
+                    vector_input = extractVectors(dl_tuple, vector_range).to(device)
                 out = net.forward(net_input, vector_input)
-                labels = extractVectors(dl_tuple, label_handler.range()).cuda()
+                labels = extractVectors(dl_tuple, label_handler.range()).to(device)
 
                 loss = loss_fn(out, label_handler.preprocess(labels))
             # Fill in the loss statistics
