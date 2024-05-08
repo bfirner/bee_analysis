@@ -11,6 +11,25 @@ import numpy
 import struct
 import webdataset as wds
 
+from flatbin_dataset import getPatchHeaderNames
+
+def getImageInfo(dataset):
+    image_info = getPatchHeaderNames()
+    dataset = (
+        wds.WebDataset(dataset)
+        .to_tuple(*image_info))
+    row = next(iter(dataset))
+
+    # Use the data from the first entry to extract the patch information
+    patch_info = []
+    for idx, datum in enumerate(row):
+        # image_scale is a float, the rest are ints
+        if image_info[idx] == 'image_scale':
+            patch_info.append(float(datum))
+        else:
+            patch_info.append(int(datum))
+    return patch_info
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -33,6 +52,9 @@ def main():
         help='Name of the output file (e.g. data.bin).')
 
     args = parser.parse_args()
+
+    # We want to save any image data in the header of the flatbin file so that the data is later
+    # recreatable. Decode that special data by just fetching a single entry in a dataset.
 
     def binary_image_decoder(data):
         #if not key.endswith(".png"):
@@ -70,7 +92,7 @@ def main():
         binfile.write(data)
 
     def writeArrayData(length, data):
-        # Note that we could for endianness with dtype=">f4" for example, but we'll assume all
+        # Note that we could enforce endianness (with dtype=">f4" for example) but we'll assume all
         # operations will be on the same machine.
         datatensor = numpy.float32(eval(data))
         if length != datatensor.size:
@@ -114,7 +136,7 @@ def main():
             datawriters.append(writeImgData)
             # Each image has a different size, so nothing will be written for the images other than
             # their name.
-            # Otherwise handline images is the same as handling bytes objects
+            # Otherwise handling images is the same as handling bytes objects
             pass
         else:
             decoded = data[idx].decode('utf-8')
@@ -149,10 +171,16 @@ def main():
                     print("Type {} with value {} from entry {} is not supported in flatbin files, only pngs, numbers, and number lists.".format(type(decoded), decoded, name))
                     exit()
 
-    # Write out the data
+    # Write out the patch information after the head
+    patch_info = getImageInfo(args.dataset)
+    for info in patch_info:
+        binfile.write(len(args.entries).to_bytes(length=4, byteorder='big', signed=False))
+
+    # Write out the data for the first entry (since it was already read from the iterator
     for idx, datum in enumerate(data):
         datawriters[idx](datum)
 
+    # Now write out the rest
     for data in ds_iter:
         samples += 1
         for idx, datum in enumerate(data):

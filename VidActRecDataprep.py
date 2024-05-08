@@ -181,7 +181,14 @@ with open(args.datalist, newline='') as datacsv:
                         "__key__": '_'.join((base_name, '_'.join(frame_num))),
                         "0.png": buf.getbuffer(),
                         "cls": row[class_col].encode('utf-8'),
-                        "metadata.txt": metadata.encode('utf-8')
+                        "metadata.txt": metadata.encode('utf-8'),
+                        "image_scale": str(args.scale).encode('utf-8'),
+                        "patch_width": str(args.width).encode('utf-8'),
+                        "patch_height": str(args.height).encode('utf-8'),
+                        "crop_x_offset": str(args.crop_x_offset).encode('utf-8'),
+                        "crop_y_offset": str(args.crop_y_offset).encode('utf-8'),
+                        "original_width": str(sampler.width).encode('utf-8'),
+                        "original_height": str(sampler.height).encode('utf-8'),
                     }
                 else:
                     # Save multiple pngs
@@ -199,7 +206,14 @@ with open(args.datalist, newline='') as datacsv:
                     sample = {
                         "__key__": '_'.join((base_name, '_'.join(frame_num))),
                         "cls": row[class_col].encode('utf-8'),
-                        "metadata.txt": metadata.encode('utf-8')
+                        "metadata.txt": metadata.encode('utf-8'),
+                        "image_scale": str(args.scale).encode('utf-8'),
+                        "patch_width": str(args.width).encode('utf-8'),
+                        "patch_height": str(args.height).encode('utf-8'),
+                        "crop_x_offset": str(args.crop_x_offset).encode('utf-8'),
+                        "crop_y_offset": str(args.crop_y_offset).encode('utf-8'),
+                        "original_width": str(sampler.width).encode('utf-8'),
+                        "original_height": str(sampler.height).encode('utf-8'),
                     }
                     for i in range(args.frames_per_sample):
                         sample[f"{i}.png"] = buffers[i].getbuffer()
