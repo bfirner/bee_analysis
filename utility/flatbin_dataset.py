@@ -8,11 +8,16 @@ import io
 import functools
 import numpy
 import os
+import struct
 import torch
 
 from PIL import Image
 from torchvision.transforms import v2 as transforms
 
+def getPatchHeaderNames():
+    """A convenience function that other utilities can use to keep code married."""
+    return ['image_scale', 'original_width', 'original_height',
+            'crop_x_offset', 'crop_y_offset', 'patch_width', 'patch_height']
 
 def img_handler(binfile):
     img_len = int.from_bytes(binfile.read(4), byteorder='big')
@@ -105,6 +110,16 @@ class FlatbinDataset(torch.utils.data.IterableDataset):
                 else:
                     self.skip_fns.append(functools.partial(skip_tensor, size))
 
+            # Read in the patch information
+            self.patch_info = {}
+            for patch_name in getPatchHeaderNames():
+                # Only the scale is a float, everything else is an integer
+                if patch_name == 'image_scale':
+                    self.patch_info[patch_name] = struct.unpack('>f', binfile.read(4))[0]
+                else:
+                    self.patch_info[patch_name] = int.from_bytes(binfile.read(4), byteorder='big')
+            # Patch information is now available in self.patch_info
+
             # The file position is now at the first entry, ready for reading
             # Remember it for future training epochs
             self.data_offset = binfile.tell()
@@ -130,6 +145,8 @@ class FlatbinDataset(torch.utils.data.IterableDataset):
                     # This will be a handler to skip the data
                     handler(binfile)
 
+    def getPatchInfo(self):
+        return self.patch_info
 
     def getDataSize(self, out_index):
         """Get the size of the data at the given index. Does not work for images."""
