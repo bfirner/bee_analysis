@@ -174,7 +174,10 @@ def main():
     # Write out the patch information after the head
     patch_info = getImageInfo(args.dataset)
     for info in patch_info:
-        binfile.write(len(args.entries).to_bytes(length=4, byteorder='big', signed=False))
+        if type(info) == float:
+            binfile.write(struct.pack(">f", info))
+        else:
+            binfile.write(struct.pack(">i", info))
 
     # Write out the data for the first entry (since it was already read from the iterator
     for idx, datum in enumerate(data):
