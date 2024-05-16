@@ -4,7 +4,7 @@
 Dataset that loads flatbinary files.
 """
 
-import io 
+import io
 import functools
 import numpy
 import os
@@ -12,7 +12,6 @@ import struct
 import torch
 
 from PIL import Image
-from torchvision.transforms import v2 as transforms
 
 def getPatchHeaderNames():
     """A convenience function that other utilities can use to keep code married."""
@@ -21,7 +20,7 @@ def getPatchHeaderNames():
 
 def img_handler(binfile):
     img_len = int.from_bytes(binfile.read(4), byteorder='big')
-    
+
     bin_data = binfile.read(img_len)
     #with io.BytesIO(binfile.read(img_len)) as img_stream:
     with io.BytesIO(bin_data) as img_stream:
