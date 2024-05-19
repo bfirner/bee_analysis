@@ -16,7 +16,18 @@ from PIL import Image
 def getPatchHeaderNames():
     """A convenience function that other utilities can use to keep code married."""
     return ['image_scale', 'original_width', 'original_height',
-            'crop_x_offset', 'crop_y_offset', 'patch_width', 'patch_height']
+            'crop_x_offset', 'crop_y_offset', 'patch_width', 'patch_height',
+            'camera_roll', 'camera_pitch', 'camera_yaw',
+            'camera_x_offset', 'camera_y_offset', 'camera_z_offset',
+            'camera_focal_length', 'camera_pixel_size', 'camera_sensor_pixels_h', 'camera_sensor_pixels_v']
+
+def getPatchDatatypes():
+    """A convenience function with the data types of the patch header."""
+    return [float, int, int,
+            int, int, int, int,
+            float, float, float,
+            float, float, float,
+            float, float, int, int]
 
 def img_handler(binfile):
     img_len = int.from_bytes(binfile.read(4), byteorder='big')
@@ -111,9 +122,9 @@ class FlatbinDataset(torch.utils.data.IterableDataset):
 
             # Read in the patch information
             self.patch_info = {}
-            for patch_name in getPatchHeaderNames():
-                # Only the scale is a float, everything else is an integer
-                if patch_name == 'image_scale':
+            for datatype, patch_name in zip(getPatchDatatypes(), getPatchHeaderNames()):
+                # Some are floats, the rest of ints.
+                if datatype == float:
                     self.patch_info[patch_name] = struct.unpack('>f', binfile.read(4))[0]
                 else:
                     self.patch_info[patch_name] = int.from_bytes(binfile.read(4), byteorder='big')

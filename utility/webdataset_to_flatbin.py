@@ -11,7 +11,7 @@ import numpy
 import struct
 import webdataset as wds
 
-from flatbin_dataset import getPatchHeaderNames
+from flatbin_dataset import getPatchHeaderNames, getPatchDatatypes
 
 def getImageInfo(dataset):
     image_info = getPatchHeaderNames()
@@ -22,9 +22,10 @@ def getImageInfo(dataset):
 
     # Use the data from the first entry to extract the patch information
     patch_info = []
+    patch_datatypes = getPatchDatatypes()
     for idx, datum in enumerate(row):
         # image_scale is a float, the rest are ints
-        if image_info[idx] == 'image_scale':
+        if patch_datatypes[idx] == float:
             patch_info.append(float(datum))
         else:
             patch_info.append(int(datum))
