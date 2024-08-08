@@ -400,7 +400,8 @@ class VideoAnnotator:
                 # Visualization masks are not supported with all model types yet.
                 with torch.no_grad():
                     if args.normalize:
-                        v, m = torch.var_mean(image_input)
+                        # Normalize per channel, so compute over height and width
+                        v, m = torch.var_mean(image_input, dim=(image_input.dim()-2, image_input.dim()-1), keepdim=True)
                         net_input = (image_input - m) / v
                     else:
                         net_input = image_input

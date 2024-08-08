@@ -610,7 +610,8 @@ if args.evaluate is not None:
                     net_input = torch.cat(raw_input, dim=1)
                 # Normalize inputs: input = (input - mean)/stddev
                 if args.normalize:
-                    v, m = torch.var_mean(net_input)
+                    # Normalize per channel, so compute over height and width
+                    v, m = torch.var_mean(net_input, dim=(net_input.dim()-2, net_input.dim()-1), keepdim=True)
                     net_input = (net_input - m) / v
 
                 vector_input=None
