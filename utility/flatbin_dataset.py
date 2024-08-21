@@ -95,7 +95,7 @@ class FlatbinDataset(torch.utils.data.IterableDataset):
                     if self.header_names[-1].endswith(".png"):
                         self.data_handlers.append(skip_image)
                         self.data_sizes.append(None)
-                    if self.header_names[-1].endswith(".numpy"):
+                    elif self.header_names[-1].endswith(".numpy"):
                         # Numpy data is stored as a binary blob with a 4 byte size at the front, the same as images.
                         self.data_handlers.append(skip_image)
                         self.data_sizes.append(None)
