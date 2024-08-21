@@ -46,6 +46,12 @@ def img_handler(binfile):
         # If there is only a single channel then numpy drops the dimension.
         return img_data
 
+def numpy_handler(binfile):
+    data_len = int.from_bytes(binfile.read(4), byteorder='big')
+    bin_data = binfile.read(data_len)
+    with io.BytesIO(bin_data) as data_stream:
+        return numpy.lib.format.read_array(data_stream, allow_pickle=False)
+
 def tensor_handler(data_length, binfile):
     return numpy.frombuffer(binfile.read(data_length*4), dtype=numpy.float32)
 
@@ -89,12 +95,20 @@ class FlatbinDataset(torch.utils.data.IterableDataset):
                     if self.header_names[-1].endswith(".png"):
                         self.data_handlers.append(skip_image)
                         self.data_sizes.append(None)
+                    if self.header_names[-1].endswith(".numpy"):
+                        # Numpy data is stored as a binary blob with a 4 byte size at the front, the same as images.
+                        self.data_handlers.append(skip_image)
+                        self.data_sizes.append(None)
                     else:
                         data_length = int.from_bytes(binfile.read(4), byteorder='big')
                         self.data_handlers.append(functools.partial(skip_tensor, data_length))
                         self.data_sizes.append(data_length)
                 elif self.header_names[-1].endswith(".png"):
                     self.data_handlers.append(img_handler)
+                    self.data_indices.append(self.desired_data.index(self.header_names[-1]))
+                    self.data_sizes.append(None)
+                elif self.header_names[-1].endswith(".numpy"):
+                    self.data_handlers.append(numpy_handler)
                     self.data_indices.append(self.desired_data.index(self.header_names[-1]))
                     self.data_sizes.append(None)
                 else:
