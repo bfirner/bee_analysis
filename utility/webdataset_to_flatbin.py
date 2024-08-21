@@ -32,28 +32,7 @@ def getImageInfo(dataset):
     return patch_info
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        'dataset',
-        type=str,
-        help='Path for the WebDataset archive.')
-    parser.add_argument(
-        '--entries',
-        type=str,
-        nargs='+',
-        required=False,
-        default=['1.png'],
-        help='Which files to decode from the webdataset.')
-    parser.add_argument(
-        '--output',
-        type=str,
-        required=True,
-        default=None,
-        help='Name of the output file (e.g. data.bin).')
-
-    args = parser.parse_args()
-
+def convertWebdataset(args_dataset, entries, output, shuffle = True):
     # We want to save any image data in the header of the flatbin file so that the data is later
     # recreatable. Decode that special data by just fetching a single entry in a dataset.
 
@@ -64,24 +43,44 @@ def main():
         # Just return the bytes
         return data
 
+    def numpy_decoder(data):
+        assert isinstance(data, bytes)
+        # Just return the bytes, this is already neatly packed with its own header.
+        return data
+
     # Decode images as raw bytes
-    dataset = (
-        wds.WebDataset(args.dataset)
-        # TODO This isn't the right way to shuffle. Making shuffling and merging flatbins a separate
-        # program.
-        .shuffle(10000, initial=10000)
-        .decode(
-            wds.handle_extension("png", binary_image_decoder)
+    if shuffle:
+        dataset = (
+            wds.WebDataset(args_dataset)
+            # TODO This isn't the right way to shuffle. Making shuffling and merging flatbins a separate
+            # program.
+            .shuffle(10000, initial=10000)
+            .decode(
+                wds.handle_extension("png", binary_image_decoder)
+            )
+            .decode(
+                wds.handle_extension("numpy", numpy_decoder)
+            )
+            .to_tuple(*entries)
         )
-        .to_tuple(*args.entries)
-    )
+    else:
+        dataset = (
+            wds.WebDataset(args_dataset)
+            .decode(
+                wds.handle_extension("png", binary_image_decoder)
+            )
+            .decode(
+                wds.handle_extension("numpy", numpy_decoder)
+            )
+            .to_tuple(*entries)
+        )
 
     # Open the output file
-    binfile = open(args.output, "wb")
+    binfile = open(output, "wb")
     # Write out a space to put the total number of entries and the number of items in the header
     samples = 0
     binfile.write(samples.to_bytes(length=4, byteorder='big', signed=False))
-    binfile.write(len(args.entries).to_bytes(length=4, byteorder='big', signed=False))
+    binfile.write(len(entries).to_bytes(length=4, byteorder='big', signed=False))
 
     # Store functions in the datawriters array to simplify data writing
     datawriters = []
@@ -89,7 +88,11 @@ def main():
     def writeImgData(data):
         # Write the size and the image bytes
         binfile.write(len(data).to_bytes(length=4, byteorder='big', signed=False))
-        #binfile.write(data)
+        binfile.write(data)
+
+    def writeNumpyWithHeader(data):
+        # Write the size and the image bytes
+        binfile.write(len(data).to_bytes(length=4, byteorder='big', signed=False))
         binfile.write(data)
 
     def writeArrayData(length, data):
@@ -124,7 +127,7 @@ def main():
     data = next(ds_iter)
     samples += 1
 
-    for idx, name in enumerate(args.entries):
+    for idx, name in enumerate(entries):
         # Write the length of the name and then the string
         if 100 < len(name):
             print("Names with lengths greater than 100 will be truncated: {}".format(name))
@@ -138,7 +141,9 @@ def main():
             # Each image has a different size, so nothing will be written for the images other than
             # their name.
             # Otherwise handling images is the same as handling bytes objects
-            pass
+        elif name.endswith(".numpy"):
+            # This is a numpy array that's already converted for storage and has its own header.
+            datawriters.append(writeNumpyWithHeader)
         else:
             decoded = data[idx].decode('utf-8')
             if decoded[:1] == '[':
@@ -173,7 +178,7 @@ def main():
                     exit()
 
     # Write out the patch information after the head
-    patch_info = getImageInfo(args.dataset)
+    patch_info = getImageInfo(args_dataset)
     for info in patch_info:
         if type(info) == float:
             binfile.write(struct.pack(">f", info))
@@ -188,8 +193,8 @@ def main():
     for data in ds_iter:
         samples += 1
         for idx, datum in enumerate(data):
-            #print("Writing {}".format(args.entries[idx]))
-            #if ("target_position" == args.entries[idx]):
+            #print("Writing {}".format(entries[idx]))
+            #if ("target_position" == entries[idx]):
             #    print(datum)
             datawriters[idx](datum)
 
@@ -202,4 +207,24 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        'dataset',
+        type=str,
+        help='Path for the WebDataset archive.')
+    parser.add_argument(
+        '--entries',
+        type=str,
+        nargs='+',
+        required=False,
+        default=['1.png'],
+        help='Which files to decode from the webdataset.')
+    parser.add_argument(
+        '--output',
+        type=str,
+        required=True,
+        default=None,
+        help='Name of the output file (e.g. data.bin).')
+
+    args = parser.parse_args()
+    convertWebdataset(args.dataset, args.entries, args.output)
