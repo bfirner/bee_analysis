@@ -9,7 +9,7 @@ import numpy
 
 from torch import tensor, Tensor
 
-from utility.flatbin_dataset import FlatbinDataset
+from utility.flatbin_dataset import FlatbinDataset, InterleavedFlatbinDatasets
 
 
 def decodeUTF8ListOrNumber(encoded_str):
@@ -77,6 +77,8 @@ def makeDataset(data_path, decode_strs):
             .to_tuple(*decode_strs)
         )
         return dataset
+    elif isinstance(data_path, list):
+        return InterleavedFlatbinDatasets(data_path, decode_strs)
     else:
         return FlatbinDataset(data_path, decode_strs)
 

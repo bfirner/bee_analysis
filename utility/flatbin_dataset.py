@@ -8,6 +8,7 @@ import io
 import functools
 import numpy
 import os
+import random
 import struct
 import torch
 
@@ -61,6 +62,57 @@ def skip_image(binfile):
 
 def skip_tensor(data_length, binfile):
     return binfile.seek(data_length*4, os.SEEK_CUR)
+
+class InterleavedFlatbinDatasets(torch.utils.data.IterableDataset):
+    def __init__(self, binpath, desired_data):
+        if not isinstance(binpath, list):
+            binpath = [binpath]
+        self.datasets = []
+        for path in binpath:
+            self.datasets.append(FlatbinDataset(path, desired_data))
+        # TODO FIXME Verify that all data sizes are the same
+        # Create a read order for the different datasets, interleaving them
+        total_samples = len(self)
+        least_dataset = min([dataset.total_samples for dataset in self.datasets])
+        # Heuristic to avoid overdoing the interleave order
+        if least_dataset < 100:
+            least_dataset = 100
+        self.interleave_order = []
+        for d_idx, dataset in enumerate(self.datasets):
+            self.interleave_order += [d_idx] * min(1, len(dataset) // least_dataset)
+        # If the number of items is too small we lose out on some randomness. Enforce a minimum size.
+        if 10 > len(self.interleave_order):
+            self.interleave_order = self.interleave_order * 10
+
+        random.shuffle(self.interleave_order)
+
+    def getPatchInfo(self):
+        # NOTE This will have an incorrect size for the original image
+        return self.datasets[0].patch_info
+
+    def getDataSize(self, out_index):
+        """Get the size of the data at the given index. Does not work for images."""
+        in_index = self.datasets[0].data_indices.index(out_index)
+        return self.datasets[0].data_sizes[in_index]
+
+    def __len__(self):
+        return sum([dataset.total_samples for dataset in self.datasets])
+
+    def reader(self, interval):
+        pass
+
+    def __iter__(self):
+        iters = [dataset.__iter__() for dataset in self.datasets]
+        o_idx = 0
+        finished = [False] * len(self.datasets)
+        while not all(finished):
+            for source in self.interleave_order:
+                if not finished[source]:
+                    try:
+                        yield next(iters[source])
+                    except StopIteration:
+                        finished[source] = True
+
 
 class FlatbinDataset(torch.utils.data.IterableDataset):
     def __init__(self, binpath, desired_data):
@@ -137,7 +189,7 @@ class FlatbinDataset(torch.utils.data.IterableDataset):
             # Read in the patch information
             self.patch_info = {}
             for datatype, patch_name in zip(getPatchDatatypes(), getPatchHeaderNames()):
-                # Some are floats, the rest of ints.
+                # Some are floats, the rest are ints.
                 if datatype == float:
                     self.patch_info[patch_name] = struct.unpack('>f', binfile.read(4))[0]
                 else:
