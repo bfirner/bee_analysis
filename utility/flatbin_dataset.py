@@ -39,7 +39,10 @@ def img_handler(binfile):
         img = Image.open(img_stream)
         img.load()
         # TODO FIXME The format (RGB or L) should be set when writing the flatbin
-        img_data = numpy.array(img.convert("L")).astype(numpy.float32) / 255.0
+        if img.mode == "RGB":
+            img_data = numpy.array(img.convert("RGB")).astype(numpy.float32) / 255.0
+        else:
+            img_data = numpy.array(img.convert("L")).astype(numpy.float32) / 255.0
     # The image is in height x width x channels, which we don't want.
     if 3 == img_data.ndim:
         return img_data.transpose((2, 0, 1))
