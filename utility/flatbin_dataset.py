@@ -82,7 +82,7 @@ class InterleavedFlatbinDatasets(torch.utils.data.IterableDataset):
             least_dataset = 100
         self.interleave_order = []
         for d_idx, dataset in enumerate(self.datasets):
-            self.interleave_order += [d_idx] * min(1, len(dataset) // least_dataset)
+            self.interleave_order += [d_idx] * max(1, min(1, len(dataset) // least_dataset))
         # If the number of items is too small we lose out on some randomness. Enforce a minimum size.
         if 10 > len(self.interleave_order):
             self.interleave_order = self.interleave_order * 10
