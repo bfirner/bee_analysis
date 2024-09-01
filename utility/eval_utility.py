@@ -99,6 +99,9 @@ class RegressionResults:
     def mean(self):
         return self.prediction_overall.mean()
 
+    def labelMeans(self):
+        return [stats.mean() for stats in self.prediction_statistics]
+
     def update(self, predictions, labels):
         """ Update the statistics matrix with a new set of predictions and labels.
 
