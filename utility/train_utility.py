@@ -11,6 +11,12 @@ from torchvision import transforms
 from utility.dataset_utility import extractVectors
 
 
+def normalizeImages(images, epsilon=1e-05):
+    # normalize per channel, so compute over height and width. This handles images with or without a batch dimension.
+    v, m = torch.var_mean(images, dim=(images.dim()-2, images.dim()-1), keepdim=True)
+    return (images - m) / (v + epsilon)
+
+
 def updateWithScaler(loss_fn, net, image_input, vector_input, labels, scaler, optimizer):
     """Update with scaler used in mixed precision training.
 
@@ -234,8 +240,7 @@ def trainEpoch(net, optimizer, scaler, label_handler,
             # Normalize inputs: input = (input - mean)/stddev
             if normalize_images:
                     # Normalize per channel, so compute over height and width
-                    v, m = torch.var_mean(net_input, dim=(net_input.dim()-2, net_input.dim()-1), keepdim=True)
-                    net_input = (net_input - m) / v
+                    net_input = normalizeImages(net_input)
 
             if encode_position:
                 if position_mask is None:
@@ -301,22 +306,33 @@ def trainEpoch(net, optimizer, scaler, label_handler,
 
 
 def evalEpoch(net, label_handler, eval_stats, eval_dataloader, vector_range, train_frames,
-        normalize_images, loss_fn, nn_postprocess, worst_eval=None, best_eval=None, device='cuda'):
+        normalize_images, loss_fn, nn_postprocess, encode_position = False, worst_eval=None, best_eval=None, device='cuda'):
     net.eval()
+    position_mask = None
     with torch.no_grad():
         for batch_num, dl_tuple in enumerate(eval_dataloader):
+            # Decoding only the luminance channel means that the channel dimension has gone away here.
             if 1 == train_frames:
-                net_input = dl_tuple[0].unsqueeze(1).to(device)
+                if 3 == dl_tuple[0].dim():
+                    net_input = dl_tuple[0].unsqueeze(1).to(device)
+                else:
+                    net_input = dl_tuple[0].to(device)
             else:
                 raw_input = []
                 for i in range(train_frames):
-                    raw_input.append(dl_tuple[i].unsqueeze(1).to(device))
+                    if 3 == dl_tuple[i].dim():
+                        raw_input.append(dl_tuple[i].unsqueeze(1).to(device))
+                    else:
+                        raw_input.append(dl_tuple[i].to(device))
                 net_input = torch.cat(raw_input, dim=1)
             # Normalize inputs: input = (input - mean)/stddev
             if normalize_images:
-                # Normalize per channel, so compute over height and width
-                v, m = torch.var_mean(net_input, dim=(net_input.dim()-2, net_input.dim()-1), keepdim=True)
-                net_input = (net_input - m) / v
+                net_input = normalizeImages(net_input)
+
+            if encode_position:
+                if position_mask is None:
+                    position_mask = createPositionMask(net_input.size(-2), net_input.size(-1)).to(device)
+                net_input = torch.cat((net_input, position_mask.expand(net_input.size(0), -1, -1, -1)), dim=1)
 
             with torch.cuda.amp.autocast():
                 vector_input=None
