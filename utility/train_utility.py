@@ -7,7 +7,6 @@ import datetime
 import torch
 
 # Helper function to convert to images
-from torchvision import transforms
 from utility.dataset_utility import extractVectors
 
 
@@ -251,14 +250,6 @@ def trainEpoch(net, optimizer, scaler, label_handler,
             vector_inputs=None
             if vector_range.start != vector_range.stop:
                 vector_inputs = extractVectors(dl_tuple, vector_range).to(device)
-
-        # Example of how to save images for debugging purposes
-        # if epoch == 1 and batch_num == 0:
-        #     with torch.no_grad():
-        #         img = transforms.ToPILImage()(net_input[0][0]).convert('RGB')
-        #         img.save("batch_{}_idx_{}.png".format(batch_num, 0))
-        #         img = transforms.ToPILImage()(net_input[1][0]).convert('RGB')
-        #         img.save("batch_{}_idx_{}.png".format(batch_num, 1))
 
         if scaler is not None:
             out, loss = updateWithScaler(loss_fn, net, net_input, vector_inputs,
