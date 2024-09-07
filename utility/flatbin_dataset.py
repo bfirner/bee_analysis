@@ -196,7 +196,8 @@ class FlatbinDataset(torch.utils.data.IterableDataset):
                 if datatype == float:
                     self.patch_info[patch_name] = struct.unpack('>f', binfile.read(4))[0]
                 else:
-                    self.patch_info[patch_name] = int.from_bytes(binfile.read(4), byteorder='big')
+                    #self.patch_info[patch_name] = int.from_bytes(binfile.read(4), byteorder='big')
+                    self.patch_info[patch_name] = struct.unpack('>i', binfile.read(4))[0]
             # Patch information is now available in self.patch_info
 
             # The file position is now at the first entry, ready for reading
