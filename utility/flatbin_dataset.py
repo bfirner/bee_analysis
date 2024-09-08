@@ -30,7 +30,7 @@ def getPatchDatatypes():
             float, float, float,
             float, float, int, int]
 
-def img_handler(binfile):
+def img_handler(binfile, img_format=None):
     img_len = int.from_bytes(binfile.read(4), byteorder='big')
 
     bin_data = binfile.read(img_len)
@@ -39,10 +39,15 @@ def img_handler(binfile):
         img = Image.open(img_stream)
         img.load()
         # TODO FIXME The format (RGB or L) should be set when writing the flatbin
-        if img.mode == "RGB":
+        if (img_format is None and img.mode == "RGB") or img_format == "RGB":
             img_data = numpy.array(img.convert("RGB")).astype(numpy.float32) / 255.0
-        else:
+        elif (img_format is None and img.mode == "L") or img_format == "L":
             img_data = numpy.array(img.convert("L")).astype(numpy.float32) / 255.0
+        else:
+            if img_format is None:
+                raise RuntimeError("Unhandled image format: {}".format(img.mode))
+            else:
+                raise RuntimeError("Unhandled image format: {}".format(img_format))
     # The image is in height x width x channels, which we don't want.
     if 3 == img_data.ndim:
         return img_data.transpose((2, 0, 1))
@@ -67,12 +72,12 @@ def skip_tensor(data_length, binfile):
     return binfile.seek(data_length*4, os.SEEK_CUR)
 
 class InterleavedFlatbinDatasets(torch.utils.data.IterableDataset):
-    def __init__(self, binpath, desired_data):
+    def __init__(self, binpath, desired_data, img_format=None):
         if not isinstance(binpath, list):
             binpath = [binpath]
         self.datasets = []
         for path in binpath:
-            self.datasets.append(FlatbinDataset(path, desired_data))
+            self.datasets.append(FlatbinDataset(path, desired_data, img_format))
         # TODO FIXME Verify that all data sizes are the same
         # Create a read order for the different datasets, interleaving them
         total_samples = len(self)
@@ -118,12 +123,13 @@ class InterleavedFlatbinDatasets(torch.utils.data.IterableDataset):
 
 
 class FlatbinDataset(torch.utils.data.IterableDataset):
-    def __init__(self, binpath, desired_data):
+    def __init__(self, binpath, desired_data, img_format=None):
         if isinstance(binpath, list):
             # TODO Support a list of files and read them in an interleaved fashion
             self.binpath = binpath[0]
         else:
             self.binpath = binpath
+        self.img_format = img_format
         with open(self.binpath, "rb") as binfile:
             # Read in important information about the number of samples and the entries per sample
             self.total_samples = int.from_bytes(binfile.read(4), byteorder='big')
@@ -159,7 +165,7 @@ class FlatbinDataset(torch.utils.data.IterableDataset):
                         self.data_handlers.append(functools.partial(skip_tensor, data_length))
                         self.data_sizes.append(data_length)
                 elif self.header_names[-1].endswith(".png"):
-                    self.data_handlers.append(img_handler)
+                    self.data_handlers.append(lambda binfile: img_handler(binfile, self.img_format))
                     self.data_indices.append(self.desired_data.index(self.header_names[-1]))
                     self.data_sizes.append(None)
                 elif self.header_names[-1].endswith(".numpy"):

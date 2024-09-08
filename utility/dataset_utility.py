@@ -67,7 +67,7 @@ def extractVectors(dl_tuple, vector_range):
     return torch.cat(tensors, 1)
 
 
-def makeDataset(data_path, decode_strs):
+def makeDataset(data_path, decode_strs, img_format=None):
     """Return a dataloader for either a webdataset or a flat binary file."""
     if (isinstance(data_path, str) and data_path.endswith(".tar")) or data_path[0].endswith(".tar"):
         # Check the size of the labels
@@ -78,9 +78,9 @@ def makeDataset(data_path, decode_strs):
         )
         return dataset
     elif isinstance(data_path, list):
-        return InterleavedFlatbinDatasets(data_path, decode_strs)
+        return InterleavedFlatbinDatasets(data_path, decode_strs, img_format)
     else:
-        return FlatbinDataset(data_path, decode_strs)
+        return FlatbinDataset(data_path, decode_strs, img_format)
 
 
 def getUnflatVectorSize(data_path, decode_strs, vector_range):
@@ -126,7 +126,7 @@ def getVectorSize(data_path, decode_strs, vector_range):
             return labels.size(1)
 
 
-def getImageSize(data_path, decode_strs):
+def getImageSize(data_path, decode_strs, img_format=None):
     """
     Arguments:
         data_path   (str or list[str]): Path to webdataset tar file(s).
@@ -136,7 +136,7 @@ def getImageSize(data_path, decode_strs):
     """
     # We are assuming that there is the image name in the first entry of decode strs.
     # This function is a bit hacky
-    dataset = makeDataset(data_path, decode_strs)
+    dataset = makeDataset(data_path, decode_strs, img_format)
     if isinstance(dataset, FlatbinDataset):
         return dataset.getDataSize(0)
     else:

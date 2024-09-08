@@ -43,6 +43,9 @@ class OnlineStatistics:
 
     def sample(self, value):
         """Add the given value to the population."""
+        if math.isnan(value):
+            print("Ignoring nan value in OnlineStatistics.")
+            return
         # First check for a new maximum value
         if self._max is None or math.fabs(self._max) < math.fabs(value):
             self._max = value
@@ -242,7 +245,7 @@ class ConfusionMatrix:
             if 0 < sum(self[cidx]):
                 precision, recall = self.calculateRecallPrecision(row)
                 results += "\nClass {} precision={}, recall={}".format(row, precision, recall)
-            
+
 
 # Need a special comparison function that won't attempt to do something that tensors do not
 # support. Used if args.save_top_n or args.save_worst_n are used.
