@@ -23,8 +23,8 @@ class Denormalizer(nn.Module):
 
         # We could also represent this as a linear layer with weight=stddevs and bias=mean
         # That seems more complicated than is necessary
-        self.means = nn.parameter.Parameter(means)
-        self.stddevs = nn.parameter.Parameter(stddevs)
+        self.means = nn.parameter.Parameter(means, requires_grad=False)
+        self.stddevs = nn.parameter.Parameter(stddevs, requires_grad=False)
 
     def forward(self, x):
         # Forward without changing the means and stddevs
@@ -45,8 +45,8 @@ class Normalizer(nn.Module):
         # We could also represent this as a linear layer with weight=1/stddev and bias=mean/stddev
         # Absent a reason to do that, we will be using the straightforward math, but will still
         # convert the division step into a multiplication to speed things up.
-        self.means = nn.parameter.Parameter(means)
-        self.inv_stddevs = nn.parameter.Parameter(1.0 / stddevs)
+        self.means = nn.parameter.Parameter(means, requires_grad=False)
+        self.inv_stddevs = nn.parameter.Parameter(1.0 / stddevs, requires_grad=False)
 
     def forward(self, x):
         # TODO FIXME with torch.nograd():
