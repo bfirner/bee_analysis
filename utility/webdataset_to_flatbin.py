@@ -5,7 +5,6 @@ Convert a webdataset to a flat binary file for more efficient dataloading.
 """
 
 import argparse
-import io 
 import functools
 import numpy
 import struct
