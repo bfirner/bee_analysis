@@ -121,19 +121,29 @@ class VideoReader:
             self.cur_frame = 0
         # Support seeking, as described here: https://pyav.org/docs/stable/api/container.html
         # and here: https://github.com/PyAV-Org/PyAV/discussions/1113
-        if self.cur_frame != idx:
+        if self.cur_frame + 1 != idx:
             # The seek function wants the presentation timestamp (or PTS)
             # All times must be in the video time base
             time_base = self.container.streams.video[0].time_base
             framerate = self.container.streams.video[0].average_rate
             desired_frame_sec = idx/framerate
-
             video_ts = round(desired_frame_sec / time_base)
-            self.container.seek(offset=video_ts, stream=self.container.streams.video[0])
-
-            # Check the frame that container.seek went to and see if it is the right frame or merely the nearest key frame.
-            frame = next(self.container.decode(video=0))
-            returned_frame = int(frame.pts * time_base * framerate)
+            try:
+                # Check the frame that container.seek went to and see if it is the right frame or merely the nearest key frame.
+                self.container.seek(offset=video_ts, stream=self.container.streams.video[0])
+                frame = next(self.container.decode(video=0))
+                returned_frame = int(frame.pts * time_base * framerate)
+            except av.error.PermissionError:
+                print("Seeking not possible, reopening file.")
+                # Can't seek with this file type, need to go back to the beginning
+                self.container.close()
+                self.container = av.open(self.path)
+                time_base = self.container.streams.video[0].time_base
+                framerate = self.container.streams.video[0].average_rate
+                frame = next(self.container.decode(video=0))
+                self.cur_frame = 0
+                returned_frame = 0
+             
 
             # Seek from the keyframe to the desired frame if this didn't match
             for _ in range(returned_frame, idx):
