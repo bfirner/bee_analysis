@@ -29,7 +29,7 @@ def getImageProvider(data_string, **kwargs):
 class ImageReader:
     """Load a dataset of individual images with frame numbers in the file names."""
 
-    def __init__(self, path, first_frame = 0, target_format='BGR'):
+    def __init__(self, path, first_frame = 0, target_format='RGB'):
         """
         Arguments:
             data_string (str): A format string ready for frame number substitution. E.g. 'dir/image_{:05d}.png'
@@ -73,7 +73,7 @@ class ImageReader:
 
     def imageSize(self):
         """Returns the image height and width as a tuple."""
-        return self.height, self.width
+        return self.width, self.height
 
     def __len__(self):
         return self.totalFrames()
@@ -86,7 +86,7 @@ class ImageReader:
 class VideoReader:
     """Load a dataset of images from a video."""
 
-    def __init__(self, path, target_format='bgr24'):
+    def __init__(self, path, target_format='rgb24'):
         """
         Arguments:
             path (str): Path to the video
@@ -110,31 +110,43 @@ class VideoReader:
         self.container.close()
 
         self.container = None
-        self.decoder = None
         self.cur_frame = 0
 
     def hasFrame(self, idx):
         return idx >= 0 and idx < self.total_frames
 
     def getFrame(self, idx):
-        # TODO Support seeking, as described here: https://pyav.org/docs/stable/api/container.html
-        #if self.cur_frame != idx:
-        #    # TODO Untested
-        #    self.container.seek(offset=idx * stream.time_base, stream='video')
-        #    self.cur_frame = 0
         if self.container is None:
             self.container = av.open(self.path)
-        if self.decoder is None:
-            self.decoder = iter(self.container.decode(video=0))
-        if idx != self.cur_frame:
-            raise RuntimeError("Seeking to frames is not yet supported.")
-        frame = next(self.decoder)
-        self.cur_frame += 1
+            self.cur_frame = 0
+        # Support seeking, as described here: https://pyav.org/docs/stable/api/container.html
+        # and here: https://github.com/PyAV-Org/PyAV/discussions/1113
+        if self.cur_frame != idx:
+            # The seek function wants the presentation timestamp (or PTS)
+            # All times must be in the video time base
+            time_base = self.container.streams.video[0].time_base
+            framerate = self.container.streams.video[0].average_rate
+            desired_frame_sec = idx/framerate
+
+            video_ts = round(desired_frame_sec / time_base)
+            self.container.seek(offset=video_ts, stream=self.container.streams.video[0])
+
+            # Check the frame that container.seek went to and see if it is the right frame or merely the nearest key frame.
+            frame = next(self.container.decode(video=0))
+            returned_frame = int(frame.pts * time_base * framerate)
+
+            # Seek from the keyframe to the desired frame if this didn't match
+            for _ in range(returned_frame, idx):
+                frame = next(self.container.decode(video=0))
+            self.cur_frame = idx
+        else:
+            self.cur_frame += 1
+            frame = next(self.container.decode(video=0))
         return frame.to_ndarray(format=self.format).astype(numpy.float32) / 255.0
 
     def imageSize(self):
         """Returns the image height and width as a tuple."""
-        return self.height, self.width
+        return self.width, self.height
 
     def totalFrames(self):
         return self.total_frames
