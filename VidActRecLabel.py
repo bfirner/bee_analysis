@@ -19,6 +19,7 @@ import sys
 import sdl2.events
 import sdl2.ext
 import sdl2.keyboard
+import sdl2.mouse
 import sdl2.rect
 import sdl2.sdlttf
 import os
@@ -34,29 +35,40 @@ def getComponentRect(component):
 
 
 class AnnotatorUI():
-    def __init__(self, factory, renderer, font, image_size, known_objects):
+    def __init__(self, annotations, sprite_factory, ui_factory, renderer, font, image_size):
+        self.visible = False
         # When annotating, assume annotations apply to the same target as previously used.
+        self.annotations = annotations
         self.last_object = None
-        self.objects = []
-        self.factory = factory
+        if 0 < len(self.objects):
+            self.last_object = self.objects[0]
+            self.setVisibility(True)
+        # TODO Kind of ugly to be passed the factories here
+        self.ui_factory = ui_factory
+        self.sprite_factory = sprite_factory
         self.font = font
         self.image_size = image_size
         self.font_height = sdl2.sdlttf.TTF_FontLineSkip(font.get_ttf_font())
         # Entry field with 3x the font height to allow for both instructions and the user input
-        self.entry_field = factory.from_color(sdl2.ext.TEXTENTRY, (255, 255, 255, 192), size=(image_size[0]//3, 3 * self.font_height))
+        self.entry_field = self.ui_factory.from_color(sdl2.ext.TEXTENTRY, (255, 255, 255, 192), size=(image_size[0]//3, 3 * self.font_height))
         self.entry_field.position = (10, 10)
-        #self.entry_field.input += lambda (entry, event): self.onInput(entry, event)
-        #self.entry_field.editing += lambda (entry, event): self.inEdit(entry, event)
         self.text_entry = False
+        self.bb_selection = False
         self.prompt_new_object = sdl2.ext.Texture(renderer, font.render_text("Enter name of new object."))
         self.prompt_accept_object = sdl2.ext.Texture(renderer, font.render_text("Press tab to cycle objects."))
-        self.visible = False
 
+    @property
+    def objects(self):
+        """Getter for the objects in the annotations."""
+        return list(self.annotations['objects'].keys())
+
+    def getAnnotations(self):
+        return self.annotations
 
     def cycleObjects(self):
         if self.last_object is not None:
-            self.last_object = (self.last_object + 1) % len(self.objects)
-
+            object_index = self.objects.index(self.last_object)
+            self.last_object = self.objects[(self.last_object + 1) % len(self.objects)]
 
     def beginNameInput(self):
         if not self.text_entry:
@@ -66,36 +78,73 @@ class AnnotatorUI():
             self.text_entry = True
             self.name_buffer = ""
 
-
     def endNameInput(self):
         if self.text_entry:
-            if 0 < len(self.name_buffer):
-                self.objects.append(self.name_buffer)
+            if 0 < len(self.name_buffer) and self.name_buffer not in self.objects:
+                utility.annotations.addObject(self.annotations, self.name_buffer)
+                self.last_object = self.name_buffer
                 self.name_buffer = None
-                self.last_object = -1
             self.text_entry = False
             sdl2.keyboard.SDL_StopTextInput()
 
+    def beginSelector(self, cur_frame):
+        """Begin bounding box selection."""
+        self.bb_selection = True
+        # No bounding box defined yet
+        self.bb_begin = None
+        self.bb_end = None
+        self.bb_frame = cur_frame
+
+    def endSelector(self):
+        """End bounding box selection and add the current bbox into the annotations."""
+        # Make annotations for self.last_object from point self.bb_begin to self.bb_end
+        if self.bb_begin is not None and self.bb_end is not None:
+            # TODO FIXME No, the first two points should be the upper left, but the user could have draw the bbox in the other direction
+            # The bounding box should have the upper left coordinate first, then the lower right
+            bbox = [min(self.bb_begin[x], self.bb_end[x]) for x in range(2)] + [max(self.bb_begin[x], self.bb_end[x]) for x in range(2)]
+            # Don't save if the size isn't at least a pixel in both dimensions
+            if 0 < bbox[2] - bbox[0] and 0 < bbox[3] - bbox[1]:
+                utility.annotations.addFrameAnnotation(self.annotations, self.last_object, self.bb_frame, "bbox", bbox)
+        # End bounding box selection
+        self.bb_begin = None
+        self.bb_end = None
+        self.bb_selection = False
 
     def handleEvent(self, event):
         """Handle the possible text input event. Return true if the event is handled here."""
-        if event.type == sdl2.events.SDL_TEXTINPUT:
+        if self.text_entry and event.type == sdl2.events.SDL_TEXTINPUT:
             new_input =  sdl2.ext.compat.stringify(event.text.text, "utf-8")
             print("Got new input {}".format(new_input))
             self.name_buffer += new_input
             return True
+        elif self.bb_selection and event.type == sdl2.events.SDL_MOUSEBUTTONDOWN and event.button.button == sdl2.mouse.SDL_BUTTON_LEFT:
+            self.bb_begin = [event.button.x, event.button.y]
+            return True
+        elif self.bb_selection and self.bb_begin is not None and event.type == sdl2.events.SDL_MOUSEMOTION:
+            # Drag the ending location
+            self.bb_end = [event.button.x, event.button.y]
+            return True
+        elif self.bb_selection and event.type == sdl2.events.SDL_MOUSEBUTTONUP and event.button.button == sdl2.mouse.SDL_BUTTON_LEFT:
+            # Drag the ending location
+            self.bb_end = [event.button.x, event.button.y]
+            # No more moving of the bounding box
+            self.endSelector()
+            return True
         return False
 
+    def active(self):
+        return self.text_entry or self.bb_selection
 
-    def onInput(self, entry, event):
-        print("input text is now {}".format(entry.text))
+    def deactivate(self):
+        """Call when the user completes the current action (such as with the enter key)"""
+        if self.text_entry:
+            self.endNameInput()
+        elif self.bb_selection:
+            self.endSelector()
 
-
-    def onEdit(self, entry, event):
-        print("edit text is now {}".format(entry.edit.text))
-
-    def render(self, renderer):
+    def render(self, renderer, cur_frame):
         if self.visible:
+            # The text box
             if self.text_entry:
                 renderer.copy(self.prompt_new_object, dstrect=(10, self.font_height//2))
                 # Render the name of the ongoing object below the prompt
@@ -103,17 +152,33 @@ class AnnotatorUI():
             else:
                 renderer.copy(self.prompt_accept_object, dstrect=(10, self.font_height//2))
                 # Render the name of the current object below the prompt
-                cur_object = sdl2.ext.Texture(renderer, self.font.render_text("Current object: {}".format(self.objects[self.last_object])))
+                cur_object = sdl2.ext.Texture(renderer, self.font.render_text("Current object: {}".format(self.last_object)))
             renderer.copy(cur_object, dstrect=(10, 3*self.font_height//2))
-
+            # The bounding boxes
+            if self.bb_selection and self.bb_begin is not None and self.bb_end is not None:
+                # Something is being drawn, render it
+                bsize = (abs(self.bb_end[0] - self.bb_begin[0]), abs(self.bb_end[1] - self.bb_begin[1]))
+                if bsize[0] > 0 and bsize[1] > 0:
+                    bbox = self.sprite_factory.from_color((50, 50, 200, 15), size=bsize)
+                    bbox.position = min(self.bb_begin[0], self.bb_end[0]), min(self.bb_begin[1], self.bb_end[1])
+                    # NOTE SDL seems to require these to use alpha transparency, even though it was already set in the from_color function.
+                    sdl2.SDL_SetTextureBlendMode(bbox.texture, sdl2.SDL_BLENDMODE_BLEND)
+                    sdl2.SDL_SetTextureAlphaMod(bbox.texture, 100)
+                    renderer.copy(bbox, dstrect=bbox.position)
+            for objname in self.objects:
+                if utility.annotations.hasFrameAnnotation(self.annotations, objname, cur_frame, 'bbox'):
+                    # Draw a box around the annotated object
+                    bbox_coords = utility.annotations.getFrameAnnotation(self.annotations, objname, cur_frame, 'bbox')
+                    bsize = (abs(bbox_coords[2] - bbox_coords[0]), abs(bbox_coords[3] - bbox_coords[1]))
+                    bbox = self.sprite_factory.from_color((50, 200, 50, 15), size=bsize)
+                    bbox.position = bbox_coords[:2]
+                    # NOTE SDL seems to require these to use alpha transparency, even though it was already set in the from_color function.
+                    sdl2.SDL_SetTextureBlendMode(bbox.texture, sdl2.SDL_BLENDMODE_BLEND)
+                    sdl2.SDL_SetTextureAlphaMod(bbox.texture, 100)
+                    renderer.copy(bbox, dstrect=bbox.position)
 
     def setVisibility(self, visible):
         self.visible = visible
-
-
-    #def makeEntry(self, event):
-    #    if self.text_entry is None:
-    #        self.text_entry = factory.from_color((0, 0, 0, 128), size=(image_size[0]//2, 2 * self.font_height))
 
 
 def main():
@@ -149,13 +214,7 @@ def main():
     annotation_file = os.path.join(args.source_dir, "annotations.yaml")
     annotations = utility.annotations.getAnnotations(annotation_file)
     if annotations is None:
-        # Create some default annotations for this file, which will just be some empty lists
-        annotations = {
-            # No objects yet
-            'objects': [],
-            # No annotations yet, but prepare a table for each frame
-            'frame_annotations': [{} for _ in range(provider.totalFrames())],
-        }
+        annotations = utility.annotations.initializeAnnotations(provider)
 
     ################
     # UI Initialization
@@ -179,10 +238,10 @@ def main():
     # For UI components
     uifactory = sdl2.ext.UIFactory(factory)
 
-    # TODO Make an object named entry selector.
-    # TODO It should display a name for the user to accept, allow tabbing through existing names, and entering a new name
-    # TODO It adjusts the last_target variable (and should perhaps own that variable)
-    aui = AnnotatorUI(uifactory, renderer, font, provider.imageSize(), annotations['objects'])
+    # Make a UI element for annotations
+    # It accepts new object names and allows the user to cycle through them.
+    # TODO Add in bounding box drawing with an addBbox function
+    aui = AnnotatorUI(annotations, factory, uifactory, renderer, font, provider.imageSize())
 
     uiprocessor = sdl2.ext.UIProcessor()
 
@@ -209,7 +268,7 @@ def main():
         tx = sdl2.ext.Texture(renderer, txt_rendered)
         renderer.copy(tx, dstrect=(10, provider.imageSize()[1] - 2*font_height))
 
-        aui.render(renderer)
+        aui.render(renderer, frame_num)
 
         ################
         # TODO Draw annotations for this frame
@@ -225,26 +284,39 @@ def main():
         next_frame = frame_num
         # The annotator UI may consume the keyboard event
         unhandled_events = []
+        handled = False
         for event in events:
             # See possible events in https://github.com/libsdl-org/SDL/blob/SDL2/include/SDL_events.h or https://github.com/py-sdl/py-sdl2/blob/master/sdl2/events.py
             if event.type == sdl2.SDL_QUIT:
                 running = False
-            if not aui.text_entry or not aui.handleEvent(event):
+            # NOTE -- The if statement condition has a side effect
+            if not aui.handleEvent(event):
                 unhandled_events.append(event)
+            else:
+                handled = True
         events = unhandled_events
+        # TODO Find a way to consume keyboard events properly in the aui
+        # TODO Also handle the backspace key
+        if handled:
+            events = []
         # A key was pressed
         if sdl2.ext.key_pressed(events):
             # See https://github.com/py-sdl/py-sdl2/blob/0.9.16/sdl2/ext/input.py
+            # TODO Use the scale key to abort annotation operations.
             # Handle a keyboard quit
             if sdl2.ext.key_pressed(events, 'q'):
                 running = False
             elif sdl2.ext.key_pressed(events, 's'):
                 print("Saving annotations.")
-                utility.annotations.saveAnnotations(annotations, annotation_file)
+                utility.annotations.saveAnnotations(aui.getAnnotations(), annotation_file)
             elif sdl2.ext.key_pressed(events, 'a'):
                 print("Adding annotation.")
-                # First we need to see which target this annotation applies to
-                # TODO Prompt to create an annotation if none exists or select one if it does
+                # An annotation must apply to a target
+                if 0 == len(aui.objects):
+                    aui.beginNameInput()
+                else:
+                    # Begin the annotation by creating a selector
+                    aui.beginSelector(frame_num)
             elif sdl2.ext.key_pressed(events, 'n'):
                 print("Adding new object.")
                 aui.beginNameInput()
@@ -252,6 +324,10 @@ def main():
                 # Complete new name entry
                 if aui.text_entry:
                     aui.endNameInput()
+            elif sdl2.ext.key_pressed(events, sdl2.SDLK_BACKSPACE):
+                # Remove a letter from the text entry
+                if aui.text_entry:
+                    aui.name_buffer = aui.name_buffer[:-1]
             elif sdl2.ext.key_pressed(events, sdl2.SDLK_TAB):
                 # Cycle through the known object types
                 aui.cycleObjects()
