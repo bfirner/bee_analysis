@@ -14,6 +14,7 @@ NOTE: This is written for sdl2 verion 0.9.16
 """
 
 import argparse
+import cv2
 import numpy
 import sys
 import sdl2.events
@@ -43,6 +44,10 @@ class AnnotatorUI():
         if 0 < len(self.objects):
             self.last_object = self.objects[0]
             self.setVisibility(True)
+        self.bbox_sprites = []
+        for _ in self.objects:
+            self.bbox_sprites.append(None)
+        self.temp_bbox = None
         # TODO Kind of ugly to be passed the factories here
         self.ui_factory = ui_factory
         self.sprite_factory = sprite_factory
@@ -68,7 +73,7 @@ class AnnotatorUI():
     def cycleObjects(self):
         if self.last_object is not None:
             object_index = self.objects.index(self.last_object)
-            self.last_object = self.objects[(self.last_object + 1) % len(self.objects)]
+            self.last_object = self.objects[(object_index + 1) % len(self.objects)]
 
     def beginNameInput(self):
         if not self.text_entry:
@@ -84,6 +89,7 @@ class AnnotatorUI():
                 utility.annotations.addObject(self.annotations, self.name_buffer)
                 self.last_object = self.name_buffer
                 self.name_buffer = None
+                self.bbox_sprites.append(None)
             self.text_entry = False
             sdl2.keyboard.SDL_StopTextInput()
 
@@ -142,6 +148,30 @@ class AnnotatorUI():
         elif self.bb_selection:
             self.endSelector()
 
+    def hasBbox(self, objname, cur_frame):
+        """True if the bounding box for the object exists at this frame."""
+        return objname in self.objects and utility.annotations.hasFrameAnnotation(self.annotations, objname, cur_frame, 'bbox')
+
+    def clearBbox(self, objname, cur_frame):
+        utility.annotations.removeFrameAnnotation(self.annotations, objname, cur_frame, 'bbox')
+
+    def getBbox(self, objname, cur_frame):
+        """Get the bounding box for the given object.
+        Returns:
+            None or [left, top, right, bottom]
+        """
+        if objname not in self.objects:
+            return None
+        if not utility.annotations.hasFrameAnnotation(self.annotations, objname, cur_frame, 'bbox'):
+            return None
+        return utility.annotations.getFrameAnnotation(self.annotations, objname, cur_frame, 'bbox')
+
+    def addBbox(self, objname, cur_frame, bbox):
+        """Add the bounding box for the given object and frame.
+        """
+        if objname in self.objects:
+            utility.annotations.addFrameAnnotation(self.annotations, objname, cur_frame, "bbox", bbox)
+
     def render(self, renderer, cur_frame):
         if self.visible:
             # The text box
@@ -159,23 +189,43 @@ class AnnotatorUI():
                 # Something is being drawn, render it
                 bsize = (abs(self.bb_end[0] - self.bb_begin[0]), abs(self.bb_end[1] - self.bb_begin[1]))
                 if bsize[0] > 0 and bsize[1] > 0:
-                    bbox = self.sprite_factory.from_color((50, 50, 200, 15), size=bsize)
-                    bbox.position = min(self.bb_begin[0], self.bb_end[0]), min(self.bb_begin[1], self.bb_end[1])
-                    # NOTE SDL seems to require these to use alpha transparency, even though it was already set in the from_color function.
-                    sdl2.SDL_SetTextureBlendMode(bbox.texture, sdl2.SDL_BLENDMODE_BLEND)
-                    sdl2.SDL_SetTextureAlphaMod(bbox.texture, 100)
-                    renderer.copy(bbox, dstrect=bbox.position)
-            for objname in self.objects:
+                    if self.temp_bbox is None:
+                        self.temp_bbox = self.sprite_factory.from_color((50, 50, 200, 15), size=bsize)
+                        # NOTE SDL seems to require these to use alpha transparency, even though it was already set in the from_color function.
+                        sdl2.SDL_SetTextureBlendMode(self.temp_bbox.texture, sdl2.SDL_BLENDMODE_BLEND)
+                        sdl2.SDL_SetTextureAlphaMod(self.temp_bbox.texture, 100)
+                    else:
+                        # TODO FIXME We actually just want to resize the bounding box, but sprites don't support that. This implies that we don't really want to be using a sprite.
+                        #self.temp_bbox.size = bsize
+                        del self.temp_bbox
+                        self.temp_bbox = self.sprite_factory.from_color((50, 50, 200, 15), size=bsize)
+                        # NOTE SDL seems to require these to use alpha transparency, even though it was already set in the from_color function.
+                        sdl2.SDL_SetTextureBlendMode(self.temp_bbox.texture, sdl2.SDL_BLENDMODE_BLEND)
+                        sdl2.SDL_SetTextureAlphaMod(self.temp_bbox.texture, 100)
+                    self.temp_bbox.position = min(self.bb_begin[0], self.bb_end[0]), min(self.bb_begin[1], self.bb_end[1])
+                    renderer.copy(self.temp_bbox, dstrect=self.temp_bbox.position)
+            for objidx, objname in enumerate(self.objects):
                 if utility.annotations.hasFrameAnnotation(self.annotations, objname, cur_frame, 'bbox'):
                     # Draw a box around the annotated object
                     bbox_coords = utility.annotations.getFrameAnnotation(self.annotations, objname, cur_frame, 'bbox')
                     bsize = (abs(bbox_coords[2] - bbox_coords[0]), abs(bbox_coords[3] - bbox_coords[1]))
-                    bbox = self.sprite_factory.from_color((50, 200, 50, 15), size=bsize)
-                    bbox.position = bbox_coords[:2]
-                    # NOTE SDL seems to require these to use alpha transparency, even though it was already set in the from_color function.
-                    sdl2.SDL_SetTextureBlendMode(bbox.texture, sdl2.SDL_BLENDMODE_BLEND)
-                    sdl2.SDL_SetTextureAlphaMod(bbox.texture, 100)
-                    renderer.copy(bbox, dstrect=bbox.position)
+                    if self.bbox_sprites[objidx] is None:
+                        self.bbox_sprites[objidx] = self.sprite_factory.from_color((50, 200, 50, 15), size=bsize)
+                        # NOTE SDL seems to require these to use alpha transparency, even though it was already set in the from_color function.
+                        sdl2.SDL_SetTextureBlendMode(self.bbox_sprites[objidx].texture, sdl2.SDL_BLENDMODE_BLEND)
+                        sdl2.SDL_SetTextureAlphaMod(self.bbox_sprites[objidx].texture, 100)
+                    else:
+                        # TODO FIXME We actually just want to resize the bounding box, but sprites don't support that. This implies that we don't really want to be using a sprite.
+                        #self.bbox_sprites[objidx].size = bsize
+                        tmp = self.bbox_sprites[objidx]
+                        self.bbox_sprites[objidx] = self.sprite_factory.from_color((50, 200, 50, 15), size=bsize)
+                        # NOTE SDL seems to require these to use alpha transparency, even though it was already set in the from_color function.
+                        sdl2.SDL_SetTextureBlendMode(self.bbox_sprites[objidx].texture, sdl2.SDL_BLENDMODE_BLEND)
+                        sdl2.SDL_SetTextureAlphaMod(self.bbox_sprites[objidx].texture, 100)
+                        del tmp
+
+                    self.bbox_sprites[objidx].position = bbox_coords[:2]
+                    renderer.copy(self.bbox_sprites[objidx], dstrect=self.bbox_sprites[objidx].position)
 
     def setVisibility(self, visible):
         self.visible = visible
@@ -240,10 +290,12 @@ def main():
 
     # Make a UI element for annotations
     # It accepts new object names and allows the user to cycle through them.
-    # TODO Add in bounding box drawing with an addBbox function
     aui = AnnotatorUI(annotations, factory, uifactory, renderer, font, provider.imageSize())
 
     uiprocessor = sdl2.ext.UIProcessor()
+
+    # Autotracker for easier human labelling
+    tracker = None
 
     ################
     # Image display
@@ -255,6 +307,20 @@ def main():
     while running:
         # Prepare the screen
         renderer.clear()
+
+        ################
+        # Autolabelling with an object tracker
+        if tracker is not None:
+            # NOTE We are leaving the image in RGB format, even though OpenCV likes BGR
+            found, foundbbox = tracker.update((frame * 255).astype(numpy.uint8))
+            if found:
+                # Update the bounding box of the currently tracked object
+                bbox = list(foundbbox[0:2]) + [foundbbox[0] + foundbbox[2], foundbbox[1] + foundbbox[3]]
+                aui.addBbox(aui.last_object, frame_num, bbox)
+            else:
+                print("Tracked object lost.")
+                del tracker
+                tracker = None
 
         ################
         # Convert the image to an SDL surface, then texture, then copy it to the render window
@@ -282,6 +348,8 @@ def main():
         running = True
         # Default to the same frame, but the user could advance or decrease the position
         next_frame = frame_num
+        if tracker is not None:
+            next_frame = frame_num + 1
         # The annotator UI may consume the keyboard event
         unhandled_events = []
         handled = False
@@ -309,6 +377,9 @@ def main():
             elif sdl2.ext.key_pressed(events, 's'):
                 print("Saving annotations.")
                 utility.annotations.saveAnnotations(aui.getAnnotations(), annotation_file)
+            elif sdl2.ext.key_pressed(events, 'c'):
+                print("Clearing annotation.")
+                aui.clearBbox(aui.last_object, frame_num)
             elif sdl2.ext.key_pressed(events, 'a'):
                 print("Adding annotation.")
                 # An annotation must apply to a target
@@ -317,6 +388,31 @@ def main():
                 else:
                     # Begin the annotation by creating a selector
                     aui.beginSelector(frame_num)
+            elif sdl2.ext.key_pressed(events, 't'):
+                # Toggle the tracker auto labelling.
+                if tracker is None and aui.hasBbox(aui.last_object, frame_num):
+                    print("Enabling tracker.")
+                    # Start tracking the aui.last_object, if there is such an object and it is visible on this frame.
+                    # Vit tracker uses the example from the opencv zoo https://github.com/opencv/opencv_zoo
+                    # The example uses the model in the same repository: https://github.com/opencv/opencv_zoo/blob/main/models/object_tracking_vittrack/object_tracking_vittrack_2023sep.onnx
+                    if cv2.__version__.split('.')[:2] == ["4", "10"]:
+                        params = cv2.TrackerVit_Params()
+                        # TODO FIXME Put this into the SDL resources?
+                        params.net = "../opencv_zoo/models/object_tracking_vittrack/object_tracking_vittrack_2023sep.onnx"
+                        tracker = cv2.TrackerVit_create(params)
+                    else:
+                        # TODO FIXME Other versions also have the vit tracker, and there are other trackers as well.
+                        raise RuntimeError("No supported tracker in installed version of open cv.")
+                    bbox = aui.getBbox(aui.last_object, frame_num)
+                    # Convert to x, y, width, height as open CV expects.
+                    bbox = bbox[:2] + [bbox[2] - bbox[0], bbox[3] - bbox[1]]
+                    tracker.init((frame * 255).astype(numpy.uint8), bbox)
+                    # Autoadvance to the next frame
+                    next_frame = frame_num + 1
+                else:
+                    print("Disabling tracker.")
+                    del tracker
+                    tracker = None
             elif sdl2.ext.key_pressed(events, 'n'):
                 print("Adding new object.")
                 aui.beginNameInput()
@@ -329,8 +425,9 @@ def main():
                 if aui.text_entry:
                     aui.name_buffer = aui.name_buffer[:-1]
             elif sdl2.ext.key_pressed(events, sdl2.SDLK_TAB):
-                # Cycle through the known object types
-                aui.cycleObjects()
+                if tracker is None:
+                    # Cycle through the known object types
+                    aui.cycleObjects()
             elif sdl2.ext.key_pressed(events, 'left'):
                 next_frame = frame_num - 1
             elif sdl2.ext.key_pressed(events, 'right'):
@@ -345,6 +442,10 @@ def main():
         if next_frame != frame_num and provider.hasFrame(next_frame):
             frame_num = next_frame
             frame = provider.getFrame(frame_num)
+        elif tracker is not None:
+            # Stop tracker if there are no more frames.
+            del tracker
+            tracker = None
 
     # Clean up and quit
     font.close()

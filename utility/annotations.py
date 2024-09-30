@@ -60,6 +60,12 @@ def hasFrameAnnotation(annotations, object_name, frame_num, annotation_name):
     return annotation_name in annotations['objects'][object_name]['frame_annotations'][frame_num]
 
 
+def removeFrameAnnotation(annotations, object_name, frame_num, annotation_name):
+    """Remove the annotations with the new frame annotation."""
+    if hasFrameAnnotation(annotations, object_name, frame_num, annotation_name):
+        del annotations['objects'][object_name]['frame_annotations'][frame_num][annotation_name]
+
+
 def getFrameAnnotation(annotations, object_name, frame_num, annotation_name):
     """Return the annotations with the given frame and name."""
     return annotations['objects'][object_name]['frame_annotations'][frame_num][annotation_name]
