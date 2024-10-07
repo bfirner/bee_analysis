@@ -168,7 +168,9 @@ class VideoReader:
         iter_container = av.open(self.path)
         for frame in iter_container.decode(video=0):
             self.cur_frame += 1
-            yield frame.to_ndarray(format=self.format).astype(numpy.float32) / 255.0
+            npframe = frame.to_ndarray(format=self.format).astype(numpy.float32) / 255.0
+            del frame
+            yield npframe
 
     def __del__(self):
         if self.container is not None:

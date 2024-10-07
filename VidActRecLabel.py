@@ -40,6 +40,8 @@ class AnnotatorUI():
         self.visible = False
         # When annotating, assume annotations apply to the same target as previously used.
         self.annotations = annotations
+        ################
+        # Object annotation
         self.last_object = None
         if 0 < len(self.objects):
             self.last_object = self.objects[0]
@@ -61,6 +63,28 @@ class AnnotatorUI():
         self.bb_selection = False
         self.prompt_new_object = sdl2.ext.Texture(renderer, font.render_text("Enter name of new object."))
         self.prompt_accept_object = sdl2.ext.Texture(renderer, font.render_text("Press tab to cycle objects."))
+        ################
+        # Frame labelling
+        self.labelling = False
+        self.label_keep = False
+        self.prompt_label_on = sdl2.ext.Texture(renderer, font.render_text("Labelling on."))
+        self.prompt_label_off = sdl2.ext.Texture(renderer, font.render_text("Labelling off."))
+        self.prompt_label_keep = sdl2.ext.Texture(renderer, font.render_text("Keep frame."))
+        self.prompt_label_discard = sdl2.ext.Texture(renderer, font.render_text("Discard frame."))
+
+    def toggleLabelling(self):
+        self.labelling = not self.labelling
+
+    def toggleKeep(self):
+        self.label_keep = not self.label_keep
+
+    def updateLabels(self, frames):
+        """Update the frame labels according to self.labelling and self.label_keep."""
+        if type(frames) is not list:
+            frames = [frames]
+        if self.labelling:
+            for frame in frames:
+                utility.annotations.setFrameLabel(self.annotations, frame, self.label_keep)
 
     @property
     def objects(self):
@@ -174,7 +198,9 @@ class AnnotatorUI():
 
     def render(self, renderer, cur_frame):
         if self.visible:
-            # The text box
+            ######
+            # Upper left elements that show the current object
+            # Begin with the text box
             if self.text_entry:
                 renderer.copy(self.prompt_new_object, dstrect=(10, self.font_height//2))
                 # Render the name of the ongoing object below the prompt
@@ -184,6 +210,7 @@ class AnnotatorUI():
                 # Render the name of the current object below the prompt
                 cur_object = sdl2.ext.Texture(renderer, self.font.render_text("Current object: {}".format(self.last_object)))
             renderer.copy(cur_object, dstrect=(10, 3*self.font_height//2))
+            ######
             # The bounding boxes
             if self.bb_selection and self.bb_begin is not None and self.bb_end is not None:
                 # Something is being drawn, render it
@@ -226,6 +253,20 @@ class AnnotatorUI():
 
                     self.bbox_sprites[objidx].position = bbox_coords[:2]
                     renderer.copy(self.bbox_sprites[objidx], dstrect=self.bbox_sprites[objidx].position)
+            ######
+            # The current label and labelling state
+            if self.labelling:
+                # TODO FIXME Should be an offset from the right of the image, but we need the image dimension for that
+                renderer.copy(self.prompt_label_on, dstrect=(700, self.font_height//2))
+            else:
+                # TODO FIXME Should be an offset from the right of the image, but we need the image dimension for that
+                renderer.copy(self.prompt_label_off, dstrect=(700, self.font_height//2))
+            if utility.annotations.getFrameLabel(self.annotations, cur_frame):
+                # TODO FIXME Should be an offset from the right of the image, but we need the image dimension for that
+                renderer.copy(self.prompt_label_keep, dstrect=(700, 3*self.font_height//2))
+            else:
+                # TODO FIXME Should be an offset from the right of the image, but we need the image dimension for that
+                renderer.copy(self.prompt_label_discard, dstrect=(700, 3*self.font_height//2))
 
     def setVisibility(self, visible):
         self.visible = visible
@@ -294,8 +335,11 @@ def main():
 
     uiprocessor = sdl2.ext.UIProcessor()
 
-    # Autotracker for easier human labelling
+    # Autotracker for easier human annotation
     tracker = None
+
+    # For annotation interpolation
+    interp_begin = None
 
     ################
     # Image display
@@ -389,7 +433,7 @@ def main():
                     # Begin the annotation by creating a selector
                     aui.beginSelector(frame_num)
             elif sdl2.ext.key_pressed(events, 't'):
-                # Toggle the tracker auto labelling.
+                # Toggle the tracker auto annotation.
                 if tracker is None and aui.hasBbox(aui.last_object, frame_num):
                     print("Enabling tracker.")
                     # Start tracking the aui.last_object, if there is such an object and it is visible on this frame.
@@ -416,6 +460,38 @@ def main():
             elif sdl2.ext.key_pressed(events, 'n'):
                 print("Adding new object.")
                 aui.beginNameInput()
+            elif sdl2.ext.key_pressed(events, 'j'):
+                # TODO Get frame input and then jump to a frame.
+                pass
+            elif sdl2.ext.key_pressed(events, 'l'):
+                # Toggle labelling enable
+                aui.toggleLabelling()
+            elif sdl2.ext.key_pressed(events, 'k'):
+                # Toggle labelling type
+                aui.toggleKeep()
+            elif sdl2.ext.key_pressed(events, 'i'):
+                # Interpolation begin or end
+                if interp_begin is not None:
+                    if aui.hasBbox(aui.last_object, frame_num):
+                        # Perform interpolation
+                        first_interp = min(interp_begin, frame_num)
+                        last_interp = max(interp_begin, frame_num)
+                        first_bbox = aui.getBbox(aui.last_object, first_interp)
+                        last_bbox = aui.getBbox(aui.last_object, last_interp)
+                        deltas = numpy.float32(last_bbox) - numpy.float32(first_bbox)
+                        for interframe in range(first_interp+1, last_interp):
+                            new_bbox = numpy.int32(numpy.round((numpy.int32(first_bbox) + (interframe - first_interp)/(last_interp - first_interp) * deltas)))
+
+                            aui.addBbox(aui.last_object, interframe, new_bbox)
+                    else:
+                        print("No bounding box at {} for interpolation.".format(frame_num))
+                    interp_begin = None
+                else:
+                    if aui.hasBbox(aui.last_object, frame_num):
+                        interp_begin = frame_num
+                        print("Interpolating from {}".format(interp_begin))
+                    else:
+                        print("No bounding box at {} for interpolation.".format(frame_num))
             elif sdl2.ext.key_pressed(events, sdl2.SDLK_RETURN):
                 # Complete new name entry
                 if aui.text_entry:
@@ -446,6 +522,8 @@ def main():
             # Stop tracker if there are no more frames.
             del tracker
             tracker = None
+        # Handle any label updates as frames are advanced.
+        aui.updateLabels(frame_num)
 
     # Clean up and quit
     font.close()

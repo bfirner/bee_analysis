@@ -37,7 +37,9 @@ def initializeAnnotations(data_provider):
             'total_frames': data_provider.totalFrames()
         },
         # No objects yet
-        'objects': {}
+        'objects': {},
+        # Label everything 'drop' to begin.
+        'keep': [False for _ in range(data_provider.totalFrames())],
     }
     return annotations
 
@@ -69,4 +71,14 @@ def removeFrameAnnotation(annotations, object_name, frame_num, annotation_name):
 def getFrameAnnotation(annotations, object_name, frame_num, annotation_name):
     """Return the annotations with the given frame and name."""
     return annotations['objects'][object_name]['frame_annotations'][frame_num][annotation_name]
+
+
+def setFrameLabel(annotations, frame_num, keep):
+    """Set the label at the current frame."""
+    annotations['keep'][frame_num] = keep
+
+
+def getFrameLabel(annotations, frame_num):
+    """Return the label at the current frame."""
+    return annotations['keep'][frame_num]
 
