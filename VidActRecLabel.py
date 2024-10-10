@@ -196,8 +196,9 @@ class AnnotatorUI():
         if objname in self.objects:
             utility.annotations.addFrameAnnotation(self.annotations, objname, cur_frame, "bbox", bbox)
 
-    def render(self, renderer, cur_frame):
+    def render(self, renderer, spriterenderer, cur_frame):
         if self.visible:
+            sprite_targets = []
             ######
             # Upper left elements that show the current object
             # Begin with the text box
@@ -230,7 +231,8 @@ class AnnotatorUI():
                         sdl2.SDL_SetTextureBlendMode(self.temp_bbox.texture, sdl2.SDL_BLENDMODE_BLEND)
                         sdl2.SDL_SetTextureAlphaMod(self.temp_bbox.texture, 100)
                     self.temp_bbox.position = min(self.bb_begin[0], self.bb_end[0]), min(self.bb_begin[1], self.bb_end[1])
-                    renderer.copy(self.temp_bbox, dstrect=self.temp_bbox.position)
+                    #renderer.copy(self.temp_bbox, dstrect=self.temp_bbox.position)
+                    sprite_targets.append(self.temp_bbox)
             for objidx, objname in enumerate(self.objects):
                 if utility.annotations.hasFrameAnnotation(self.annotations, objname, cur_frame, 'bbox'):
                     # Draw a box around the annotated object
@@ -252,7 +254,8 @@ class AnnotatorUI():
                         del tmp
 
                     self.bbox_sprites[objidx].position = bbox_coords[:2]
-                    renderer.copy(self.bbox_sprites[objidx], dstrect=self.bbox_sprites[objidx].position)
+                    #renderer.copy(self.bbox_sprites[objidx], dstrect=self.bbox_sprites[objidx].position)
+                    sprite_targets.append(self.bbox_sprites[objidx])
             ######
             # The current label and labelling state
             if self.labelling:
@@ -267,6 +270,7 @@ class AnnotatorUI():
             else:
                 # TODO FIXME Should be an offset from the right of the image, but we need the image dimension for that
                 renderer.copy(self.prompt_label_discard, dstrect=(700, 3*self.font_height//2))
+            spriterenderer.render(sprite_targets)
 
     def setVisibility(self, visible):
         self.visible = visible
@@ -318,7 +322,10 @@ def main():
     #renderflags = sdl2.SDL_RENDERER_SOFTWARE
     renderflags = (sdl2.SDL_RENDERER_ACCELERATED | sdl2.SDL_RENDERER_PRESENTVSYNC)
     renderer = sdl2.ext.Renderer(window, flags=renderflags)
-    factory = sdl2.ext.SpriteFactory(sdl2.ext.TEXTURE, renderer=renderer)
+    sprite_factory = sdl2.ext.SpriteFactory(sdl2.ext.TEXTURE, renderer=renderer)
+
+    # TODO Testing this rendering approach
+    spriterenderer = sprite_factory.create_sprite_render_system(window)
 
     # TODO FIXME Handle case when the default font is not present
     default_font = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
@@ -327,11 +334,11 @@ def main():
     font_height = sdl2.sdlttf.TTF_FontLineSkip(font.get_ttf_font())
 
     # For UI components
-    uifactory = sdl2.ext.UIFactory(factory)
+    uifactory = sdl2.ext.UIFactory(sprite_factory)
 
     # Make a UI element for annotations
     # It accepts new object names and allows the user to cycle through them.
-    aui = AnnotatorUI(annotations, factory, uifactory, renderer, font, provider.imageSize())
+    aui = AnnotatorUI(annotations, sprite_factory, uifactory, renderer, font, provider.imageSize())
 
     uiprocessor = sdl2.ext.UIProcessor()
 
@@ -347,6 +354,13 @@ def main():
     running = True
     frame_num = 0
     frame = provider.getFrame(frame_num)
+
+    ################
+    # Convert the image to an SDL surface then texture.
+    # Try to avoid doing this more frequently than we load new frames as the underlying
+    # SDL_ConvertSurface call inside of pillow_to_surface is memory intensive.
+    img_surface = sdl2.ext.image.pillow_to_surface(Image.fromarray((frame*255).astype(numpy.uint8)))
+    img_tx = sdl2.ext.Texture(renderer, img_surface)
 
     while running:
         # Prepare the screen
@@ -367,9 +381,7 @@ def main():
                 tracker = None
 
         ################
-        # Convert the image to an SDL surface, then texture, then copy it to the render window
-        img_surface = sdl2.ext.image.pillow_to_surface(Image.fromarray((frame*255).astype(numpy.uint8)))
-        img_tx = sdl2.ext.Texture(renderer, img_surface)
+        # Copy the current image to the render window
         renderer.copy(img_tx, dstrect=(0, 0))
 
         ################
@@ -378,7 +390,8 @@ def main():
         tx = sdl2.ext.Texture(renderer, txt_rendered)
         renderer.copy(tx, dstrect=(10, provider.imageSize()[1] - 2*font_height))
 
-        aui.render(renderer, frame_num)
+        #aui.render(renderer, frame_num)
+        aui.render(renderer, spriterenderer, frame_num)
 
         ################
         # TODO Draw annotations for this frame
@@ -480,7 +493,7 @@ def main():
                         last_bbox = aui.getBbox(aui.last_object, last_interp)
                         deltas = numpy.float32(last_bbox) - numpy.float32(first_bbox)
                         for interframe in range(first_interp+1, last_interp):
-                            new_bbox = numpy.int32(numpy.round((numpy.int32(first_bbox) + (interframe - first_interp)/(last_interp - first_interp) * deltas)))
+                            new_bbox = numpy.int32(numpy.round((numpy.int32(first_bbox) + (interframe - first_interp)/(last_interp - first_interp) * deltas))).tolist()
 
                             aui.addBbox(aui.last_object, interframe, new_bbox)
                     else:
@@ -518,6 +531,11 @@ def main():
         if next_frame != frame_num and provider.hasFrame(next_frame):
             frame_num = next_frame
             frame = provider.getFrame(frame_num)
+            # Create the image surface and texture for the renderer
+            # Try to avoid doing this more frequently than we load new frames as the underlying
+            # SDL_ConvertSurface call inside of pillow_to_surface is memory intensive.
+            img_surface = sdl2.ext.image.pillow_to_surface(Image.fromarray((frame*255).astype(numpy.uint8)))
+            img_tx = sdl2.ext.Texture(renderer, img_surface)
         elif tracker is not None:
             # Stop tracker if there are no more frames.
             del tracker
