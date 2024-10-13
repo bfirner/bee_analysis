@@ -211,6 +211,9 @@ class AnnotatorUI():
                 # Render the name of the current object below the prompt
                 cur_object = sdl2.ext.Texture(renderer, self.font.render_text("Current object: {}".format(self.last_object)))
             renderer.copy(cur_object, dstrect=(10, 3*self.font_height//2))
+            # The texture is no longer required once rendered.
+            # TODO We could check if things have changed and reuse it, but this is just text rendering.
+            del cur_object
             ######
             # The bounding boxes
             if self.bb_selection and self.bb_begin is not None and self.bb_end is not None:
@@ -357,10 +360,16 @@ def main():
 
     ################
     # Convert the image to an SDL surface then texture.
-    # Try to avoid doing this more frequently than we load new frames as the underlying
-    # SDL_ConvertSurface call inside of pillow_to_surface is memory intensive.
-    img_surface = sdl2.ext.image.pillow_to_surface(Image.fromarray((frame*255).astype(numpy.uint8)))
-    img_tx = sdl2.ext.Texture(renderer, img_surface)
+    def updateFrameUI(frame, renderer, frame_num, provider):
+        # Try to avoid doing this more frequently than we load new frames as the underlying
+        # SDL_ConvertSurface call inside of pillow_to_surface is memory intensive.
+        img_surface = sdl2.ext.image.pillow_to_surface(Image.fromarray((frame*255).astype(numpy.uint8)))
+        img_tx = sdl2.ext.Texture(renderer, img_surface)
+        # The current state text
+        txt_rendered = font.render_text("Frame {}/{}".format(frame_num, provider.totalFrames()))
+        return img_surface, img_tx, txt_rendered
+    img_surface, img_tx, txt_rendered = updateFrameUI(frame, renderer, frame_num, provider)
+
 
     while running:
         # Prepare the screen
@@ -386,7 +395,6 @@ def main():
 
         ################
         # Draw current state
-        txt_rendered = font.render_text("Frame {}/{}".format(frame_num, provider.totalFrames()))
         tx = sdl2.ext.Texture(renderer, txt_rendered)
         renderer.copy(tx, dstrect=(10, provider.imageSize()[1] - 2*font_height))
 
@@ -531,11 +539,12 @@ def main():
         if next_frame != frame_num and provider.hasFrame(next_frame):
             frame_num = next_frame
             frame = provider.getFrame(frame_num)
+            # Manually mark sufaces and textures for deletion. These can overwhelm pythons very robust garbage collector.
+            del img_surface
+            del img_tx
+            del txt_rendered
             # Create the image surface and texture for the renderer
-            # Try to avoid doing this more frequently than we load new frames as the underlying
-            # SDL_ConvertSurface call inside of pillow_to_surface is memory intensive.
-            img_surface = sdl2.ext.image.pillow_to_surface(Image.fromarray((frame*255).astype(numpy.uint8)))
-            img_tx = sdl2.ext.Texture(renderer, img_surface)
+            img_surface, img_tx, txt_rendered = updateFrameUI(frame, renderer, frame_num, provider)
         elif tracker is not None:
             # Stop tracker if there are no more frames.
             del tracker
