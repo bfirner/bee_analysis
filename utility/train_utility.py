@@ -27,7 +27,6 @@ def updateWithScaler(loss_fn, net, image_input, vector_input, labels, scaler, op
         labels         (torch.tensor): Desired network output.
         scaler (torch.cuda.amp.GradScaler): Scaler for automatic mixed precision training.
         optimizer       (torch.optim): Optimizer
-        normalizer  (torch.nn.module): Normalization for training labels.
     """
     optimizer.zero_grad()
     with torch.cuda.amp.autocast():

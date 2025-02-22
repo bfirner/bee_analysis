@@ -134,7 +134,7 @@ def getImageSize(data_path, decode_strs, img_format=None):
     Returns:
         image_size  (int): The size of images in the dataset.
     """
-    # We are assuming that there is the image name in the first entry of decode strs.
+    # We are assuming that the image name is in the first entry of decode strs.
     # This function is a bit hacky
     dataset = makeDataset(data_path, decode_strs, img_format)
     if isinstance(dataset, FlatbinDataset):

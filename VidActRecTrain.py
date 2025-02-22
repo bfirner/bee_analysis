@@ -372,14 +372,6 @@ vector_input_size = 0
 if 0 < len(args.vector_inputs):
     vector_input_size = getVectorSize(args.dataset, decode_strs, vector_range)
 
-# Decode the proper number of items for each sample from the dataloader
-# The field names are just being taken from the decode strings, but they cannot begin with a digit
-# or contain the '.' character, so the character "f" is prepended to each string and the '.' is
-# replaced with a '_'. The is a bit egregious, but it does guarantee that the tuple being used to
-# accept the output of the dataloader matches what is being used in webdataset decoding.
-LoopTuple = namedtuple('LoopTuple', ' '.join(["f" + s for s in decode_strs]).replace('.', '_'))
-dl_tuple = LoopTuple(*([None] * len(decode_strs)))
-
 # TODO FIXME Deterministic shuffle only shuffles within a range. Should perhaps manipulate what is
 # in the tar file by shuffling filenames after the dataset is created.
 dataset = (
