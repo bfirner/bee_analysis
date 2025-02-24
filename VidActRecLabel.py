@@ -514,6 +514,7 @@ def main():
             elif sdl2.ext.key_pressed(events, 'k'):
                 # Toggle labelling type
                 aui.toggleKeep()
+                aui.updateLabels(frame_num)
             elif sdl2.ext.key_pressed(events, 'i'):
                 # Interpolation begin or end
                 if interp_begin is not None:
