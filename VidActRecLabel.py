@@ -37,7 +37,7 @@ def getComponentRect(component):
 
 class AnnotatorUI():
     def __init__(self, annotations, sprite_factory, ui_factory, renderer, font, image_size):
-        self.visible = False
+        self.visible = True
         # When annotating, assume annotations apply to the same target as previously used.
         self.annotations = annotations
         ################
@@ -63,6 +63,11 @@ class AnnotatorUI():
         self.bb_selection = False
         self.prompt_new_object = sdl2.ext.Texture(renderer, font.render_text("Enter name of new object."))
         self.prompt_accept_object = sdl2.ext.Texture(renderer, font.render_text("Press tab to cycle objects."))
+        # For numeric inputs
+        # TODO Use an area to display the number
+        self.number_field = self.ui_factory.from_color(sdl2.ext.TEXTENTRY, (255, 255, 255, 192), size=(image_size[0]//3, 3 * self.font_height))
+        self.number_field.position = (2*image_size[0]//3, image_size[1]//2)
+        self.number_entry = False
         ################
         # Frame labelling
         self.labelling = False
@@ -117,6 +122,25 @@ class AnnotatorUI():
             self.text_entry = False
             sdl2.keyboard.SDL_StopTextInput()
 
+    def beginNumericInput(self):
+        if not self.number_entry:
+            self.setVisibility(True)
+            sdl2.keyboard.SDL_SetTextInputRect(getComponentRect(self.entry_field))
+            sdl2.keyboard.SDL_StartTextInput()
+            self.number_entry = True
+            self.num_buffer = ""
+
+    def endNumericInput(self):
+        """End numeric input (started with beginNumericInput) and return the number, or return None without any entry."""
+        number = None
+        if self.number_entry:
+            if 0 < len(self.num_buffer):
+                number = int(self.num_buffer)
+                self.num_buffer = None
+            self.num_entry = False
+            sdl2.keyboard.SDL_StopTextInput()
+        return number
+
     def beginSelector(self, cur_frame):
         """Begin bounding box selection."""
         self.bb_selection = True
@@ -143,9 +167,12 @@ class AnnotatorUI():
     def handleEvent(self, event):
         """Handle the possible text input event. Return true if the event is handled here."""
         if self.text_entry and event.type == sdl2.events.SDL_TEXTINPUT:
-            new_input =  sdl2.ext.compat.stringify(event.text.text, "utf-8")
-            print("Got new input {}".format(new_input))
+            new_input = sdl2.ext.compat.stringify(event.text.text, "utf-8")
             self.name_buffer += new_input
+            return True
+        elif self.number_entry and event.type == sdl2.events.SDL_TEXTINPUT:
+            new_input = sdl2.ext.compat.stringify(event.text.text, "utf-8")
+            self.num_buffer += new_input
             return True
         elif self.bb_selection and event.type == sdl2.events.SDL_MOUSEBUTTONDOWN and event.button.button == sdl2.mouse.SDL_BUTTON_LEFT:
             self.bb_begin = [event.button.x, event.button.y]
@@ -262,17 +289,13 @@ class AnnotatorUI():
             ######
             # The current label and labelling state
             if self.labelling:
-                # TODO FIXME Should be an offset from the right of the image, but we need the image dimension for that
-                renderer.copy(self.prompt_label_on, dstrect=(700, self.font_height//2))
+                renderer.copy(self.prompt_label_on, dstrect=(10, 6*self.font_height//2))
             else:
-                # TODO FIXME Should be an offset from the right of the image, but we need the image dimension for that
-                renderer.copy(self.prompt_label_off, dstrect=(700, self.font_height//2))
+                renderer.copy(self.prompt_label_off, dstrect=(10, 6*self.font_height//2))
             if utility.annotations.getFrameLabel(self.annotations, cur_frame):
-                # TODO FIXME Should be an offset from the right of the image, but we need the image dimension for that
-                renderer.copy(self.prompt_label_keep, dstrect=(700, 3*self.font_height//2))
+                renderer.copy(self.prompt_label_keep, dstrect=(10, 9*self.font_height//2))
             else:
-                # TODO FIXME Should be an offset from the right of the image, but we need the image dimension for that
-                renderer.copy(self.prompt_label_discard, dstrect=(700, 3*self.font_height//2))
+                renderer.copy(self.prompt_label_discard, dstrect=(10, 9*self.font_height//2))
             spriterenderer.render(sprite_targets)
 
     def setVisibility(self, visible):
@@ -482,8 +505,8 @@ def main():
                 print("Adding new object.")
                 aui.beginNameInput()
             elif sdl2.ext.key_pressed(events, 'j'):
-                # TODO Get frame input and then jump to a frame.
-                pass
+                # Get frame input and then jump to a frame.
+                aui.beginNumericInput()
             elif sdl2.ext.key_pressed(events, 'l'):
                 # Toggle labelling enable
                 aui.toggleLabelling()
@@ -517,10 +540,17 @@ def main():
                 # Complete new name entry
                 if aui.text_entry:
                     aui.endNameInput()
+                if aui.number_entry:
+                    target = aui.endNumericInput()
+                    if target is not None:
+                        print(f"Jumping to frame {target}")
+                        next_frame = target
             elif sdl2.ext.key_pressed(events, sdl2.SDLK_BACKSPACE):
                 # Remove a letter from the text entry
                 if aui.text_entry:
                     aui.name_buffer = aui.name_buffer[:-1]
+                if aui.number_entry:
+                    aui.num_buffer = aui.num_buffer[:-1]
             elif sdl2.ext.key_pressed(events, sdl2.SDLK_TAB):
                 if tracker is None:
                     # Cycle through the known object types
