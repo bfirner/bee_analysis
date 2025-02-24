@@ -15,6 +15,7 @@ NOTE: This is written for sdl2 verion 0.9.16
 
 import argparse
 import cv2
+import math
 import numpy
 import sys
 import sdl2.events
@@ -137,7 +138,7 @@ class AnnotatorUI():
             if 0 < len(self.num_buffer):
                 number = int(self.num_buffer)
                 self.num_buffer = None
-            self.num_entry = False
+            self.number_entry = False
             sdl2.keyboard.SDL_StopTextInput()
         return number
 
@@ -566,6 +567,7 @@ def main():
         if not running:
             print("User quit.")
             break
+        old_frame = frame_num
         if next_frame != frame_num and provider.hasFrame(next_frame):
             frame_num = next_frame
             frame = provider.getFrame(frame_num)
@@ -580,7 +582,13 @@ def main():
             del tracker
             tracker = None
         # Handle any label updates as frames are advanced.
-        aui.updateLabels(frame_num)
+        if old_frame != frame_num:
+            if abs(old_frame - frame_num) == 1:
+                aui.updateLabels(frame_num)
+            else:
+                # This is a group of frames that should be updated
+                sign = int(math.copysign(1, frame_num - old_frame))
+                aui.updateLabels(list(range(old_frame+sign, frame_num+sign, sign)))
 
     # Clean up and quit
     font.close()
