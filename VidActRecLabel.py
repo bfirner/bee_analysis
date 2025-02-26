@@ -25,6 +25,7 @@ import sdl2.mouse
 import sdl2.rect
 import sdl2.sdlttf
 import os
+import yaml
 
 from PIL import Image
 
@@ -64,6 +65,8 @@ class AnnotatorUI():
         self.bb_selection = False
         self.prompt_new_object = sdl2.ext.Texture(renderer, font.render_text("Enter name of new object."))
         self.prompt_accept_object = sdl2.ext.Texture(renderer, font.render_text("Press tab to cycle objects."))
+        # Patch selection
+        self.patch_selection = False
         # For numeric inputs
         # TODO Use an area to display the number
         self.number_field = self.ui_factory.from_color(sdl2.ext.TEXTENTRY, (255, 255, 255, 192), size=(image_size[0]//3, 3 * self.font_height))
@@ -154,8 +157,8 @@ class AnnotatorUI():
         """End bounding box selection and add the current bbox into the annotations."""
         # Make annotations for self.last_object from point self.bb_begin to self.bb_end
         if self.bb_begin is not None and self.bb_end is not None:
-            # TODO FIXME No, the first two points should be the upper left, but the user could have draw the bbox in the other direction
-            # The bounding box should have the upper left coordinate first, then the lower right
+            # The first two points should be the upper left, but the user could have drawn the bbox
+            # in the other direction.  Use min and max to get the correct ordering.
             bbox = [min(self.bb_begin[x], self.bb_end[x]) for x in range(2)] + [max(self.bb_begin[x], self.bb_end[x]) for x in range(2)]
             # Don't save if the size isn't at least a pixel in both dimensions
             if 0 < bbox[2] - bbox[0] and 0 < bbox[3] - bbox[1]:
@@ -164,6 +167,33 @@ class AnnotatorUI():
         self.bb_begin = None
         self.bb_end = None
         self.bb_selection = False
+
+    def beginPatch(self):
+        """Begin selection of a patch area."""
+        self.patch_selection = True
+        # x, y origin
+        self.patch_origin = None
+        # width and height from the origin
+        self.patch_dims = None
+
+    def endPatch(self):
+        """Return the patch coordinates."""
+        if self.patch_selection and self.patch_origin is not None and self.patch_dims is not None:
+            self.patch_selection = False
+            # Change any negative dimensions into positive ones and adjust the origin as appropriate
+            for dim in range(2):
+                if self.patch_dims[dim] < 0:
+                    self.patch_origin[dim] = self.patch_origin[dim] + self.patch_dims[dim]
+                    self.patch_dims[dim] = self.patch_dims[dim] * -1
+            patch_info = {
+                'crop_x_offset': self.patch_origin[0],
+                'crop_y_offset': self.patch_origin[1],
+                'width': self.patch_dims[0],
+                'height': self.patch_dims[1]
+            }
+            return patch_info
+        self.patch_selection = False
+        return None
 
     def handleEvent(self, event):
         """Handle the possible text input event. Return true if the event is handled here."""
@@ -188,10 +218,20 @@ class AnnotatorUI():
             # No more moving of the bounding box
             self.endSelector()
             return True
+        elif self.patch_selection and event.type == sdl2.events.SDL_MOUSEBUTTONDOWN and event.button.button == sdl2.mouse.SDL_BUTTON_LEFT:
+            # Initialize on the first click, adjust on other clicks
+            if self.patch_origin is None:
+                self.patch_origin = [event.button.x, event.button.y]
+            # TODO Check where the click occurs and begin adjust just x or y and either the origin or the dimensions
+            return True
+        elif self.patch_selection and self.patch_origin is not None and event.type == sdl2.events.SDL_MOUSEMOTION:
+            self.patch_dims = [event.button.x - self.patch_origin[0], event.button.y - self.patch_origin[1]]
+            return True
+
         return False
 
     def active(self):
-        return self.text_entry or self.bb_selection
+        return self.text_entry or self.bb_selection or self.patch_selection
 
     def deactivate(self):
         """Call when the user completes the current action (such as with the enter key)"""
@@ -199,6 +239,8 @@ class AnnotatorUI():
             self.endNameInput()
         elif self.bb_selection:
             self.endSelector()
+        elif self.patch_selection:
+            self.endPatch()
 
     def hasBbox(self, objname, cur_frame):
         """True if the bounding box for the object exists at this frame."""
@@ -287,6 +329,28 @@ class AnnotatorUI():
                     self.bbox_sprites[objidx].position = bbox_coords[:2]
                     #renderer.copy(self.bbox_sprites[objidx], dstrect=self.bbox_sprites[objidx].position)
                     sprite_targets.append(self.bbox_sprites[objidx])
+            ######
+            # Patch box
+            if self.patch_selection and self.patch_origin is not None and self.patch_dims is not None:
+                # Something is being drawn, render it
+                bsize = (abs(self.patch_dims[0]), abs(self.patch_dims[1]))
+                if bsize[0] > 0 and bsize[1] > 0:
+                    if self.temp_bbox is None:
+                        self.temp_bbox = self.sprite_factory.from_color((200, 200, 50, 15), size=bsize)
+                        # NOTE SDL seems to require these to use alpha transparency, even though it was already set in the from_color function.
+                        sdl2.SDL_SetTextureBlendMode(self.temp_bbox.texture, sdl2.SDL_BLENDMODE_BLEND)
+                        sdl2.SDL_SetTextureAlphaMod(self.temp_bbox.texture, 100)
+                    else:
+                        # TODO FIXME We actually just want to resize the bounding box, but sprites don't support that. This implies that we don't really want to be using a sprite.
+                        #self.temp_bbox.size = bsize
+                        del self.temp_bbox
+                        self.temp_bbox = self.sprite_factory.from_color((200, 200, 50, 15), size=bsize)
+                        # NOTE SDL seems to require these to use alpha transparency, even though it was already set in the from_color function.
+                        sdl2.SDL_SetTextureBlendMode(self.temp_bbox.texture, sdl2.SDL_BLENDMODE_BLEND)
+                        sdl2.SDL_SetTextureAlphaMod(self.temp_bbox.texture, 100)
+                    self.temp_bbox.position = min(self.patch_origin[0], self.patch_origin[0] + self.patch_dims[0]), min(self.patch_origin[1], self.patch_origin[1] + self.patch_dims[1])
+                    #renderer.copy(self.temp_bbox, dstrect=self.temp_bbox.position)
+                    sprite_targets.append(self.temp_bbox)
             ######
             # The current label and labelling state
             if self.labelling:
@@ -505,6 +569,17 @@ def main():
             elif sdl2.ext.key_pressed(events, 'n'):
                 print("Adding new object.")
                 aui.beginNameInput()
+            elif sdl2.ext.key_pressed(events, 'p'):
+                print("Creating patch params.")
+                if not aui.patch_selection:
+                    aui.beginPatch()
+                else:
+                    patch_params = aui.endPatch()
+                    if patch_params is not None:
+                        patch_file = os.path.join(args.source_dir, "image_proc.yaml")
+                        print(f"Saving patch parameters into {patch_file}")
+                        with open(patch_file, "w", newline=None) as pfile:
+                            yaml.dump(patch_params, pfile)
             elif sdl2.ext.key_pressed(events, 'j'):
                 # Get frame input and then jump to a frame.
                 aui.beginNumericInput()
