@@ -398,7 +398,7 @@ def evalEpoch(
                     dim=1,
                 )
 
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast("cuda"):
                 vector_input = None
                 if vector_range.start != vector_range.stop:
                     vector_input = extractVectors(dl_tuple, vector_range).to(device)
