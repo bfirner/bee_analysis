@@ -3,6 +3,7 @@
 """
 Utility functions for PyTorch training
 """
+import logging
 import datetime
 import torch
 
@@ -12,11 +13,15 @@ from utility.dataset_utility import extractVectors
 
 def normalizeImages(images, epsilon=1e-05):
     # normalize per channel, so compute over height and width. This handles images with or without a batch dimension.
-    v, m = torch.var_mean(images, dim=(images.dim()-2, images.dim()-1), keepdim=True)
+    v, m = torch.var_mean(
+        images, dim=(images.dim() - 2, images.dim() - 1), keepdim=True
+    )
     return (images - m) / (v + epsilon)
 
 
-def updateWithScaler(loss_fn, net, image_input, vector_input, labels, scaler, optimizer):
+def updateWithScaler(
+    loss_fn, net, image_input, vector_input, labels, scaler, optimizer
+):
     """Update with scaler used in mixed precision training.
 
     Arguments:
@@ -50,7 +55,10 @@ def updateWithScaler(loss_fn, net, image_input, vector_input, labels, scaler, op
 
     return out, loss
 
-def updateWithoutScalerOriginal(loss_fn, net, image_input, vector_input, labels, optimizer):
+
+def updateWithoutScalerOriginal(
+    loss_fn, net, image_input, vector_input, labels, optimizer
+):
     """Update without any scaling from mixed precision training.
 
     Arguments:
@@ -72,6 +80,7 @@ def updateWithoutScalerOriginal(loss_fn, net, image_input, vector_input, labels,
     optimizer.step()
 
     return out, loss
+
 
 def updateWithoutScaler(loss_fn, net, image_input, vector_input, labels, optimizer):
     """Update without any scaling from mixed precision training.
@@ -92,26 +101,24 @@ def updateWithoutScaler(loss_fn, net, image_input, vector_input, labels, optimiz
     loss = loss_fn(out, labels)
 
     # TODO FIXME Just experimenting with covariance matrix loss thingy
-    #if vector_input is None:
+    # if vector_input is None:
     #    features = net.forwardToFeatures(image_input.contiguous())
     #    out = net.classifier(features)
-    #else:
+    # else:
     #    features = net.forwardToFeatures(image_input.contiguous())
     #    out = net.classifier(torch.cat((features, vector_input), dim=1))
-    #cor_matrix = features.T.cov()
-    #cor_loss = 0.01 * (cor_matrix - torch.eye(cor_matrix.size(1)).cuda()).mean().abs()
-    #loss = loss_fn(out, labels) + cor_loss
+    # cor_matrix = features.T.cov()
+    # cor_loss = 0.01 * (cor_matrix - torch.eye(cor_matrix.size(1)).cuda()).mean().abs()
+    # loss = loss_fn(out, labels) + cor_loss
 
     # TODO FIXME Adding loss to weights, again as an experiment
     # Nope, this causes regression to the mean
-    #if vector_input is None:
+    # if vector_input is None:
     #    out = net(image_input.contiguous())
-    #else:
+    # else:
     #    out = net(image_input.contiguous(), vector_input.contiguous())
-    #layer_norm = torch.linalg.matrix_norm(net.neck[0].weight).sum() + torch.linalg.matrix_norm(net.neck[1].weight).sum()
-    #loss = loss_fn(out, labels) + 0.001 * layer_norm
-
-
+    # layer_norm = torch.linalg.matrix_norm(net.neck[0].weight).sum() + torch.linalg.matrix_norm(net.neck[1].weight).sum()
+    # loss = loss_fn(out, labels) + 0.001 * layer_norm
 
     loss.backward()
     optimizer.step()
@@ -119,7 +126,7 @@ def updateWithoutScaler(loss_fn, net, image_input, vector_input, labels, optimiz
     return out, loss
 
 
-class LabelHandler():
+class LabelHandler:
     """The label handler stores label processing variables and handles label pre-processing."""
 
     def __init__(self, label_size, label_range, label_names=None):
@@ -192,7 +199,7 @@ def createPositionMask(height, width):
             for x in range(width):
                 # By taking the difference of one pixel to the next the CNN can discover the pixel
                 # position relative to the center of the image.
-                mask[0,y,x] = abs(y/height - 0.5)**2 + abs(x/width - 0.5)**2
+                mask[0, y, x] = abs(y / height - 0.5) ** 2 + abs(x / width - 0.5) ** 2
         return mask
 
 
@@ -200,9 +207,24 @@ def createPositionMask(height, width):
 epoch = 0
 
 
-def trainEpoch(net, optimizer, scaler, label_handler,
-        train_stats, dataloader, vector_range, train_frames, normalize_images, loss_fn, nn_postprocess,
-        encode_position, worst_training, skip_metadata, best_training=None, device='cuda'):
+def trainEpoch(
+    net,
+    optimizer,
+    scaler,
+    label_handler,
+    train_stats,
+    dataloader,
+    vector_range,
+    train_frames,
+    normalize_images,
+    loss_fn,
+    nn_postprocess,
+    encode_position,
+    worst_training,
+    skip_metadata,
+    best_training=None,
+    device="cuda",
+):
     """
 
     evaluate         (bool): True to run an evaluation after every training epoch.
@@ -216,8 +238,8 @@ def trainEpoch(net, optimizer, scaler, label_handler,
     position_mask = None
     for batch_num, dl_tuple in enumerate(dataloader):
         dateNow = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-        if ( (batch_num % 1000) == 1):
-            print ("Log: at batch %d at %s" % (batch_num,dateNow))
+        if (batch_num % 1000) == 1:
+            logging.info("Log: at batch %d at %s" % (batch_num, dateNow))
 
         # No gradients for setup stuff
         with torch.no_grad():
@@ -237,25 +259,43 @@ def trainEpoch(net, optimizer, scaler, label_handler,
                 net_input = torch.cat(raw_input, dim=1)
             # Normalize inputs: input = (input - mean)/stddev
             if normalize_images:
-                    # Normalize per channel, so compute over height and width
-                    net_input = normalizeImages(net_input)
+                # Normalize per channel, so compute over height and width
+                net_input = normalizeImages(net_input)
 
             if encode_position:
                 if position_mask is None:
-                    position_mask = createPositionMask(net_input.size(-2), net_input.size(-1)).to(device)
-                net_input = torch.cat((net_input, position_mask.expand(net_input.size(0), -1, -1, -1)), dim=1)
+                    position_mask = createPositionMask(
+                        net_input.size(-2), net_input.size(-1)
+                    ).to(device)
+                net_input = torch.cat(
+                    (net_input, position_mask.expand(net_input.size(0), -1, -1, -1)),
+                    dim=1,
+                )
 
             labels = extractVectors(dl_tuple, label_handler.range()).to(device)
-            vector_inputs=None
+            vector_inputs = None
             if vector_range.start != vector_range.stop:
                 vector_inputs = extractVectors(dl_tuple, vector_range).to(device)
 
         if scaler is not None:
-            out, loss = updateWithScaler(loss_fn, net, net_input, vector_inputs,
-                    label_handler.preprocess(labels), scaler, optimizer)
+            out, loss = updateWithScaler(
+                loss_fn,
+                net,
+                net_input,
+                vector_inputs,
+                label_handler.preprocess(labels),
+                scaler,
+                optimizer,
+            )
         else:
-            out, loss = updateWithoutScaler(loss_fn, net, net_input, vector_inputs,
-                    label_handler.preprocess(labels), optimizer)
+            out, loss = updateWithoutScaler(
+                loss_fn,
+                net,
+                net_input,
+                vector_inputs,
+                label_handler.preprocess(labels),
+                optimizer,
+            )
 
         # Fill in the confusion matrix and worst examples.
         with torch.no_grad():
@@ -270,8 +310,12 @@ def trainEpoch(net, optimizer, scaler, label_handler,
 
             if worst_training is not None or best_training is not None:
                 if skip_metadata:
-                    metadata = [",,batch_{}-{}".format(batch_num, i) for i in range(labels.size(0))]
+                    metadata = [
+                        ",,batch_{}-{}".format(batch_num, i)
+                        for i in range(labels.size(0))
+                    ]
                 else:
+                    # ! why is this not defined?
                     metadata = dl_tuple[metadata_index.detach()]
                 # For each item in the batch see if it requires an update to the worst examples
                 # If the DNN should have predicted this image was a member of the labelled class
@@ -283,20 +327,45 @@ def trainEpoch(net, optimizer, scaler, label_handler,
                     # The best and worst comparisons use absolute values, so just get a difference
                     for label_idx in range(post_labels[i].size()[0]):
                         if worst_training is not None:
-                            worst_training.test(label_idx, post_labels[i].tolist(), post_out[i].tolist(), input_images[i], metadata[i])
+                            worst_training.test(
+                                label_idx,
+                                post_labels[i].tolist(),
+                                post_out[i].tolist(),
+                                input_images[i],
+                                metadata[i],
+                            )
                         if best_training is not None:
-                            best_training.test(label_idx, post_labels[i].tolist(), post_out[i].tolist(), input_images[i], metadata[i])
+                            best_training.test(
+                                label_idx,
+                                post_labels[i].tolist(),
+                                post_out[i].tolist(),
+                                input_images[i],
+                                metadata[i],
+                            )
 
-    print(f"Training results:")
-    print(train_stats.makeResults())
+    logging.info(f"Training results:")
+    logging.info(train_stats.makeResults())
     if worst_training is not None:
         worst_training.save()
     if best_training is not None:
         best_training.save()
 
 
-def evalEpoch(net, label_handler, eval_stats, eval_dataloader, vector_range, train_frames,
-        normalize_images, loss_fn, nn_postprocess, encode_position = False, worst_eval=None, best_eval=None, device='cuda'):
+def evalEpoch(
+    net,
+    label_handler,
+    eval_stats,
+    eval_dataloader,
+    vector_range,
+    train_frames,
+    normalize_images,
+    loss_fn,
+    nn_postprocess,
+    encode_position=False,
+    worst_eval=None,
+    best_eval=None,
+    device="cuda",
+):
     net.eval()
     position_mask = None
     with torch.no_grad():
@@ -321,11 +390,16 @@ def evalEpoch(net, label_handler, eval_stats, eval_dataloader, vector_range, tra
 
             if encode_position:
                 if position_mask is None:
-                    position_mask = createPositionMask(net_input.size(-2), net_input.size(-1)).to(device)
-                net_input = torch.cat((net_input, position_mask.expand(net_input.size(0), -1, -1, -1)), dim=1)
+                    position_mask = createPositionMask(
+                        net_input.size(-2), net_input.size(-1)
+                    ).to(device)
+                net_input = torch.cat(
+                    (net_input, position_mask.expand(net_input.size(0), -1, -1, -1)),
+                    dim=1,
+                )
 
             with torch.cuda.amp.autocast():
-                vector_input=None
+                vector_input = None
                 if vector_range.start != vector_range.stop:
                     vector_input = extractVectors(dl_tuple, vector_range).to(device)
                 out = net.forward(net_input, vector_input)
@@ -344,7 +418,10 @@ def evalEpoch(net, label_handler, eval_stats, eval_dataloader, vector_range, tra
                 eval_stats.update(predictions=post_out, labels=post_labels)
                 # Worst and best examples
                 if worst_eval is not None or best_eval is not None:
-                    metadata = [",,batch_{}-{}".format(batch_num, i) for i in range(labels.size(0))]
+                    metadata = [
+                        ",,batch_{}-{}".format(batch_num, i)
+                        for i in range(labels.size(0))
+                    ]
                     # For each item in the batch see if it requires an update to the worst examples
                     # If the DNN should have predicted this image was a member of the labelled class
                     # then see if this image should be inserted into the worst_n queue for the
@@ -355,9 +432,21 @@ def evalEpoch(net, label_handler, eval_stats, eval_dataloader, vector_range, tra
                         # The best and worst comparisons use absolute values, so just get a difference
                         for label_idx in range(post_labels[i].size()[0]):
                             if worst_eval is not None:
-                                worst_eval.test(label_idx, post_labels[i].tolist(), post_out[i].tolist(), input_images[i], metadata[i])
+                                worst_eval.test(
+                                    label_idx,
+                                    post_labels[i].tolist(),
+                                    post_out[i].tolist(),
+                                    input_images[i],
+                                    metadata[i],
+                                )
                             if best_eval is not None:
-                                best_eval.test(label_idx, post_labels[i].tolist(), post_out[i].tolist(), input_images[i], metadata[i])
+                                best_eval.test(
+                                    label_idx,
+                                    post_labels[i].tolist(),
+                                    post_out[i].tolist(),
+                                    input_images[i],
+                                    metadata[i],
+                                )
         # Print evaluation information
         print(f"Evaluation results:")
         print(eval_stats.makeResults())
