@@ -1,5 +1,6 @@
 #! /usr/bin/python3
 
+
 """
 This will train a model using a webdataset tar archive for data input.
 If you use Cuda >= 10.2 then running in deterministic mode requires this environment variable to be
@@ -11,6 +12,7 @@ mode. If you encounter it, the solution is to just disable determinism with --no
 
 # Not using video reading library from torchvision.
 # It only works with old versions of ffmpeg.
+# ---------------------- Imports ----------------------
 import argparse
 import csv
 import datetime
@@ -26,184 +28,94 @@ import torch
 import torch.cuda.amp
 import webdataset as wds
 from collections import namedtuple
+from torchvision import transforms
+import logging
 
-from utility.dataset_utility import (extractVectors, getImageSize, getVectorSize)
-from utility.eval_utility import (ConfusionMatrix, OnlineStatistics, RegressionResults, WorstExamples)
-from utility.model_utility import (restoreModelAndState)
-from utility.train_utility import (LabelHandler, evalEpoch, trainEpoch, updateWithScaler, updateWithoutScaler)
+from utility.dataset_utility import extractVectors, getImageSize, getVectorSize
+from utility.eval_utility import ConfusionMatrix, OnlineStatistics, RegressionResults, WorstExamples
+from utility.model_utility import restoreModelAndState
+from utility.train_utility import LabelHandler, evalEpoch, trainEpoch, updateWithScaler, updateWithoutScaler
+from utility.saliency_utils import plot_gradcam_for_multichannel_input
 
 from models.alexnet import AlexLikeNet
 from models.bennet import BenNet
+from models.resnet import ResNet18, ResNet34
+from models.resnext import ResNext18, ResNext34, ResNext50
+from models.convnext import ConvNextExtraTiny, ConvNextTiny, ConvNextSmall, ConvNextBase
 from models.modules import Denormalizer, Normalizer
-from models.resnet import (ResNet18, ResNet34)
-from models.resnext import (ResNext18, ResNext34, ResNext50)
-from models.convnext import (ConvNextExtraTiny, ConvNextTiny, ConvNextSmall, ConvNextBase)
 
-
-
-# Argument parser setup for the program.
+# ---------------------- Argument Parser ----------------------
 parser = argparse.ArgumentParser(
-    description="Perform data preparation for DNN training on a video set.")
-parser.add_argument(
-    '--template',
-    required=False,
-    default=None,
-    choices=['bees', 'multilabel_detection'],
-    type=str,
-    help=('Set other options automatically based upon a typical training template.'
-        'Template settings are overriden by other selected options.'
-        'bees: Alexnet model with index labels are converted to one hot labels.'
-        'multilabel: Multilabels are loaded from "detection.pth", binary cross entropy loss is used.'))
-parser.add_argument(
-    'dataset',
-    nargs='+',
-    type=str,
-    help='Dataset for training.')
-parser.add_argument(
-    '--sample_frames',
-    type=int,
-    required=False,
-    default=1,
-    help='Number of frames in each sample.')
-parser.add_argument(
-    '--outname',
-    type=str,
-    required=False,
-    default="model.checkpoint",
-    help='Base name for model, checkpoint, and metadata saving.')
-parser.add_argument(
-    '--resume_from',
-    type=str,
-    required=False,
-    help='Model weights to restore.')
-parser.add_argument(
-    '--epochs',
-    type=int,
-    required=False,
-    default=15,
-    help='Total epochs to train.')
-parser.add_argument(
-    '--seed',
-    type=int,
-    required=False,
-    default='0',
-    help="Seed to use for RNG initialization.")
-parser.add_argument(
-    '--normalize',
-    required=False,
-    default=False,
-    action="store_true",
-    help=("Normalize inputs: input = (input - mean) / stddev. "
-        "Note that VidActRecDataprep is already normalizing so this may not be required."))
-parser.add_argument(
-    '--normalize_outputs',
-    required=False,
-    default=False,
-    action="store_true",
-    help=("Normalize the outputs: output = (output - mean) / stddev. "
-        "This will read the entire dataset to find these values, delaying initial training."))
-parser.add_argument(
-    '--modeltype',
-    type=str,
-    required=False,
-    default="resnext18",
-    choices=["alexnet", "resnet18", "resnet34", "bennet", "resnext50", "resnext34", "resnext18",
-    "convnextxt", "convnextt", "convnexts", "convnextb"],
-    help="Model to use for training.")
-parser.add_argument(
-    '--no_train',
-    required=False,
-    default=False,
-    action='store_true',
-    help='Set this flag to skip training. Useful to load an already trained model for evaluation.')
-parser.add_argument(
-    '--evaluate',
-    type=str,
-    required=False,
-    default=None,
-    help='Evaluate with the given dataset.')
-parser.add_argument(
-    '--save_top_n',
-    type=int,
-    required=False,
-    default=None,
-    help='Save N images for each class with the highest classification score. Works with --evaluate')
-parser.add_argument(
-    '--save_worst_n',
-    type=int,
-    required=False,
-    default=None,
-    help='Save N images for each class with the lowest classification score. Works with --evaluate')
-parser.add_argument(
-    '--not_deterministic',
-    required=False,
-    default=False,
-    action='store_true',
-    help='Set this to disable deterministic training.')
-parser.add_argument(
-    '--labels',
-    type=str,
-    # Support an array of strings to have multiple different label targets.
-    nargs='+',
-    required=False,
-    default=["cls"],
-    help='Files to decode from webdataset as the DNN output target labels.')
-parser.add_argument(
-    '--vector_inputs',
-    type=str,
-    # Support an array of strings to have multiple different label targets.
-    nargs='+',
-    required=False,
-    default=[],
-    help='Files to decode from webdataset as DNN vector inputs.')
-parser.add_argument(
-    '--skip_metadata',
-    required=False,
-    default=False,
-    action='store_true',
-    help='Set to skip loading metadata.txt from the webdataset.')
-parser.add_argument(
-    '--convert_idx_to_classes',
-    required=False,
-    default=1,
-    choices=[0, 1],
-    type=int,
-    help='Train output as a classifier by converting all labels to one-hot vectors.')
-parser.add_argument(
-    '--num_outputs',
-    required=False,
-    default=3,
-    type=int,
-    help='The elements of the one-hot encoding of the label, if convert_idx_to_classes is set.')
-parser.add_argument(
-    '--label_offset',
-    required=False,
-    default=1,
-    type=int,
-    help='The starting value of classes when training with cls labels (the labels value is "cls").')
-parser.add_argument(
-    '--loss_fun',
-    required=False,
-    default='CrossEntropyLoss',
-    choices=['NLLLoss', 'BCEWithLogitsLoss', 'CrossEntropyLoss', 'L1Loss', 'MSELoss', 'BCELoss'],
-    type=str,
-    help="Loss function to use during training.")
+    description="Perform data preparation for DNN training on a video set."
+)
+# (Keep existing arguments from first version)
+parser.add_argument('--template', required=False, default=None, choices=['bees','multilabel_detection'], type=str,
+                    help="Set other options automatically based upon a typical training template.")
+parser.add_argument('dataset', nargs='+', type=str, help='Dataset for training.')
+parser.add_argument('--sample_frames', type=int, required=False, default=1, help='Number of frames in each sample.')
+parser.add_argument('--outname', type=str, required=False, default="model.checkpoint",
+                    help='Base name for model, checkpoint, and metadata saving.')
+parser.add_argument('--resume_from', type=str, required=False, help='Model weights to restore.')
+parser.add_argument('--epochs', type=int, required=False, default=15, help='Total epochs to train.')
+parser.add_argument('--seed', type=int, required=False, default='0', help="Seed to use for RNG initialization.")
+parser.add_argument('--normalize', required=False, default=False, action="store_true",
+                    help="Normalize inputs: input = (input - mean) / stddev.")
+parser.add_argument('--normalize_outputs', required=False, default=False, action="store_true",
+                    help="Normalize the outputs. (For regression loss only)")
+parser.add_argument('--modeltype', type=str, required=False, default="resnext18",
+                    choices=["alexnet", "resnet18", "resnet34", "bennet", "resnext50", "resnext34", "resnext18",
+                             "convnextxt", "convnextt", "convnexts", "convnextb"],
+                    help="Model to use for training.")
+parser.add_argument('--no_train', required=False, default=False, action='store_true',
+                    help='Skip training; useful for evaluation.')
+parser.add_argument('--evaluate', type=str, required=False, default=None, help='Evaluate with given dataset.')
+parser.add_argument('--save_top_n', type=int, required=False, default=None,
+                    help='Save N images for class with highest prediction score (with --evaluate).')
+parser.add_argument('--save_worst_n', type=int, required=False, default=None,
+                    help='Save N images for class with lowest prediction score (with --evaluate).')
+parser.add_argument('--not_deterministic', required=False, default=False, action='store_true',
+                    help='Disable deterministic training.')
+parser.add_argument('--labels', type=str, nargs='+', required=False, default=["cls"],
+                    help='Files to decode from webdataset as the DNN output target labels.')
+parser.add_argument('--vector_inputs', type=str, nargs='+', required=False, default=[],
+                    help='Files to decode from webdataset as DNN vector inputs.')
+parser.add_argument('--skip_metadata', required=False, default=False, action='store_true',
+                    help='Skip loading metadata.txt from the webdataset.')
+parser.add_argument('--convert_idx_to_classes', required=False, default=1, choices=[0,1], type=int,
+                    help='Convert labels to one-hot if set to 1.')
+parser.add_argument('--num_outputs', required=False, default=3, type=int,
+                    help='Number of one-hot elements if converting label indices.')
+parser.add_argument('--label_offset', required=False, default=1, type=int,
+                    help='Starting value of classes for "cls" labels.')
+parser.add_argument('--loss_fun', required=False, default='CrossEntropyLoss',
+                    choices=['NLLLoss','BCEWithLogitsLoss','CrossEntropyLoss','L1Loss','MSELoss','BCELoss'],
+                    type=str, help="Loss function to use.")
+
+# ---------------------- New GradCAM & Debug Options ----------------------
+parser.add_argument('--gradcam_cnn_model_layer', nargs="+", required=False,
+                    choices=["model_a.0.0","model_a.1.0","model_a.2.0","model_a.3.0","model_a.4.0",
+                             "model_b.0.0","model_b.1.0","model_b.2.0","model_b.3.0","model_b.4.0"],
+                    default=["model_a.4.0","model_b.4.0"],
+                    help="Model layers for gradcam plots.")
+parser.add_argument('--debug', required=False, action="store_true", default=False,
+                    help="Enable debugging output.")
 
 args = parser.parse_args()
 
-# these next clauses are for scripts so that we have a log of what was called on what machine and when.
-python_log =  os.system("which python3")
+# ---------------------- Setup Logging and Device ----------------------
+logging.basicConfig(format="%(asctime)s: %(message)s", level=logging.INFO, datefmt="%Y-%m-%d %H:%M:%S")
+if args.debug:
+    logging.getLogger().setLevel(logging.DEBUG)
+logging.info(f"Parsed arguments: {args}")
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+logging.info(f"Using device: {device}")
+
+# ---------------------- Environment Setup ----------------------
+# Log system info
+python_log = os.system("which python3")
 machine_log = os.system("uname -a")
 date_log = os.system("date")
-
-print("Log: Program_args: ",end='')
-for theArg in sys.argv :
-    print(theArg + " ",end='')
-print(" ")
-
-print("Log: Started: ",date_log)
-print("Log: Machine: ",machine_log)
-print("Log: Python_version: ",python_log)
 
 torch.use_deterministic_algorithms(not args.not_deterministic)
 torch.manual_seed(args.seed)
@@ -211,10 +123,10 @@ random.seed(0)
 numpy.random.seed(0)
 
 if args.template is not None:
-    if 'bees' == args.template:
+    if args.template == 'bees':
         if '--modeltype' not in sys.argv:
             args.modeltype = 'alexnet'
-    elif 'multilabel_detection' == args.template:
+    elif args.template == 'multilabel_detection':
         if '--modeltype' not in sys.argv:
             args.modeltype = 'bennet'
         if '--skip_metadata' not in sys.argv:
@@ -226,222 +138,322 @@ if args.template is not None:
         if '--loss_fun' not in sys.argv:
             args.loss_fun = 'BCEWithLogitsLoss'
 
-# Convert the numeric input to a bool
-convert_idx_to_classes = args.convert_idx_to_classes == 1
-
-
-loss_fn = getattr(torch.nn, args.loss_fun)()
-
-# Later on we will need to change behavior if the loss function is regression rather than
-# classification
+# ---------------------- Loss Function & Label Preprocessing ----------------------
+loss_fn = getattr(torch.nn, args.loss_fun)().to(device=device)
 regression_loss = ['L1Loss', 'MSELoss']
 
 in_frames = args.sample_frames
 decode_strs = []
-label_decode_strs = []
-# The image for a particular frame
 for i in range(in_frames):
     decode_strs.append(f"{i}.png")
-
-# The class label(s) or regression targets
+# Append label decode strings (supporting multiple labels)
 label_range = slice(len(decode_strs), len(decode_strs) + len(args.labels))
 for label_str in args.labels:
     decode_strs.append(label_str)
-    label_decode_strs.append(label_str)
-
-# Vector inputs (if there are none then the slice will be an empty range)
+# Append vector inputs if given
 vector_range = slice(label_range.stop, label_range.stop + len(args.vector_inputs))
 for vector_str in args.vector_inputs:
     decode_strs.append(vector_str)
-
-# Metadata for this sample. A string of format: f"{video_path},{frame},{time}"
+# Append metadata if not skipped
 if not args.skip_metadata:
     metadata_index = len(decode_strs)
     decode_strs.append("metadata.txt")
 
-# The default labels for the bee videos are "1, 2, 3" instead of "0, 1, 2"
-if "cls" != args.labels[0]:
+if args.labels[0] != "cls":
     label_offset = 0
 else:
     label_offset = args.label_offset
-print("Adjusting labels with offset {}".format(label_offset))
+logging.info(f"Adjusting labels with offset {label_offset}")
 
-
-print(f"Training with dataset {args.dataset}")
-# If we are converting to a one-hot encoding output then we need to check the argument that
-# specifies the number of output elements. Otherwise we can check the number of elements in the
-# webdataset.
-label_size = getVectorSize(args.dataset, decode_strs, label_range)
-if convert_idx_to_classes:
-    label_size = label_size * args.num_outputs
-
-label_names = None
-# See if we can deduce the label names
-if not convert_idx_to_classes:
-    label_names = []
-    for label_idx, out_elem in enumerate(range(label_range.start, label_range.stop)):
-        label_elements = getVectorSize(args.dataset, decode_strs, slice(out_elem, out_elem+1))
-        # Give this output the label name directly or add a number if multiple outputs come from
-        # this label
-        if 1 == label_elements:
-            label_names.append(args.labels[label_idx])
-        else:
-            for i in range(label_elements):
-                label_names.append("{}-{}".format(args.labels[label_idx], i))
-
-# Find the values required to normalize network outputs
-# Should be used with regression, obviously shouldn't be used with one hot vectors and classifiers
-if args.normalize_outputs and args.loss_fun not in regression_loss:
-    print("Error: normalize_outputs should only be true for regression loss.")
-    exit(1)
-if not args.normalize_outputs:
-    denormalizer = None
-    normalizer = None
+# Determine label size using dataset info
+if args.convert_idx_to_classes == 1:
+    label_size = getVectorSize(args.dataset, decode_strs, label_range) * args.num_outputs
 else:
-    print("Reading dataset to compute label statistics for normalization.")
+    label_size = getVectorSize(args.dataset, decode_strs, label_range)
+    
+label_names = None
+if args.convert_idx_to_classes != 1:
+    label_names = []
+    for label_idx in range(len(args.labels)):
+        label_names.append(args.labels[label_idx])
+        
+label_handler = LabelHandler(label_size, label_range, label_names)
+
+# For regression, set normalization modules; else setup pre and preeval functions.
+if args.normalize_outputs:
+    logging.info("Reading dataset to compute label statistics for normalization.")
     label_stats = [OnlineStatistics() for _ in range(label_size)]
-    label_dataset = (
-        wds.WebDataset(args.dataset)
-        .to_tuple(*label_decode_strs)
-    )
-    # TODO Loop through the dataset and compile label statistics
+    label_dataset = wds.WebDataset(args.dataset).to_tuple(*args.labels)
     label_dataloader = torch.utils.data.DataLoader(label_dataset, num_workers=0, batch_size=1)
     for data in label_dataloader:
         for label, stat in zip(extractVectors(data, slice(0, label_size))[0].tolist(), label_stats):
             stat.sample(label)
-    # Now record the statistics
-    label_means = []
-    label_stddevs = []
-    for stat in label_stats:
-        label_means.append(stat.mean())
-        label_stddevs.append(math.sqrt(stat.variance()))
-
-    print("Normalizing labels with the follow statistics:")
-    for lnum, lname in enumerate(label_names):
-        print("{} mean and stddev are: {} and {}".format(lname, label_means[lnum], label_stddevs[lnum]))
-
-    # Convert label means and stddevs into tensors and send to modules for ease of application
-    label_means = torch.tensor(label_means).cuda()
-    label_stddevs = torch.tensor(label_stddevs).cuda()
-    denormalizer = Denormalizer(means=label_means, stddevs=label_stddevs).cuda()
-    normalizer = Normalizer(means=label_means, stddevs=label_stddevs).cuda()
-
-    # If any of the standard deviations are 0 they must be adjusted to avoid mathematical errors.
-    # More importantly, any labels with a standard deviation of 0 should not be used for training
-    # since they are just fixed numbers.
+    label_means = torch.tensor([stat.mean() for stat in label_stats]).cuda()
+    label_stddevs = torch.tensor([math.sqrt(stat.variance()) for stat in label_stats]).cuda()
     if (label_stddevs.abs() < 0.0001).any():
-        print("Some labels have extremely low variance--they may be fixed values. Check your dataset.")
+        logging.error("Some labels have extremely low variance -- check your dataset.")
         exit(1)
-
-label_handler = LabelHandler(label_size, label_range, label_names)
-
-# The label value may need to be adjusted, for example if the label class is 1 based, but
-# should be 0-based for the one_hot function. This is done by subtracting the label_offset from the
-# labels.
-# Also scale the labels before calculating loss to rebalance how loss is distributed across the
-# labels and to put the labels in a better training range. Note that this only makes sense with a
-# regression loss, where the label_offset adjustment would not be used.
-if normalizer is not None:
+    denormalizer = Denormalizer(means=label_means, stddevs=label_stddevs).to(device)
+    normalizer = Normalizer(means=label_means, stddevs=label_stddevs).to(device)
     label_handler.setPreprocess(lambda labels: normalizer(labels))
 else:
+    denormalizer = None
+    normalizer = None
     label_handler.setPreprocess(lambda labels: labels - label_offset)
-# Convert index labels to a one hot encoding for standard processing.
-if convert_idx_to_classes:
+if args.convert_idx_to_classes == 1:
     label_handler.setPreeval(lambda labels: torch.nn.functional.one_hot((labels - label_offset), num_classes=label_handler.size()))
 
-
-# Network outputs may need to be postprocessed for evaluation if some postprocessing is being done
-# automatically by the loss function.
-if 'CrossEntropyLoss' == args.loss_fun:
-    # Outputs of most classification networks are considered probabilities (but only take that in a
-    # very loose sense of the word). The Softmax function forces its inputs to sum to 1 as
-    # probabilities should do.
+if args.loss_fun == 'CrossEntropyLoss':
     nn_postprocess = torch.nn.Softmax(dim=1)
-elif 'BCEWithLogitsLoss' == args.loss_fun:
+elif args.loss_fun == 'BCEWithLogitsLoss':
     nn_postprocess = torch.nn.Sigmoid()
 else:
-    # Otherwise just use an identify function unless normalization is being used.
-    if denormalizer is None:
-        nn_postprocess = lambda x: x
-    else:
-        nn_postprocess = lambda labels: denormalizer(labels)
+    nn_postprocess = (lambda x: denormalizer(x)) if denormalizer is not None else (lambda x: x)
 
-
-# Only check the size of the non-image input vector if it has any entries
-vector_input_size = 0
-if 0 < len(args.vector_inputs):
-    vector_input_size = getVectorSize(args.dataset, decode_strs, vector_range)
-
-# TODO FIXME Deterministic shuffle only shuffles within a range. Should perhaps manipulate what is
-# in the tar file by shuffling filenames after the dataset is created.
-dataset = (
-    wds.WebDataset(args.dataset, shardshuffle=True)
-    .shuffle(20000//in_frames, initial=20000//in_frames)
-    # TODO This will hardcode all images to single channel numpy float images, but that isn't clear
-    # from any documentation.
-    # TODO Why "l" rather than decode to torch directly with "torchl"?
-    .decode("l")
-    .to_tuple(*decode_strs)
-)
-
+# ---------------------- Dataset Setup ----------------------
+logging.info(f"Training with dataset {args.dataset}")
+dataset = (wds.WebDataset(args.dataset, shardshuffle=True)
+           .shuffle(20000 // in_frames, initial=20000 // in_frames)
+           .decode("l")
+           .to_tuple(*decode_strs))
 image_size = getImageSize(args.dataset, decode_strs)
-print(f"Decoding images of size {image_size}")
+logging.info(f"Decoding images of size {image_size}")
 
 batch_size = 32
 dataloader = torch.utils.data.DataLoader(dataset, num_workers=0, batch_size=batch_size)
-
 if args.evaluate:
-    eval_dataset = (
-        wds.WebDataset(args.evaluate)
-        .decode("l")
-        .to_tuple(*decode_strs)
-    )
+    eval_dataset = (wds.WebDataset(args.evaluate)
+                    .decode("l")
+                    .to_tuple(*decode_strs))
     eval_dataloader = torch.utils.data.DataLoader(eval_dataset, num_workers=0, batch_size=batch_size)
+    logging.info(f"Loaded evaluation dataset from {args.evaluate}")
 
-
-lr_scheduler = None
-# AMP doesn't seem to like all of the different model types, so disable it unless it has been
-# verified.
-use_amp = False
-# If this model uses regression loss then don't put a ReLU at the end.
-skip_last_relu = (args.loss_fun in regression_loss)
-# Store the model arguments and save them with the model. This will simplify model loading and
-# recreation later.
+# ---------------------- Model Setup ----------------------
 model_args = {
     'in_dimensions': (in_frames, image_size[1], image_size[2]),
     'out_classes': label_handler.size(),
 }
-if 0 < vector_input_size:
+vector_input_size = 0
+if len(args.vector_inputs) > 0:
+    vector_input_size = getVectorSize(args.dataset, decode_strs, vector_range)
     model_args['vector_input_size'] = vector_input_size
 
-if 'alexnet' == args.modeltype:
-    # Model specific arguments
+skip_last_relu = (args.loss_fun in regression_loss)
+use_amp = False
+if args.modeltype == 'alexnet':
     model_args['linear_size'] = 512
     model_args['skip_last_relu'] = skip_last_relu
-    net = AlexLikeNet(**model_args).cuda()
-    optimizer = torch.optim.SGD(net.parameters(), lr=10e-4)
+    net = AlexLikeNet(**model_args).to(device)
+    optimizer = torch.optim.SGD(net.parameters(), lr=1e-4)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[3,5,7], gamma=0.2)
     use_amp = True
-elif 'resnet18' == args.modeltype:
-    # Model specific arguments
+elif args.modeltype == 'resnet18':
     model_args['expanded_linear'] = True
-    net = ResNet18(**model_args).cuda()
-    optimizer = torch.optim.SGD(net.parameters(), lr=10e-5)
-elif 'resnet34' == args.modeltype:
-    # Model specific arguments
+    net = ResNet18(**model_args).to(device)
+    optimizer = torch.optim.SGD(net.parameters(), lr=1e-5)
+elif args.modeltype == 'resnet34':
     model_args['expanded_linear'] = True
-    net = ResNet34(**model_args).cuda()
-    optimizer = torch.optim.Adam(net.parameters(), lr=10e-5)
-elif 'bennet' == args.modeltype:
-    net = BenNet(**model_args).cuda()
-    optimizer = torch.optim.Adam(net.parameters(), lr=10e-5)
-elif 'resnext50' == args.modeltype:
-    # Model specific arguments
+    net = ResNet34(**model_args).to(device)
+    optimizer = torch.optim.Adam(net.parameters(), lr=1e-5)
+elif args.modeltype == 'bennet':
+    net = BenNet(**model_args).to(device)
+    optimizer = torch.optim.Adam(net.parameters(), lr=1e-5)
+elif args.modeltype == 'resnext50':
     model_args['expanded_linear'] = True
-    net = ResNext50(**model_args).cuda()
-    optimizer = torch.optim.SGD(net.parameters(), lr=10e-2, weight_decay=10e-4, momentum=0.9)
+    net = ResNext50(**model_args).to(device)
+    optimizer = torch.optim.SGD(net.parameters(), lr=1e-2, weight_decay=1e-3, momentum=0.9)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[1,2,3], gamma=0.1)
     batch_size = 64
+elif args.modeltype == 'resnext34':
+    model_args['expanded_linear'] = False
+    model_args['use_dropout'] = False
+    net = ResNext34(**model_args).to(device)
+    optimizer = torch.optim.SGD(net.parameters(), lr=1e-2, weight_decay=1e-3, momentum=0.9)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,9], gamma=0.2)
+elif args.modeltype == 'resnext18':
+    model_args['expanded_linear'] = True
+    model_args['use_dropout'] = False
+    net = ResNext18(**model_args).to(device)
+    optimizer = torch.optim.SGD(net.parameters(), lr=1e-2, weight_decay=1e-3, momentum=0.9)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,12], gamma=0.2)
+elif args.modeltype == 'convnextxt':
+    net = ConvNextExtraTiny(**model_args).to(device)
+    optimizer = torch.optim.SGD(net.parameters(), lr=1e-4, weight_decay=1e-4, momentum=0.9, nesterov=True)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[4,5,12], gamma=0.2)
+    use_amp = True
+elif args.modeltype == 'convnextt':
+    net = ConvNextTiny(**model_args).to(device)
+    optimizer = torch.optim.SGD(net.parameters(), lr=1e-2, weight_decay=1e-4, momentum=0.9)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,12], gamma=0.2)
+elif args.modeltype == 'convnexts':
+    net = ConvNextSmall(**model_args).to(device)
+    optimizer = torch.optim.SGD(net.parameters(), lr=1e-2, weight_decay=1e-4, momentum=0.9)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,12], gamma=0.2)
+elif args.modeltype == 'convnextb':
+    net = ConvNextBase(**model_args).to(device)
+    optimizer = torch.optim.SGD(net.parameters(), lr=1e-2, weight_decay=1e-4, momentum=0.9)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2,5,12], gamma=0.2)
+logging.info(f"Model is {net}")
+
+if args.resume_from is not None:
+    restoreModelAndState(args.resume_from, net, optimizer)
+
+# ---------------------- Training Loop ----------------------
+if not args.no_train:
+    scaler = torch.cuda.amp.GradScaler() if use_amp else None
+    try:
+        worst_training = None
+        if args.save_worst_n is not None:
+            worst_training = WorstExamples(args.outname.split('.')[0] + "-worstN-train", 
+                                           label_names if label_names is not None else [str(i) for i in range(label_size)], 
+                                           args.save_worst_n)
+            logging.info(f"Saving worst training examples to {worst_training.worstn_path}.")
+        for epoch in range(args.epochs):
+            logging.info(f"Starting epoch {epoch}")
+            totals = ConfusionMatrix(size=label_handler.size())
+            net.train()
+            for batch_num, dl_tuple in enumerate(dataloader):
+                # Prepare network input (handle multi-frame)
+                if in_frames == 1:
+                    net_input = dl_tuple[0].unsqueeze(1).to(device=device)
+                else:
+                    raw_input = [dl_tuple[i].unsqueeze(1).to(device=device) for i in range(in_frames)]
+                    net_input = torch.cat(raw_input, dim=1)
+                if args.normalize:
+                    v, m = torch.var_mean(net_input, dim=(-2,-1), keepdim=True)
+                    net_input = (net_input - m) / v
+                # Extract labels
+                labels = extractVectors(dl_tuple, label_range).to(device)
+                labels = labels - label_offset
+                if use_amp:
+                    out, loss = updateWithScaler(loss_fn, net, net_input, labels, scaler, optimizer)
+                else:
+                    out, loss = updateWithoutScaler(loss_fn, net, net_input, labels, optimizer)
+                with torch.no_grad():
+                    classes = nn_postprocess(out)
+                    if args.convert_idx_to_classes == 1:
+                        labels_processed = torch.nn.functional.one_hot(labels, num_classes=label_handler.size())
+                    else:
+                        labels_processed = labels
+                    totals.update(predictions=classes, labels=labels_processed)
+                    if worst_training is not None:
+                        metadata = dl_tuple[metadata_index] if not args.skip_metadata else [""] * labels.size(0)
+                        input_images = dl_tuple[0]
+                        for i in range(labels.size(0)):
+                            lbl = torch.argmax(labels_processed[i]).item() if args.convert_idx_to_classes == 1 else labels[i].item()
+                            worst_training.test(lbl, out[i][lbl].item(), input_images[i], metadata[i])
+            logging.info(f"Finished epoch {epoch} with loss {loss:.4f}")
+            logging.info("Confusion Matrix:")
+            logging.info(totals.makeResults())
+            if lr_scheduler is not None:
+                lr_scheduler.step()
+            # Save checkpoint
+            torch.save({
+                "model_dict": net.state_dict(),
+                "optim_dict": optimizer.state_dict(),
+                "py_random_state": random.getstate(),
+                "np_random_state": numpy.random.get_state(),
+                "torch_rng_state": torch.get_rng_state(),
+                "denormalizer_state_dict": denormalizer.state_dict() if denormalizer is not None else None,
+                "normalizer_state_dict": normalizer.state_dict() if normalizer is not None else None,
+                "metadata": {'modeltype': args.modeltype, 'labels': args.labels,
+                             'vector_inputs': args.vector_inputs, 'convert_idx_to_classes': args.convert_idx_to_classes,
+                             'label_size': label_handler.size(), 'model_args': model_args,
+                             'normalize_images': args.normalize, 'normalize_labels': args.normalize_outputs},
+            }, args.outname)
+            # Evaluation step during training if requested
+            if args.evaluate:
+                logging.info(f"Evaluating at epoch {epoch}")
+                net.eval()
+                eval_totals = ConfusionMatrix(size=label_handler.size())
+                for batch_num, dl_tuple in enumerate(eval_dataloader):
+                    if in_frames == 1:
+                        net_input = dl_tuple[0].unsqueeze(1).to(device=device)
+                    else:
+                        raw_input = [dl_tuple[i].unsqueeze(1).to(device=device) for i in range(in_frames)]
+                        net_input = torch.cat(raw_input, dim=1)
+                    if args.normalize:
+                        v, m = torch.var_mean(net_input, dim=(-2,-1), keepdim=True)
+                        net_input = (net_input - m) / v
+                    with torch.no_grad():
+                        out = net.forward(net_input)
+                        labels = extractVectors(dl_tuple, label_range).to(device)
+                        labels = labels - label_offset
+                        classes = nn_postprocess(out)
+                        if args.convert_idx_to_classes == 1:
+                            labels_processed = torch.nn.functional.one_hot(labels, num_classes=label_handler.size())
+                        else:
+                            labels_processed = labels
+                        eval_totals.update(predictions=classes, labels=labels_processed)
+                logging.info("Evaluation Confusion Matrix:")
+                logging.info(eval_totals.makeResults())
+                net.train()
+        # End training loop; final checkpoint saved above.
+    except Exception as e:
+        logging.error(f"Exception during training: {e}")
+        raise e
+
+# ---------------------- Post-Training Evaluation & GradCAM ----------------------
+if args.evaluate:
+    logging.info("Starting post-training evaluation.")
+    top_eval = None
+    worst_eval = None
+    if args.save_top_n is not None:
+        top_eval = WorstExamples(args.outname.split('.')[0] + "-topN-eval",
+                                 label_names if label_names is not None else [str(i) for i in range(label_size)],
+                                 args.save_top_n, worst_mode=False)
+        logging.info(f"Saving top evaluation examples to {top_eval.worstn_path}.")
+    if args.save_worst_n is not None:
+        worst_eval = WorstExamples(args.outname.split('.')[0] + "-worstN-eval",
+                                   label_names if label_names is not None else [str(i) for i in range(label_size)],
+                                   args.save_worst_n)
+        logging.info(f"Saving worst evaluation examples to {worst_eval.worstn_path}.")
+    net.eval()
+    with torch.no_grad():
+        totals = ConfusionMatrix(size=label_handler.size())
+        with open(args.outname.split('.')[0] + ".log", 'w') as logfile:
+            logfile.write('video_path,frame,time,label,prediction\n')
+            for batch_num, dl_tuple in enumerate(eval_dataloader):
+                if in_frames == 1:
+                    net_input = dl_tuple[0].unsqueeze(1).to(device=device)
+                else:
+                    raw_input = [dl_tuple[i].unsqueeze(1).to(device=device) for i in range(in_frames)]
+                    net_input = torch.cat(raw_input, dim=1)
+                if args.normalize:
+                    v, m = torch.var_mean(net_input, dim=(-2,-1), keepdim=True)
+                    net_input = (net_input - m) / v
+                # GradCAM plotting if enabled (only for alexnet type with gradcam layers)
+                if args.gradcam_cnn_model_layer and args.modeltype in ['alexnet', 'bennet', 'resnet18', 'resnet34']:
+                    target_classes = extractVectors(dl_tuple, label_range).cpu().tolist()
+                    model_names = ['model_a', 'model_b']
+                    for last_layer, model_name in zip(args.gradcam_cnn_model_layer, model_names):
+                        try:
+                            num_cls = len(set(target_classes)) if set(target_classes) else 3
+                            logging.info(f"Plotting GradCAM for layer {last_layer}")
+                            plot_gradcam_for_multichannel_input(
+                                model=net,
+                                dataset=os.path.basename(args.evaluate).split('.')[0],
+                                input_tensor=net_input,
+                                target_layer_name=[last_layer],
+                                model_name=model_name,
+                                target_classes=target_classes,
+                                number_of_classes=num_cls,
+                            )
+                        except Exception as e:
+                            logging.error(f"GradCAM error for layer {last_layer}: {e}")
+                # Get network output
+                if args.modeltype in ['alexnet', 'bennet', 'resnet18', 'resnet34']:
+                    out, _ = net.vis_forward(net_input)
+                else:
+                    out = net.forward(net_input)
+                labels = extractVectors(dl_tuple, label_range).to(device)
+                labels = labels - label_offset
+                loss = loss_fn(out, labels)
+                with torch.no_grad():
+                    post_out = nn_postprocess(out)
+                    if args.convert_idx_to_classes == 1:
+                        labels_processed = torch.nn.functional.one_hot(labels, num_classes=label_handler.size())
+                    else:
 elif 'resnext34' == args.modeltype:
     # Model specific arguments
     model_args['expanded_linear'] = False
