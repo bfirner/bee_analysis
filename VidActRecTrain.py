@@ -329,6 +329,8 @@ if args.template is not None:
 # Added: Determine the loss function and configure label processing based on settings.
 loss_fn = getattr(torch.nn, args.loss_fun)().to(device=device)
 
+# Later on we will need to change behavior if the loss function is regression rather than
+# classification
 regression_loss = ["L1Loss", "MSELoss"]
 
 in_frames = args.sample_frames
@@ -357,6 +359,7 @@ if not args.skip_metadata:
     decode_strs.append("metadata.txt")
 
 
+# The default labels for the bee videos are "1, 2, 3" instead of "0, 1, 2"
 if args.labels[0] != "cls":
     label_offset = 0
 else:
@@ -424,6 +427,7 @@ if args.convert_idx_to_classes == 1:
 
 # Network outputs may need to be postprocessed for evaluation if some postprocessing is being done
 # automatically by the loss function.
+# Only check the size of the non-image input vector if it has any entries
 if args.loss_fun == "CrossEntropyLoss":
     # Outputs of most classification networks are considered probabilities (but only take that in a
     # very loose sense of the word). The Softmax function forces its inputs to sum to 1 as
@@ -476,6 +480,8 @@ if len(args.vector_inputs) > 0:
 
 skip_last_relu = args.loss_fun in regression_loss
 use_amp = False
+
+# See if the model weights and optimizer state should be restored.
 if args.modeltype == "alexnet":
     model_args["linear_size"] = 512
     model_args["skip_last_relu"] = skip_last_relu
@@ -486,17 +492,21 @@ if args.modeltype == "alexnet":
     )
     use_amp = True
 elif args.modeltype == "resnet18":
+    # Model specific arguments
     model_args["expanded_linear"] = True
     net = ResNet18(**model_args).to(device)
     optimizer = torch.optim.SGD(net.parameters(), lr=1e-5)
 elif args.modeltype == "resnet34":
+    # Model specific arguments
     model_args["expanded_linear"] = True
     net = ResNet34(**model_args).to(device)
     optimizer = torch.optim.Adam(net.parameters(), lr=1e-5)
 elif args.modeltype == "bennet":
+    # Model specific arguments
     net = BenNet(**model_args).to(device)
     optimizer = torch.optim.Adam(net.parameters(), lr=1e-5)
 elif args.modeltype == "resnext50":
+    # Model specific arguments
     model_args["expanded_linear"] = True
     net = ResNext50(**model_args).to(device)
     optimizer = torch.optim.SGD(
@@ -507,8 +517,10 @@ elif args.modeltype == "resnext50":
     )
     batch_size = 64
 elif args.modeltype == "resnext34":
+    # Model specific arguments
     model_args["expanded_linear"] = False
     model_args["use_dropout"] = False
+    # Learning parameters were tuned on a dataset with about 80,000 examples
     net = ResNext34(**model_args).to(device)
     optimizer = torch.optim.SGD(
         net.parameters(), lr=1e-2, weight_decay=1e-3, momentum=0.9
@@ -517,8 +529,10 @@ elif args.modeltype == "resnext34":
         optimizer, milestones=[2, 5, 9], gamma=0.2
     )
 elif args.modeltype == "resnext18":
+    # Model specific arguments
     model_args["expanded_linear"] = True
     model_args["use_dropout"] = False
+    # Learning parameters were tuned on a dataset with about 80,000 examples
     net = ResNext18(**model_args).to(device)
     optimizer = torch.optim.SGD(
         net.parameters(), lr=1e-2, weight_decay=1e-3, momentum=0.9
@@ -527,6 +541,7 @@ elif args.modeltype == "resnext18":
         optimizer, milestones=[2, 5, 12], gamma=0.2
     )
 elif args.modeltype == "convnextxt":
+    # Model specific arguments
     net = ConvNextExtraTiny(**model_args).to(device)
     optimizer = torch.optim.SGD(
         net.parameters(), lr=1e-4, weight_decay=1e-4, momentum=0.9, nesterov=True
@@ -536,6 +551,7 @@ elif args.modeltype == "convnextxt":
     )
     use_amp = True
 elif args.modeltype == "convnextt":
+    # Model specific arguments
     net = ConvNextTiny(**model_args).to(device)
     optimizer = torch.optim.SGD(
         net.parameters(), lr=1e-2, weight_decay=1e-4, momentum=0.9
@@ -544,6 +560,7 @@ elif args.modeltype == "convnextt":
         optimizer, milestones=[2, 5, 12], gamma=0.2
     )
 elif args.modeltype == "convnexts":
+    # Model specific arguments
     net = ConvNextSmall(**model_args).to(device)
     optimizer = torch.optim.SGD(
         net.parameters(), lr=1e-2, weight_decay=1e-4, momentum=1e-3
@@ -552,6 +569,7 @@ elif args.modeltype == "convnexts":
         optimizer, milestones=[2, 5, 12], gamma=0.2
     )
 elif args.modeltype == "convnextb":
+    # Model specific arguments
     net = ConvNextBase(**model_args).to(device)
     optimizer = torch.optim.SGD(
         net.parameters(), lr=1e-2, weight_decay=1e-4, momentum=0.9
@@ -567,6 +585,7 @@ if args.resume_from is not None:
 # ---------------------- Training Loop ----------------------
 # Added: Wrap the training loop in a try/except to log and re-raise exceptions.
 if not args.no_train:
+    # Gradient scaler for mixed precision training
     scaler = torch.amp.GradScaler("cuda") if use_amp else None
     try:
         worst_training = None
@@ -711,6 +730,7 @@ if args.evaluate:
     net.eval()
     with torch.no_grad():
         # Make a confusion matrix or loss statistics
+        # TODO FIXME Move this evaluation step into the evaluation function as well.
         if args.loss_fun in regression_loss:
             totals = RegressionResults(size=label_size)
         else:
