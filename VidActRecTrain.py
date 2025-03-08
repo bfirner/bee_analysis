@@ -740,7 +740,7 @@ if args.evaluate:
                 # Normalize inputs: input = (input - mean)/stddev
                 if args.normalize:
                     # Normalize per channel, so compute over height and width
-                    v, m = torch.var_mean(net_input, dim=(-2, -1), keepdim=True)
+                    v, m = torch.var_mean(net_input, dim=(net_input.dim()-2, net_input.dim()-1), keepdim=True)
                     net_input = (net_input - m) / v
                 
                 # GradCAM plotting if enabled (only for alexnet type with gradcam layers)
