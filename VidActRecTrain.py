@@ -153,6 +153,7 @@ parser.add_argument(
     action="store_true",
     help="Set this flag to skip training. Useful to load an already trained model for evaluation.",
 )
+
 parser.add_argument(
     "--evaluate",
     type=str,
@@ -274,6 +275,7 @@ parser.add_argument(
     default=["model_a.4.0", "model_b.4.0"],
     help="Model layers for gradcam plots.",
 )
+
 parser.add_argument(
     "--debug",
     required=False,
@@ -293,7 +295,9 @@ if args.debug:
     logging.getLogger().setLevel(logging.DEBUG)
 logging.info(f"Parsed arguments: {args}")
 
+# use device rather than .cuda() because of the use case of running on cpu
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 logging.info(f"Using device: {device}")
 
 # ---------------------- Environment Setup ----------------------
@@ -326,7 +330,7 @@ if args.template is not None:
             args.loss_fun = "BCEWithLogitsLoss"
 
 # ---------------------- Loss Function & Label Preprocessing ----------------------
-# Added: Determine the loss function and configure label processing based on settings.
+# Determine the loss function and configure label processing based on settings.
 loss_fn = getattr(torch.nn, args.loss_fun)().to(device=device)
 
 # Later on we will need to change behavior if the loss function is regression rather than
@@ -336,12 +340,12 @@ regression_loss = ["L1Loss", "MSELoss"]
 in_frames = args.sample_frames
 decode_strs = []
 
-# Added: Collect decoding strings for image frames.
+# Collect decoding strings for image frames.
 # The image for a particular frame
 for i in range(in_frames):
     decode_strs.append(f"{i}.png")
 
-# Added: Append labels and vector inputs decode strings.
+# Append labels and vector inputs decode strings.
 # The class label(s) or regression targets
 label_range = slice(len(decode_strs), len(decode_strs) + len(args.labels))
 for label_str in args.labels:
@@ -353,7 +357,7 @@ for vector_str in args.vector_inputs:
     decode_strs.append(vector_str)
 
 # Metadata for this sample. A string of format: f"{video_path},{frame},{time}"
-# Added: Append metadata if not skipped.
+# Append metadata if not skipped.
 if not args.skip_metadata:
     metadata_index = len(decode_strs)
     decode_strs.append("metadata.txt")
@@ -442,7 +446,7 @@ else:
     )
 
 # ---------------------- Dataset Setup ----------------------
-# Added: Build the webdataset with the given transformations.
+# Build the webdataset with the given transformations.
 # TODO FIXME Deterministic shuffle only shuffles within a range. Should perhaps manipulate what is
 # in the tar file by shuffling filenames after the dataset is created.
 logging.info(f"Training with dataset {args.dataset}")
@@ -468,7 +472,7 @@ if args.evaluate:
     logging.info(f"Loaded evaluation dataset from {args.evaluate}")
 
 # ---------------------- Model Setup ----------------------
-# Added: Configure model arguments and instantiate the chosen model.
+# Configure model arguments and instantiate the chosen model.
 model_args = {
     "in_dimensions": (in_frames, image_size[1], image_size[2]),
     "out_classes": label_handler.size(),
@@ -587,6 +591,8 @@ if args.resume_from is not None:
 # TODO(bfirner) Read class names from something instead of assigning them numbers.
 # Note that we can't just use the label names since we may be getting classes by converting a
 # numeric input into a one-hot vector
+# This can be simplified with implicit fucntions, but this can make the code more self
+# documenting
 class_names = []
 
 for i in range(label_size):
