@@ -582,6 +582,16 @@ logging.info(f"Model is {net}")
 if args.resume_from is not None:
     restoreModelAndState(args.resume_from, net, optimizer)
 
+
+
+# TODO(bfirner) Read class names from something instead of assigning them numbers.
+# Note that we can't just use the label names since we may be getting classes by converting a
+# numeric input into a one-hot vector
+class_names = []
+
+for i in range(label_size):
+    class_names.append(f"{i}")
+
 # ---------------------- Training Loop ----------------------
 # Added: Wrap the training loop in a try/except to log and re-raise exceptions.
 if not args.no_train:
@@ -591,14 +601,7 @@ if not args.no_train:
         worst_training = None
         if args.save_worst_n is not None:
             worst_training = WorstExamples(
-                args.outname.split(".")[0] + "-worstN-train",
-                (
-                    label_names
-                    if label_names is not None
-                    else [str(i) for i in range(label_size)]
-                ),
-                args.save_worst_n,
-            )
+                args.outname.split('.')[0] + "-worstN-train-epoch{}", class_names, args.save_worst_n, epoch)
             logging.info(
                 f"Saving worst training examples to {worst_training.worstn_path}."
             )
@@ -706,27 +709,13 @@ if args.evaluate:
     worst_eval = None
     if args.save_top_n is not None:
         top_eval = WorstExamples(
-            args.outname.split(".")[0] + "-topN-eval",
-            (
-                label_names
-                if label_names is not None
-                else [str(i) for i in range(label_size)]
-            ),
-            args.save_top_n,
-            worst_mode=False,
-        )
+            args.outname.split('.')[0] + "-topN-eval", class_names, args.save_top_n,
+            worst_mode=False)
         logging.info(f"Saving top evaluation examples to {top_eval.worstn_path}.")
     if args.save_worst_n is not None:
         worst_eval = WorstExamples(
-            args.outname.split(".")[0] + "-worstN-eval",
-            (
-                label_names
-                if label_names is not None
-                else [str(i) for i in range(label_size)]
-            ),
-            args.save_worst_n,
-        )
-        logging.info(f"Saving worst evaluation examples to {worst_eval.worstn_path}.")
+            args.outname.split('.')[0] + "-worstN-eval", class_names, args.save_worst_n)
+        logging.info(f"Saving {args.save_worst_n} highest error evaluation images to {worst_eval.worstn_path}.")
     net.eval()
     with torch.no_grad():
         # Make a confusion matrix or loss statistics
