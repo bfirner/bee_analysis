@@ -37,4 +37,4 @@ tqdm==4.67.1
 ttach==0.0.3
 typing_extensions==4.12.2
 tzdata==2025.1
-webdataset==0.2.100
+webdataset==0.2.111
