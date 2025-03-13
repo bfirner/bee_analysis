@@ -37,9 +37,11 @@ parser.add_argument(
     default="dataset.csv",
     help="name of the dataset, default dataset.csv",
 )
-parser.add_argument(
-    "--k", type=int, required=False, default=3, help="number of sets, default 3"
-)
+parser.add_argument("--k",
+                    type=int,
+                    required=False,
+                    default=3,
+                    help="number of sets, default 3")
 parser.add_argument(
     "--batchdir",
     type=str,
@@ -80,35 +82,40 @@ parser.add_argument(
     type=int,
     required=False,
     default=400,
-    help="Width of output images (obtained via cropping, after applying scale), default 400",
+    help=
+    "Width of output images (obtained via cropping, after applying scale), default 400",
 )
 parser.add_argument(
     "--height",
     type=int,
     required=False,
     default=400,
-    help="Height of output images (obtained via cropping, after applying scale), default 400",
+    help=
+    "Height of output images (obtained via cropping, after applying scale), default 400",
 )
 parser.add_argument(
     "--crop_x_offset",
     type=int,
     required=False,
     default=0,
-    help="The offset (in pixels) of the crop location on the original image in the x dimension, default 0",
+    help=
+    "The offset (in pixels) of the crop location on the original image in the x dimension, default 0",
 )
 parser.add_argument(
     "--crop_y_offset",
     type=int,
     required=False,
     default=0,
-    help="The offset (in pixels) of the crop location on the original image in the y dimension, default 0",
+    help=
+    "The offset (in pixels) of the crop location on the original image in the y dimension, default 0",
 )
 parser.add_argument(
     "--label_offset",
     required=False,
     default=0,
     type=int,
-    help='The starting value of classes when training with cls labels (the labels value is "cls"), default: 0',
+    help=
+    'The starting value of classes when training with cls labels (the labels value is "cls"), default: 0',
 )
 parser.add_argument(
     "--training_only",
@@ -181,7 +188,8 @@ parser.add_argument(
 parser.add_argument(
     "--num-outputs",
     required=False,
-    help="the number of outputs/classes that are required, used for the train command",
+    help=
+    "the number of outputs/classes that are required, used for the train command",
     default=3,
     type=int,
 )
@@ -278,11 +286,11 @@ if batchdir == ".":
 training_batch_file = open(training_filename, "w")
 training_batch_file.write("#!/usr/bin/bash \n")
 training_batch_file.write("source venv/bin/activate \n")
-training_batch_file.write("# batch file for getting the training results \n \n")
+training_batch_file.write(
+    "# batch file for getting the training results \n \n")
 training_batch_file.write("cd " + currentDir + " \n")
 training_batch_file.write(
-    "echo start-is: `date` \n \n"
-)  # add start timestamp to training file
+    "echo start-is: `date` \n \n")  # add start timestamp to training file
 
 trainCommand = trainCommand.replace("$MODEL", model_name)
 
@@ -297,22 +305,20 @@ for dataset_num in range(numOfSets):
         trainFile.write("export TRAINPROGRAM=" + trainProgram + "\n")
         trainFile.write("cd " + currentDir + " \n")
         trainFile.write("echo start-is: `date` \n \n")  # add start timestamp
-        traincommand_local = trainCommand.replace("$TRAINPROGRAM", trainProgram)
+        traincommand_local = trainCommand.replace("$TRAINPROGRAM",
+                                                  trainProgram)
         traincommand_local = traincommand_local.replace(
-            "$LABEL_OFFSET", str(label_offset)
-        )
-        traincommand_local = (
-            traincommand_local + " " + f"{baseName}_{str(dataset_num)}.tar"
-        )
+            "$LABEL_OFFSET", str(label_offset))
+        traincommand_local = (traincommand_local + " " +
+                              f"{baseName}_{str(dataset_num)}.tar")
         for trainingSetNum in range(numOfSets):
             if int(trainingSetNum) != int(dataset_num):
-                traincommand_local = (
-                    traincommand_local + " " + f"{baseName}_{str(trainingSetNum)}.tar"
-                )
+                traincommand_local = (traincommand_local + " " +
+                                      f"{baseName}_{str(trainingSetNum)}.tar")
 
         trainFile.write(
-            traincommand_local + "\n"
-        )  # write the training command to the training command
+            traincommand_local +
+            "\n")  # write the training command to the training command
         trainFile.write(
             "chmod -R 777 . >> /dev/null 2>&1 \n"
         )  # change the permissions of the shell scripts to be executable.
@@ -325,14 +331,12 @@ for dataset_num in range(numOfSets):
             f" --time={args.time_to_run_training} "
             f" -o {baseName}_trainlog_{str(dataset_num)}.log "
             f"{train_job_filename} "
-            "\n"
-        )  # add end timestamp to training file
+            "\n")  # add end timestamp to training file
 
     setNum = setNum + 1
 
 training_batch_file.write(
-    "echo end-is: `date` \n \n"
-)  # add end timestamp to training file
+    "echo end-is: `date` \n \n")  # add end timestamp to training file
 training_batch_file.close()
 
 logging.info("Done writing dataset and job files")
