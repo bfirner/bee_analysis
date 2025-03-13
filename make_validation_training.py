@@ -1,3 +1,4 @@
+#!/common/home/rmartin/bin/python3
 # This code writes scripts to do both (1) data preparation and (2) training/evaluation on video
 # files for the ML behavior disriminator videos on the Rutgers CS computing infrastructure.
 # (c) 2023 R. P. Martin. This code is licensed under the GNU General Public License (GPL), version 3
@@ -177,6 +178,13 @@ parser.add_argument(
     type=int,
     default=28800,
 )
+parser.add_argument(
+    "--num-outputs",
+    required=False,
+    help="the number of outputs/classes that are required, used for the train command",
+    default=3,
+    type=int
+)
 
 args = parser.parse_args()
 
@@ -189,7 +197,7 @@ trainProgram = os.path.join(program_dir, "VidActRecTrain.py")  # ! FIX THIS TOO
 # command to run the evaluation and training program
 # trainCommand    = 'srun -G 1 python3 $TRAINPROGRAM --not_deterministic --epochs 10 --modeltype $MODEL --evaluate' # <eval-set> <a-set> <b-set> ...
 # <eval-set> <a-set> <b-set> ...
-trainCommand = f"python3 $TRAINPROGRAM --sample_frames {args.frames_per_sample} --gradcam_cnn_model_layer {' '.join(args.gradcam_cnn_model_layer)} --not_deterministic --epochs {args.epochs} --modeltype $MODEL --label_offset $LABEL_OFFSET --evaluate"
+trainCommand = f"python3 $TRAINPROGRAM --num_outputs {args.num_outputs} --sample_frames {args.frames_per_sample} --gradcam_cnn_model_layer {' '.join(args.gradcam_cnn_model_layer)} --not_deterministic --epochs {args.epochs} --modeltype $MODEL --label_offset $LABEL_OFFSET --evaluate"
 
 datacsvname = args.datacsv
 numOfSets = args.k
@@ -221,25 +229,24 @@ if not args.remove_dataset_sub:
         beginf_col = header.index("beginframe")
         endf_col = header.index("endframe")
 
-        loop_counter = 0
-        all_csv_rows = []
-        # Put all the rows in the csv file into a list
+        # Group rows by their class value
+        class_groups = {}
         for row in conf_reader:
-            all_csv_rows.append(row)
-        pass
+            cls = row[class_col]
+            class_groups.setdefault(cls, []).append(row)
 
-    # create a randomized permutation
-    random_rows = random.shuffle(all_csv_rows)
-    numRows = len(all_csv_rows)
+    # Initialize folds (one per dataset file)
+    folds = [[] for _ in range(numOfSets)]
 
-    # figure out the number of files to put into each dataset
-    numFilesPerSet = int(numRows / numOfSets)
-    extraFiles = numRows % numOfSets
+    # For each class, shuffle its rows and distribute them evenly across folds
+    for cls, rows in class_groups.items():
+        random.shuffle(rows)
+        for i, row in enumerate(rows):
+            fold_index = i % numOfSets
+            folds[fold_index].append(row)
 
-    # create test_N and train_N files for each of the k folds
-    logging.info(
-        f"Splitting {numRows} rows into {numFilesPerSet}/set with {extraFiles} extra"
-    )
+    numRows = sum(len(fold) for fold in folds)
+    logging.info(f"Splitting {numRows} rows into {numOfSets} datasets with balanced classes")
 
 # foreach dataset, construct a csv of the files in that set
 baseNameFile = datacsvname.split(".csv")
@@ -251,15 +258,13 @@ currentDir = os.getcwd()
 if not args.remove_dataset_sub:
     for dataset_num in range(numOfSets):
         dataset_filename = baseName + "_" + str(dataset_num) + ".csv"
-        base_row = setNum * numFilesPerSet
         with open(dataset_filename, "w") as dsetFile:
             # write out the header row at the top of the set
             dsetFile.write("file, class, begin frame, end frame\n")
-            # write out all the rows for this set
-            for rowNum in range(base_row, base_row + numFilesPerSet):
-                dsetFile.write(",".join(all_csv_rows[rowNum]))
+            # write out all the rows for this set from the corresponding fold
+            for row in folds[dataset_num]:
+                dsetFile.write(",".join(row))
                 dsetFile.write("\n")
-        setNum = setNum + 1
 
 # Finish here if the only_split option was set.
 if args.only_split:
