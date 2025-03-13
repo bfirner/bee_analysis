@@ -1,3 +1,4 @@
+#!/common/home/rmartin/bin/python3
 # This code writes scripts to do both (1) data preparation and (2) training/evaluation on video
 # files for the ML behavior disriminator videos on the Rutgers CS computing infrastructure.
 # (c) 2023 R. P. Martin. This code is licensed under the GNU General Public License (GPL), version 3
@@ -36,9 +37,11 @@ parser.add_argument(
     default="dataset.csv",
     help="name of the dataset, default dataset.csv",
 )
-parser.add_argument(
-    "--k", type=int, required=False, default=3, help="number of sets, default 3"
-)
+parser.add_argument("--k",
+                    type=int,
+                    required=False,
+                    default=3,
+                    help="number of sets, default 3")
 parser.add_argument(
     "--batchdir",
     type=str,
@@ -79,35 +82,40 @@ parser.add_argument(
     type=int,
     required=False,
     default=400,
-    help="Width of output images (obtained via cropping, after applying scale), default 400",
+    help=
+    "Width of output images (obtained via cropping, after applying scale), default 400",
 )
 parser.add_argument(
     "--height",
     type=int,
     required=False,
     default=400,
-    help="Height of output images (obtained via cropping, after applying scale), default 400",
+    help=
+    "Height of output images (obtained via cropping, after applying scale), default 400",
 )
 parser.add_argument(
     "--crop_x_offset",
     type=int,
     required=False,
     default=0,
-    help="The offset (in pixels) of the crop location on the original image in the x dimension, default 0",
+    help=
+    "The offset (in pixels) of the crop location on the original image in the x dimension, default 0",
 )
 parser.add_argument(
     "--crop_y_offset",
     type=int,
     required=False,
     default=0,
-    help="The offset (in pixels) of the crop location on the original image in the y dimension, default 0",
+    help=
+    "The offset (in pixels) of the crop location on the original image in the y dimension, default 0",
 )
 parser.add_argument(
     "--label_offset",
     required=False,
     default=0,
     type=int,
-    help='The starting value of classes when training with cls labels (the labels value is "cls"), default: 0',
+    help=
+    'The starting value of classes when training with cls labels (the labels value is "cls"), default: 0',
 )
 parser.add_argument(
     "--training_only",
@@ -177,6 +185,14 @@ parser.add_argument(
     type=int,
     default=28800,
 )
+parser.add_argument(
+    "--num-outputs",
+    required=False,
+    help=
+    "the number of outputs/classes that are required, used for the train command",
+    default=3,
+    type=int,
+)
 
 args = parser.parse_args()
 
@@ -189,7 +205,7 @@ trainProgram = os.path.join(program_dir, "VidActRecTrain.py")  # ! FIX THIS TOO
 # command to run the evaluation and training program
 # trainCommand    = 'srun -G 1 python3 $TRAINPROGRAM --not_deterministic --epochs 10 --modeltype $MODEL --evaluate' # <eval-set> <a-set> <b-set> ...
 # <eval-set> <a-set> <b-set> ...
-trainCommand = f"python3 $TRAINPROGRAM --sample_frames {args.frames_per_sample} --gradcam_cnn_model_layer {' '.join(args.gradcam_cnn_model_layer)} --not_deterministic --epochs {args.epochs} --modeltype $MODEL --label_offset $LABEL_OFFSET --evaluate"
+trainCommand = f"python3 $TRAINPROGRAM --num_outputs {args.num_outputs} --sample_frames {args.frames_per_sample} --gradcam_cnn_model_layer {' '.join(args.gradcam_cnn_model_layer)} --not_deterministic --epochs {args.epochs} --modeltype $MODEL --label_offset $LABEL_OFFSET --evaluate"
 
 datacsvname = args.datacsv
 numOfSets = args.k
@@ -221,24 +237,25 @@ if not args.remove_dataset_sub:
         beginf_col = header.index("beginframe")
         endf_col = header.index("endframe")
 
-        loop_counter = 0
-        all_csv_rows = []
-        # Put all the rows in the csv file into a list
+        # Group rows by their class value
+        class_groups = {}
         for row in conf_reader:
-            all_csv_rows.append(row)
-        pass
+            cls = row[class_col]
+            class_groups.setdefault(cls, []).append(row)
 
-    # create a randomized permutation
-    random_rows = random.shuffle(all_csv_rows)
-    numRows = len(all_csv_rows)
+    # Initialize folds (one per dataset file)
+    folds = [[] for _ in range(numOfSets)]
 
-    # figure out the number of files to put into each dataset
-    numFilesPerSet = int(numRows / numOfSets)
-    extraFiles = numRows % numOfSets
+    # For each class, shuffle its rows and distribute them evenly across folds
+    for cls, rows in class_groups.items():
+        random.shuffle(rows)
+        for i, row in enumerate(rows):
+            fold_index = i % numOfSets
+            folds[fold_index].append(row)
 
-    # create test_N and train_N files for each of the k folds
+    numRows = sum(len(fold) for fold in folds)
     logging.info(
-        f"Splitting {numRows} rows into {numFilesPerSet}/set with {extraFiles} extra"
+        f"Splitting {numRows} rows into {numOfSets} datasets with balanced classes"
     )
 
 # foreach dataset, construct a csv of the files in that set
@@ -251,15 +268,13 @@ currentDir = os.getcwd()
 if not args.remove_dataset_sub:
     for dataset_num in range(numOfSets):
         dataset_filename = baseName + "_" + str(dataset_num) + ".csv"
-        base_row = setNum * numFilesPerSet
         with open(dataset_filename, "w") as dsetFile:
             # write out the header row at the top of the set
             dsetFile.write("file, class, begin frame, end frame\n")
-            # write out all the rows for this set
-            for rowNum in range(base_row, base_row + numFilesPerSet):
-                dsetFile.write(",".join(all_csv_rows[rowNum]))
+            # write out all the rows for this set from the corresponding fold
+            for row in folds[dataset_num]:
+                dsetFile.write(",".join(row))
                 dsetFile.write("\n")
-        setNum = setNum + 1
 
 # Finish here if the only_split option was set.
 if args.only_split:
@@ -271,11 +286,11 @@ if batchdir == ".":
 training_batch_file = open(training_filename, "w")
 training_batch_file.write("#!/usr/bin/bash \n")
 training_batch_file.write("source venv/bin/activate \n")
-training_batch_file.write("# batch file for getting the training results \n \n")
+training_batch_file.write(
+    "# batch file for getting the training results \n \n")
 training_batch_file.write("cd " + currentDir + " \n")
 training_batch_file.write(
-    "echo start-is: `date` \n \n"
-)  # add start timestamp to training file
+    "echo start-is: `date` \n \n")  # add start timestamp to training file
 
 trainCommand = trainCommand.replace("$MODEL", model_name)
 
@@ -290,25 +305,23 @@ for dataset_num in range(numOfSets):
         trainFile.write("export TRAINPROGRAM=" + trainProgram + "\n")
         trainFile.write("cd " + currentDir + " \n")
         trainFile.write("echo start-is: `date` \n \n")  # add start timestamp
-        traincommand_local = trainCommand.replace("$TRAINPROGRAM", trainProgram)
+        traincommand_local = trainCommand.replace("$TRAINPROGRAM",
+                                                  trainProgram)
         traincommand_local = traincommand_local.replace(
-            "$LABEL_OFFSET", str(label_offset)
-        )
-        traincommand_local = (
-            traincommand_local + " " + f"{baseName}_{str(dataset_num)}.tar"
-        )
+            "$LABEL_OFFSET", str(label_offset))
+        traincommand_local = (traincommand_local + " " +
+                              f"{baseName}_{str(dataset_num)}.tar")
         for trainingSetNum in range(numOfSets):
             if int(trainingSetNum) != int(dataset_num):
-                traincommand_local = (
-                    traincommand_local + " " + f"{baseName}_{str(trainingSetNum)}.tar"
-                )
+                traincommand_local = (traincommand_local + " " +
+                                      f"{baseName}_{str(trainingSetNum)}.tar")
 
         trainFile.write(
-            traincommand_local + "\n"
-        )  # write the training command to the training command
+            traincommand_local +
+            "\n")  # write the training command to the training command
         trainFile.write(
             "chmod -R 777 . >> /dev/null 2>&1 \n"
-        ) # change the permissions of the shell scripts to be executable.
+        )  # change the permissions of the shell scripts to be executable.
         trainFile.write("echo end-is: `date` \n \n")  # add end timestamp
         training_batch_file.write(
             f"sbatch "
@@ -318,14 +331,12 @@ for dataset_num in range(numOfSets):
             f" --time={args.time_to_run_training} "
             f" -o {baseName}_trainlog_{str(dataset_num)}.log "
             f"{train_job_filename} "
-            "\n"
-        )  # add end timestamp to training file
+            "\n")  # add end timestamp to training file
 
     setNum = setNum + 1
 
 training_batch_file.write(
-    "echo end-is: `date` \n \n"
-)  # add end timestamp to training file
+    "echo end-is: `date` \n \n")  # add end timestamp to training file
 training_batch_file.close()
 
 logging.info("Done writing dataset and job files")
