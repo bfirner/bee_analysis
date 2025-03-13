@@ -246,7 +246,8 @@ if not args.remove_dataset_sub:
             folds[fold_index].append(row)
 
     numRows = sum(len(fold) for fold in folds)
-    logging.info(f"Splitting {numRows} rows into {numOfSets} datasets with balanced classes")
+    logging.info(
+        f"Splitting {numRows} rows into {numOfSets} datasets with balanced classes")
 
 # foreach dataset, construct a csv of the files in that set
 baseNameFile = datacsvname.split(".csv")
@@ -276,7 +277,8 @@ if batchdir == ".":
 training_batch_file = open(training_filename, "w")
 training_batch_file.write("#!/usr/bin/bash \n")
 training_batch_file.write("source venv/bin/activate \n")
-training_batch_file.write("# batch file for getting the training results \n \n")
+training_batch_file.write(
+    "# batch file for getting the training results \n \n")
 training_batch_file.write("cd " + currentDir + " \n")
 training_batch_file.write(
     "echo start-is: `date` \n \n"
@@ -295,7 +297,8 @@ for dataset_num in range(numOfSets):
         trainFile.write("export TRAINPROGRAM=" + trainProgram + "\n")
         trainFile.write("cd " + currentDir + " \n")
         trainFile.write("echo start-is: `date` \n \n")  # add start timestamp
-        traincommand_local = trainCommand.replace("$TRAINPROGRAM", trainProgram)
+        traincommand_local = trainCommand.replace(
+            "$TRAINPROGRAM", trainProgram)
         traincommand_local = traincommand_local.replace(
             "$LABEL_OFFSET", str(label_offset)
         )
@@ -305,7 +308,8 @@ for dataset_num in range(numOfSets):
         for trainingSetNum in range(numOfSets):
             if int(trainingSetNum) != int(dataset_num):
                 traincommand_local = (
-                    traincommand_local + " " + f"{baseName}_{str(trainingSetNum)}.tar"
+                    traincommand_local + " " +
+                    f"{baseName}_{str(trainingSetNum)}.tar"
                 )
 
         trainFile.write(
@@ -313,7 +317,7 @@ for dataset_num in range(numOfSets):
         )  # write the training command to the training command
         trainFile.write(
             "chmod -R 777 . >> /dev/null 2>&1 \n"
-        ) # change the permissions of the shell scripts to be executable.
+        )  # change the permissions of the shell scripts to be executable.
         trainFile.write("echo end-is: `date` \n \n")  # add end timestamp
         training_batch_file.write(
             f"sbatch "
