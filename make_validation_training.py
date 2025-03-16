@@ -320,7 +320,7 @@ for dataset_num in range(numOfSets):
             traincommand_local +
             "\n")  # write the training command to the training command
         trainFile.write(
-            "chmod -R 777 . >> /dev/null 2>&1 \n"
+            "chmod -R 777 gradcam_plots saliency_maps *.log >> /dev/null 2>&1 \n"
         )  # change the permissions of the shell scripts to be executable.
         trainFile.write("echo end-is: `date` \n \n")  # add end timestamp
         training_batch_file.write(
@@ -341,4 +341,4 @@ training_batch_file.close()
 
 logging.info("Done writing dataset and job files")
 # change the permissions of the shell scripts to be executable.
-os.system("chmod 777 *")
+os.system("chmod 777 *.log *.sh")
