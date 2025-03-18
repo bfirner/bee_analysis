@@ -398,7 +398,7 @@ label_handler = LabelHandler(label_size, label_range, label_names)
 if args.normalize_outputs:
     logging.info("Reading dataset to compute label statistics for normalization.")
     label_stats = [OnlineStatistics() for _ in range(label_size)]
-    label_dataset = wds.WebDataset(args.dataset).to_tuple(*args.labels)
+    label_dataset = wds.WebDataset(args.dataset, shardshuffle=20000 // in_frames).to_tuple(*args.labels)
     label_dataloader = torch.utils.data.DataLoader(
         label_dataset, num_workers=0, batch_size=1
     )
@@ -451,7 +451,7 @@ else:
 # in the tar file by shuffling filenames after the dataset is created.
 logging.info(f"Training with dataset {args.dataset}")
 dataset = (
-    wds.WebDataset(args.dataset, shardshuffle=True)
+    wds.WebDataset(args.dataset, shardshuffle=20000 // in_frames)
     .shuffle(20000 // in_frames, initial=20000 // in_frames)
     # TODO This will hardcode all images to single channel numpy float images, but that isn't clear
     # from any documentation.
@@ -465,7 +465,7 @@ logging.info(f"Decoding images of size {image_size}")
 batch_size = 32
 dataloader = torch.utils.data.DataLoader(dataset, num_workers=0, batch_size=batch_size)
 if args.evaluate:
-    eval_dataset = wds.WebDataset(args.evaluate).decode("l").to_tuple(*decode_strs)
+    eval_dataset = wds.WebDataset(args.evaluate, shardshuffle=20000 // in_frames).decode("l").to_tuple(*decode_strs)
     eval_dataloader = torch.utils.data.DataLoader(
         eval_dataset, num_workers=0, batch_size=batch_size
     )
