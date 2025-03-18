@@ -237,8 +237,10 @@ class ConfusionMatrix:
             str: String of the results.
         """
         results = '\n'.join(
+            [
             "Confusion Matrix:\n{}\n".format(str(self)),
             "Accuracy:  {}".format(self.accuracy())
+            ]
         )
         for row in range(len(self.cmatrix)):
             # Print out class statistics if this class was present in the data.
