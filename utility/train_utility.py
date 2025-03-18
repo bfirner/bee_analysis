@@ -219,9 +219,9 @@ def trainEpoch(
     normalize_images,
     loss_fn,
     nn_postprocess,
-    encode_position,
-    worst_training,
     skip_metadata,
+    encode_position=False,
+    worst_training=None,
     best_training=None,
     device="cuda",
 ):
