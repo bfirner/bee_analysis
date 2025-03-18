@@ -56,8 +56,6 @@ from utility.train_utility import trainEpoch
 from utility.train_utility import updateWithoutScaler
 from utility.train_utility import updateWithScaler
 
-# Added: Importing torchvision.transforms and logging for later use.
-
 # ---------------------- Argument Parser ----------------------
 # Added: Set up the command-line arguments as per the provided instructions.
 parser = argparse.ArgumentParser(
