@@ -18,43 +18,34 @@ import datetime
 import functools
 import heapq
 import io
+import logging
 import math
-import numpy
 import os
 import random
 import sys
+from collections import namedtuple
+
+import numpy
 import torch
 import torch.cuda.amp
 import webdataset as wds
-from collections import namedtuple
-
 # Added: Importing torchvision.transforms and logging for later use.
 from torchvision import transforms
-import logging
-
-from utility.dataset_utility import extractVectors, getImageSize, getVectorSize
-from utility.eval_utility import (
-    ConfusionMatrix,
-    OnlineStatistics,
-    RegressionResults,
-    WorstExamples,
-)
-from utility.model_utility import restoreModelAndState
-from utility.train_utility import (
-    LabelHandler,
-    evalEpoch,
-    trainEpoch,
-    updateWithScaler,
-    updateWithoutScaler,
-)
-from utility.saliency_utils import plot_gradcam_for_multichannel_input
 
 from models.alexnet import AlexLikeNet
 from models.bennet import BenNet
+from models.convnext import (ConvNextBase, ConvNextExtraTiny, ConvNextSmall,
+                             ConvNextTiny)
+from models.modules import Denormalizer, Normalizer
 from models.resnet import ResNet18, ResNet34
 from models.resnext import ResNext18, ResNext34, ResNext50
-from models.convnext import ConvNextExtraTiny, ConvNextTiny, ConvNextSmall, ConvNextBase
-from models.modules import Denormalizer, Normalizer
+from utility.dataset_utility import extractVectors, getImageSize, getVectorSize
+from utility.eval_utility import (ConfusionMatrix, OnlineStatistics,
+                                  RegressionResults, WorstExamples)
+from utility.model_utility import restoreModelAndState
+from utility.saliency_utils import plot_gradcam_for_multichannel_input
+from utility.train_utility import (LabelHandler, evalEpoch, trainEpoch,
+                                   updateWithoutScaler, updateWithScaler)
 
 # ---------------------- Argument Parser ----------------------
 # Added: Set up the command-line arguments as per the provided instructions.
