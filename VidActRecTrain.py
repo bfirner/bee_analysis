@@ -701,17 +701,32 @@ if args.loss_fun not in regression_loss:
         sm = torch.nn.Softmax(dim=1)
 
         def nn_postprocess(classes):
+            """
+
+            :param classes: 
+
+            """
             return torch.round(sm(classes)).clamp(0, 1)
 
     elif "BCEWithLogitsLoss" == args.loss_fun:
         sigm = torch.nn.Sigmoid()
 
         def nn_postprocess(classes):
+            """
+
+            :param classes: 
+
+            """
             return torch.round(sigm(classes)).clamp(0, 1)
 
     else:
 
         def nn_postprocess(classes):
+            """
+
+            :param classes: 
+
+            """
             return torch.round(classes).clamp(0, 1)
 
 
