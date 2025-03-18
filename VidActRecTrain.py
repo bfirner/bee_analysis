@@ -713,7 +713,7 @@ if args.loss_fun not in regression_loss:
         def nn_postprocess(classes):
             """
 
-            :param classes: 
+            :param classes:
 
             """
             return torch.round(sm(classes)).clamp(0, 1)
@@ -724,7 +724,7 @@ if args.loss_fun not in regression_loss:
         def nn_postprocess(classes):
             """
 
-            :param classes: 
+            :param classes:
 
             """
             return torch.round(sigm(classes)).clamp(0, 1)
@@ -734,7 +734,7 @@ if args.loss_fun not in regression_loss:
         def nn_postprocess(classes):
             """
 
-            :param classes: 
+            :param classes:
 
             """
             return torch.round(classes).clamp(0, 1)
