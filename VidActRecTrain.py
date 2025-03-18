@@ -75,8 +75,7 @@ parser.add_argument(
         'multilabel: Multilabels are loaded from "detection.pth", binary cross entropy loss is used.'
     ),
 )
-parser.add_argument("dataset", nargs="+", type=str,
-                    help="Dataset for training.")
+parser.add_argument("dataset", nargs="+", type=str, help="Dataset for training.")
 
 parser.add_argument(
     "--sample_frames",
@@ -353,8 +352,7 @@ for label_str in args.labels:
     decode_strs.append(label_str)
 
 # Vector inputs (if there are none then the slice will be an empty range)
-vector_range = slice(label_range.stop, label_range.stop +
-                     len(args.vector_inputs))
+vector_range = slice(label_range.stop, label_range.stop + len(args.vector_inputs))
 for vector_str in args.vector_inputs:
     decode_strs.append(vector_str)
 
@@ -377,8 +375,7 @@ logging.info(f"Adjusting labels with offset {label_offset}")
 # webdataset.
 if args.convert_idx_to_classes == 1:
     label_size = (
-        getVectorSize(args.dataset, decode_strs,
-                      label_range) * args.num_outputs
+        getVectorSize(args.dataset, decode_strs, label_range) * args.num_outputs
     )
 else:
     label_size = getVectorSize(args.dataset, decode_strs, label_range)
@@ -399,11 +396,11 @@ label_handler = LabelHandler(label_size, label_range, label_names)
 # labels and to put the labels in a better training range. Note that this only makes sense with a
 # regression loss, where the label_offset adjustment would not be used.
 if args.normalize_outputs:
-    logging.info(
-        "Reading dataset to compute label statistics for normalization.")
+    logging.info("Reading dataset to compute label statistics for normalization.")
     label_stats = [OnlineStatistics() for _ in range(label_size)]
     label_dataset = wds.WebDataset(
-        args.dataset, shardshuffle=20000 // in_frames).to_tuple(*args.labels)
+        args.dataset, shardshuffle=20000 // in_frames
+    ).to_tuple(*args.labels)
     label_dataloader = torch.utils.data.DataLoader(
         label_dataset, num_workers=0, batch_size=1
     )
@@ -417,13 +414,10 @@ if args.normalize_outputs:
         [math.sqrt(stat.variance()) for stat in label_stats]
     ).cuda()
     if (label_stddevs.abs() < 0.0001).any():
-        logging.error(
-            "Some labels have extremely low variance -- check your dataset.")
+        logging.error("Some labels have extremely low variance -- check your dataset.")
         exit(1)
-    denormalizer = Denormalizer(
-        means=label_means, stddevs=label_stddevs).to(device)
-    normalizer = Normalizer(
-        means=label_means, stddevs=label_stddevs).to(device)
+    denormalizer = Denormalizer(means=label_means, stddevs=label_stddevs).to(device)
+    normalizer = Normalizer(means=label_means, stddevs=label_stddevs).to(device)
     label_handler.setPreprocess(lambda labels: normalizer(labels))
 else:
     denormalizer = None
@@ -471,11 +465,13 @@ image_size = getImageSize(args.dataset, decode_strs)
 logging.info(f"Decoding images of size {image_size}")
 
 batch_size = 32
-dataloader = torch.utils.data.DataLoader(
-    dataset, num_workers=0, batch_size=batch_size)
+dataloader = torch.utils.data.DataLoader(dataset, num_workers=0, batch_size=batch_size)
 if args.evaluate:
-    eval_dataset = wds.WebDataset(
-        args.evaluate, shardshuffle=20000 // in_frames).decode("l").to_tuple(*decode_strs)
+    eval_dataset = (
+        wds.WebDataset(args.evaluate, shardshuffle=20000 // in_frames)
+        .decode("l")
+        .to_tuple(*decode_strs)
+    )
     eval_dataloader = torch.utils.data.DataLoader(
         eval_dataset, num_workers=0, batch_size=batch_size
     )
@@ -616,7 +612,11 @@ if not args.no_train:
         worst_training = None
         if args.save_worst_n is not None:
             worst_training = WorstExamples(
-                args.outname.split('.')[0] + "-worstN-train-epoch{}", class_names, args.save_worst_n, epoch)
+                args.outname.split(".")[0] + "-worstN-train-epoch{}",
+                class_names,
+                args.save_worst_n,
+                epoch,
+            )
             logging.info(
                 f"Saving worst training examples to {worst_training.worstn_path}."
             )
@@ -703,20 +703,25 @@ if not args.no_train:
 
 
 if args.loss_fun not in regression_loss:
-    if 'CrossEntropyLoss' == args.loss_fun:
+    if "CrossEntropyLoss" == args.loss_fun:
         # Outputs of most classification networks are considered probabilities (but only take that in a
         # very loose sense of the word). The Softmax function forces its inputs to sum to 1 as
         # probabilities should do.
         sm = torch.nn.Softmax(dim=1)
 
-        def nn_postprocess(classes): return torch.round(
-            sm(classes)).clamp(0, 1)
-    elif 'BCEWithLogitsLoss' == args.loss_fun:
+        def nn_postprocess(classes):
+            return torch.round(sm(classes)).clamp(0, 1)
+
+    elif "BCEWithLogitsLoss" == args.loss_fun:
         sigm = torch.nn.Sigmoid()
-        def nn_postprocess(classes): return torch.round(
-            sigm(classes)).clamp(0, 1)
+
+        def nn_postprocess(classes):
+            return torch.round(sigm(classes)).clamp(0, 1)
+
     else:
-        def nn_postprocess(classes): return torch.round(classes).clamp(0, 1)
+
+        def nn_postprocess(classes):
+            return torch.round(classes).clamp(0, 1)
 
 
 # ---------------------- Post-Training Evaluation & GradCAM ----------------------
@@ -727,16 +732,19 @@ if args.evaluate:
     worst_eval = None
     if args.save_top_n is not None:
         top_eval = WorstExamples(
-            args.outname.split('.')[0] +
-            "-topN-eval", class_names, args.save_top_n,
-            worst_mode=False)
-        logging.info(
-            f"Saving top evaluation examples to {top_eval.worstn_path}.")
+            args.outname.split(".")[0] + "-topN-eval",
+            class_names,
+            args.save_top_n,
+            worst_mode=False,
+        )
+        logging.info(f"Saving top evaluation examples to {top_eval.worstn_path}.")
     if args.save_worst_n is not None:
         worst_eval = WorstExamples(
-            args.outname.split('.')[0] + "-worstN-eval", class_names, args.save_worst_n)
+            args.outname.split(".")[0] + "-worstN-eval", class_names, args.save_worst_n
+        )
         logging.info(
-            f"Saving {args.save_worst_n} highest error evaluation images to {worst_eval.worstn_path}.")
+            f"Saving {args.save_worst_n} highest error evaluation images to {worst_eval.worstn_path}."
+        )
     net.eval()
     with torch.no_grad():
         # Make a confusion matrix or loss statistics
@@ -761,8 +769,11 @@ if args.evaluate:
                 # Normalize inputs: input = (input - mean)/stddev
                 if args.normalize:
                     # Normalize per channel, so compute over height and width
-                    v, m = torch.var_mean(net_input, dim=(
-                        net_input.dim()-2, net_input.dim()-1), keepdim=True)
+                    v, m = torch.var_mean(
+                        net_input,
+                        dim=(net_input.dim() - 2, net_input.dim() - 1),
+                        keepdim=True,
+                    )
                     net_input = (net_input - m) / v
 
                 # GradCAM plotting if enabled (only for alexnet type with gradcam layers)
@@ -781,15 +792,12 @@ if args.evaluate:
                     ):
                         try:
                             num_cls = (
-                                len(set(target_classes)) if set(
-                                    target_classes) else 3
+                                len(set(target_classes)) if set(target_classes) else 3
                             )
-                            logging.info(
-                                f"Plotting GradCAM for layer {last_layer}")
+                            logging.info(f"Plotting GradCAM for layer {last_layer}")
                             plot_gradcam_for_multichannel_input(
                                 model=net,
-                                dataset=os.path.basename(
-                                    args.evaluate).split(".")[0],
+                                dataset=os.path.basename(args.evaluate).split(".")[0],
                                 input_tensor=net_input,
                                 target_layer_name=[last_layer],
                                 model_name=model_name,
@@ -797,16 +805,14 @@ if args.evaluate:
                                 number_of_classes=num_cls,
                             )
                         except Exception as e:
-                            logging.error(
-                                f"GradCAM error for layer {last_layer}: {e}")
+                            logging.error(f"GradCAM error for layer {last_layer}: {e}")
 
                 vector_input = None
                 if 0 < vector_input_size:
-                    vector_input = extractVectors(
-                        dl_tuple, vector_range).cuda()
+                    vector_input = extractVectors(dl_tuple, vector_range).cuda()
 
                 # Visualization masks are not supported with all model types yet.
-                if args.modeltype in ['alexnet', 'bennet', 'resnet18', 'resnet34']:
+                if args.modeltype in ["alexnet", "bennet", "resnet18", "resnet34"]:
                     out, mask = net.vis_forward(net_input, vector_input)
                 else:
                     out = net.forward(net_input, vector_input, vector_input)
@@ -834,8 +840,9 @@ if args.evaluate:
                     # Log the predictions
                     for i in range(post_labels.size(0)):
                         logfile.write(
-                            ','.join((metadata[i], str(out[i]), str(post_labels[i]))))
-                        logfile.write('\n')
+                            ",".join((metadata[i], str(out[i]), str(post_labels[i])))
+                        )
+                        logfile.write("\n")
                     if worst_eval is not None or top_eval is not None:
                         # For each item in the batch see if it requires an update to the worst examples
                         # If the DNN should have predicted this image was a member of the labelled class
@@ -846,10 +853,18 @@ if args.evaluate:
                             label = torch.argwhere(post_labels[i])[0].item()
                             if worst_eval is not None:
                                 worst_eval.test(
-                                    label, out[i][label].item(), input_images[i], metadata[i])
+                                    label,
+                                    out[i][label].item(),
+                                    input_images[i],
+                                    metadata[i],
+                                )
                             if top_eval is not None:
                                 top_eval.test(
-                                    label, out[i][label].item(), input_images[i], metadata[i])
+                                    label,
+                                    out[i][label].item(),
+                                    input_images[i],
+                                    metadata[i],
+                                )
 
         # Save the worst and best examples
         if worst_eval is not None:
