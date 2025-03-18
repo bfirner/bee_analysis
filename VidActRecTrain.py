@@ -494,7 +494,7 @@ if args.modeltype == "alexnet":
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
         optimizer, milestones=[3, 5, 7], gamma=0.2
     )
-    use_amp = True
+    use_amp = False
 elif args.modeltype == "resnet18":
     # Model specific arguments
     model_args["expanded_linear"] = True

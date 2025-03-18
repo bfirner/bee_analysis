@@ -65,7 +65,7 @@ def extractVectors(dl_tuple, vector_range):
     tensors = extractUnflatVectors(dl_tuple, vector_range)
     # Concat along the first non-batch dimension
     if tensors[0].dim() == 1:
-        return torch.cat(tensors, 0).view(len(tensors), -1)
+        return tensors[0]
     else:
         return torch.cat(tensors, 1)
 
