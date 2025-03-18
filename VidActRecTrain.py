@@ -1,5 +1,4 @@
 #! /usr/bin/python3
-
 """
 This will train a model using a webdataset tar archive for data input.
 If you use Cuda >= 10.2 then running in deterministic mode requires this environment variable to be
@@ -8,7 +7,6 @@ To disable deterministic mode use the option --not_deterministic
 There is another problem is AveragePooling that may also make it impossible to use deterministic
 mode. If you encounter it, the solution is to just disable determinism with --not_deterministic
 """
-
 # Not using video reading library from torchvision.
 # It only works with old versions of ffmpeg.
 # ---------------------- Imports ----------------------
@@ -26,26 +24,38 @@ import sys
 from collections import namedtuple
 
 import numpy
-import torch
 import torch.cuda.amp
 import webdataset as wds
-# Added: Importing torchvision.transforms and logging for later use.
 from torchvision import transforms
 
 from models.alexnet import AlexLikeNet
 from models.bennet import BenNet
-from models.convnext import (ConvNextBase, ConvNextExtraTiny, ConvNextSmall,
-                             ConvNextTiny)
-from models.modules import Denormalizer, Normalizer
-from models.resnet import ResNet18, ResNet34
-from models.resnext import ResNext18, ResNext34, ResNext50
-from utility.dataset_utility import extractVectors, getImageSize, getVectorSize
-from utility.eval_utility import (ConfusionMatrix, OnlineStatistics,
-                                  RegressionResults, WorstExamples)
+from models.convnext import ConvNextBase
+from models.convnext import ConvNextExtraTiny
+from models.convnext import ConvNextSmall
+from models.convnext import ConvNextTiny
+from models.modules import Denormalizer
+from models.modules import Normalizer
+from models.resnet import ResNet18
+from models.resnet import ResNet34
+from models.resnext import ResNext18
+from models.resnext import ResNext34
+from models.resnext import ResNext50
+from utility.dataset_utility import extractVectors
+from utility.dataset_utility import getImageSize
+from utility.dataset_utility import getVectorSize
+from utility.eval_utility import ConfusionMatrix
+from utility.eval_utility import OnlineStatistics
+from utility.eval_utility import RegressionResults
+from utility.eval_utility import WorstExamples
 from utility.model_utility import restoreModelAndState
 from utility.saliency_utils import plot_gradcam_for_multichannel_input
-from utility.train_utility import (LabelHandler, evalEpoch, trainEpoch,
-                                   updateWithoutScaler, updateWithScaler)
+from utility.train_utility import evalEpoch
+from utility.train_utility import LabelHandler
+from utility.train_utility import trainEpoch
+from utility.train_utility import updateWithoutScaler
+from utility.train_utility import updateWithScaler
+# Added: Importing torchvision.transforms and logging for later use.
 
 # ---------------------- Argument Parser ----------------------
 # Added: Set up the command-line arguments as per the provided instructions.
