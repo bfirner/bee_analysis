@@ -605,14 +605,14 @@ if not args.no_train:
     scaler = torch.amp.GradScaler("cuda") if use_amp else None
     try:
         worst_training = None
-        if args.save_worst_n is not None:
-            worst_training = WorstExamples(
-                args.outname.split('.')[0] + "-worstN-train-epoch{}", class_names, args.save_worst_n, epoch)
-            logging.info(
-                f"Saving worst training examples to {worst_training.worstn_path}."
-            )
         for epoch in range(args.epochs):
             logging.info(f"Starting epoch {epoch}")
+            if args.save_worst_n is not None:
+                worst_training = WorstExamples(
+                    args.outname.split('.')[0] + "-worstN-train-epoch{}", class_names, args.save_worst_n, epoch)
+                logging.info(
+                    f"Saving worst training examples to {worst_training.worstn_path}."
+                )
             if args.loss_fun in regression_loss:
                 totals = RegressionResults(
                     size=label_handler.size(), names=label_handler.names()
@@ -680,8 +680,7 @@ if not args.no_train:
                     label_handler=label_handler,
                     eval_stats=eval_totals,
                     eval_dataloader=eval_dataloader,
-                    # ! What is eval range?
-                    vector_range=eval_range,
+                    vector_range=label_range,
                     train_frames=in_frames,
                     normalize_images=args.normalize,
                     loss_fn=loss_fn,
