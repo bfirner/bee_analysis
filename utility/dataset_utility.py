@@ -70,15 +70,23 @@ def extractVectors(dl_tuple, vector_range):
         return torch.cat(tensors, 1)
 
 
-def makeDataset(data_path, decode_strs, img_format=None):
+def makeDataset(data_path, decode_strs, img_format=None, shuffle=False, shardshuffle=False):
     """Return a dataloader for either a webdataset or a flat binary file."""
     if (isinstance(data_path, str) and data_path.endswith(".tar")) or data_path[0].endswith(".tar"):
         # Check the size of the labels
-        dataset = (
-            wds.WebDataset(data_path)
-            .decode("l")
-            .to_tuple(*decode_strs)
-        )
+        if shuffle:
+            dataset = (
+                wds.WebDataset(data_path, shardshuffle=shardshuffle)
+                .decode("l")
+                .to_tuple(*decode_strs)
+            )
+        else:
+            dataset = (
+                wds.WebDataset(data_path, shardshuffle=shardshuffle)
+                .decode("l")
+                .to_tuple(*decode_strs)
+                .shuffle(shuffle)
+            )
         return dataset
     elif isinstance(data_path, list):
         return InterleavedFlatbinDatasets(data_path, decode_strs, img_format)

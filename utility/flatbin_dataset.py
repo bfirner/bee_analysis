@@ -66,7 +66,7 @@ def img_handler(binfile, img_format=None):
 # Raw bytes of a compressed png image
 def writeImgData(binfile, data):
     # Write the size and the image bytes
-    # The data could already be a PIL image bytes, or it could be a tensor that must converted to a PIL Image and then saved as a png.
+    # The data could already be a PIL image bytes, or it could be a tensor that we must converted to a PIL Image and then saved as a png.
     if type(data) is not bytes:
         # We need to get to a numpy array, so check if this is a tensor
         if type(data) is torch.Tensor:
@@ -145,6 +145,19 @@ def writeIntData(binfile, data):
     # Pack with big endian int
     writePrimitiveData('i', binfile, data)
 
+def writeStoIData(binfile, data):
+    # Decode a utf-8 string and convert to an integer.
+    value = int(data.decode('utf-8'))
+    writePrimitiveData('i', binfile, value)
+
+def convertThenWriteIntData(binfile, data):
+    # Convert with frombytes, then write as big endian int.
+    writeIntData(binfile, int.from_bytes(data))
+
+def writeBinaryData(binfile, data):
+    # Binary data that goes directly to disk
+    binfile.write(data)
+
 def tensor_handler(data_length, binfile):
     """Handle a fixed-length tensor."""
     return numpy.frombuffer(binfile.read(data_length*4), dtype=numpy.float32)
@@ -210,13 +223,14 @@ def read_header(binfile):
     return metadata
 
 
-def dataloaderToFlatbin(dataloader, entries, output, metadata={}):
+def dataloaderToFlatbin(dataloader, entries, output, metadata={}, handlers={}):
     """
     Arguments:
         dataloader: An iterable dataloader
         entries ([str]): Names (and implied types) of the data from the dataloader. Inferred if None.
         output (str): Name of the output flatbin file.
         metadata ({str:(float|int)}): Metadata information about the dataset.
+        handlers ({str:str}): Handle a filetype, e.g. {'cls': 'int'}
     """
     # Open the output file
     binfile = open(output, "wb")
@@ -281,7 +295,7 @@ def dataloaderToFlatbin(dataloader, entries, output, metadata={}):
             if isinstance(datum[0], bytes):
                 entries.append(f"{didx}.png")
             elif isinstance(datum[0], numpy.ndarray):
-                if data.dtype == numpy.int32:
+                if datum.dtype == numpy.int32:
                     entries.append(f"{didx}.int")
                 else:
                     entries.append(f"{didx}.float")
@@ -294,41 +308,79 @@ def dataloaderToFlatbin(dataloader, entries, output, metadata={}):
     for idx, name in enumerate(entries):
         # Write the length of the name and then the string
         if 100 < len(name):
-            print("Names with lengths greater than 100 will be truncated: {}".format(name))
-            name = name[:100]
+            print("Names with lengths greater than 100 characters will only use the last 100: {}".format(name))
+            name = name[-100:]
         binfile.write(len(name).to_bytes(length=4, byteorder='big', signed=False))
         binfile.write(name.encode('utf-8'))
-        # Get the first value from the batch for this entry
-        datum = data[idx].tolist()[0]
+        # We are going to expect that all data is either binary (the default state of data from a webdataset) or a tensor.
+        datum = data[idx]
+        if isinstance(datum, torch.Tensor):
+            # Look at the first element of the batch
+            if 0 == datum[0].dim():
+                datum = datum[0].item()
+            elif 1 == datum[0].dim():
+                datum = datum[0].tolist()
+        else:
+            datum = datum[0]
+        # Check if a handler exists for this filename.
+        handle_str = ""
+        for handler, handle_as in handlers.items():
+            if name.endswith(handler):
+                handle_str = handle_as
+                break
         # TODO FIXME Clean up unused types and string handling from raw webdataset inputs
-        # Now the size, a 4 byte unsigned integer.
-        # Only a few kinds of data are supported: images, flat arrays or tensors, and floats
-        if name.endswith(".png"):
+        # Only a few kinds of data are supported: images, numpy arrays, ints, and floats
+        if name.endswith(".png") or handle_str == "png":
             datawriters.append(functools.partial(writeImgData, binfile))
             # Each image has a different size, so nothing will be written for the images other than
             # their name.
             # Otherwise handling images is the same as handling bytes objects
-        elif name.endswith(".numpy"):
+        elif name.endswith(".numpy") or handle_str == "numpy":
             # This is a numpy array that's already converted to bytes, or that requires variable length encoding
             datawriters.append(functools.partial(writeNumpyWithHeader, binfile))
-        elif name.endswith(".int"):
+        elif name.endswith(".int") or handle_str == "int":
             # This is int32 data, stored as 4 bytes per element
             # Check if this is a lone value or part of a list or numpy array
-            if type(datum) is int:
+            if isinstance(datum, int):
                 datalen = 1
-            else:
+                binfile.write(datalen.to_bytes(length=4, byteorder='big', signed=False))
+                datawriters.append(functools.partial(writeIntData, binfile))
+            elif isinstance(datum, list):
                 datalen = len(datum)
-            binfile.write(datalen.to_bytes(length=4, byteorder='big', signed=False))
-            datawriters.append(functools.partial(writeIntData, binfile))
-        elif name.endswith(".float"):
+                binfile.write(datalen.to_bytes(length=4, byteorder='big', signed=False))
+                datawriters.append(functools.partial(writeIntData, binfile))
+            else:
+                # Bytes data
+                datalen = len(datum)
+                if datalen == 1:
+                    # Binary data represented as a single byte
+                    binfile.write(datalen.to_bytes(length=4, byteorder='big', signed=False))
+                    datawriters.append(functools.partial(convertThenWriteIntData, binfile))
+                else:
+                    # Data length should be divisible by 4
+                    assert datalen % 4 == 0
+                    datalen = datalen // 4
+                    binfile.write(datalen.to_bytes(length=4, byteorder='big', signed=False))
+                    # The data is already in binary format
+                    datawriters.append(functools.partial(writeBinaryData, binfile))
+        elif name.endswith(".float") or handle_str == "float":
             # This is float32 data, stored as 4 bytes per element
             # Check if this is a lone value or part of a list or numpy array
-            if type(datum) is float:
+            if isinstance(datum, float):
                 datalen = 1
+                binfile.write(datalen.to_bytes(length=4, byteorder='big', signed=False))
+                datawriters.append(functools.partial(writeFloatData, binfile))
             else:
-                datalen = len(datum)
+                # Data length should be divisible by 4
+                assert datalen % 4 == 0
+                datalen = len(datum)//4
+                binfile.write(datalen.to_bytes(length=4, byteorder='big', signed=False))
+                datawriters.append(functools.partial(writeBinaryData, binfile))
+        elif handle_str == "stoi":
+            # Convert a string to an integer
+            datalen = 1
             binfile.write(datalen.to_bytes(length=4, byteorder='big', signed=False))
-            datawriters.append(functools.partial(writeFloatData, binfile))
+            datawriters.append(functools.partial(writeStoIData, binfile))
         else:
             # TODO FIXME These are written for webdatasets, rewrite for arbitrary torch dataloaders
             # Attempt to infer the type from the data's contents.
@@ -369,10 +421,13 @@ def dataloaderToFlatbin(dataloader, entries, output, metadata={}):
 
     # Write out the data for the first entry (since it was already read from the iterator)
     # Iterate through the batch index and write out each entry
-    for bidx in range(data[0].size(0)):
+    batch_size = data[0].size(0) if isinstance(data[0], torch.Tensor) else len(data[0])
+    for bidx in range(batch_size):
         for idx, datum in enumerate(data):
             # Number vs tensor vs image (or multi-D tensor) handling
-            if 0 == datum[bidx].dim():
+            if isinstance(datum[bidx], bytes):
+                datawriters[idx](datum[bidx])
+            elif 0 == datum[bidx].dim():
                 datawriters[idx](datum[bidx].item())
             elif 1 == datum[bidx].dim():
                 datawriters[idx](datum[bidx].tolist())
@@ -383,10 +438,13 @@ def dataloaderToFlatbin(dataloader, entries, output, metadata={}):
     for data in ds_iter:
         samples += 1
         # Iterate through the batch index and write out each entry
-        for bidx in range(data[0].size(0)):
+        batch_size = data[0].size(0) if isinstance(data[0], torch.Tensor) else len(data[0])
+        for bidx in range(batch_size):
             for idx, datum in enumerate(data):
                 # Number vs tensor vs image (or multi-D tensor) handling
-                if 0 == datum[bidx].dim():
+                if isinstance(datum[bidx], bytes):
+                    datawriters[idx](datum[bidx])
+                elif 0 == datum[bidx].dim():
                     datawriters[idx](datum[bidx].item())
                 elif 1 == datum[bidx].dim():
                     datawriters[idx](datum[bidx].tolist())
@@ -507,6 +565,12 @@ class FlatbinDataset(torch.utils.data.IterableDataset):
                     self.data_indices.append(self.desired_data.index(self.header_names[-1]))
                     self.data_sizes.append(data_length)
                 elif self.header_names[-1].endswith(".int"):
+                    data_length = int.from_bytes(binfile.read(4), byteorder='big')
+                    self.data_handlers.append(functools.partial(array_handler_int, data_length))
+                    self.data_indices.append(self.desired_data.index(self.header_names[-1]))
+                    self.data_sizes.append(data_length)
+                elif self.header_names[-1].endswith("cls"):
+                    # Some people use 'cls' to denote an object class, which is an int.
                     data_length = int.from_bytes(binfile.read(4), byteorder='big')
                     self.data_handlers.append(functools.partial(array_handler_int, data_length))
                     self.data_indices.append(self.desired_data.index(self.header_names[-1]))

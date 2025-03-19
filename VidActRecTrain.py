@@ -28,6 +28,8 @@ import torch.cuda.amp
 import webdataset as wds
 from torchvision import transforms
 
+import utility.dataset_utility as dataset_utility
+
 from models.alexnet import AlexLikeNet
 from models.bennet import BenNet
 from models.convnext import ConvNextBase
@@ -41,9 +43,6 @@ from models.resnet import ResNet34
 from models.resnext import ResNext18
 from models.resnext import ResNext34
 from models.resnext import ResNext50
-from utility.dataset_utility import extractVectors
-from utility.dataset_utility import getImageSize
-from utility.dataset_utility import getVectorSize
 from utility.eval_utility import ConfusionMatrix
 from utility.eval_utility import OnlineStatistics
 from utility.eval_utility import RegressionResults
@@ -263,6 +262,14 @@ parser.add_argument(
     help="Loss function to use.",
 )
 
+parser.add_argument(
+    "--num_workers",
+    required=False,
+    default=0,
+    type=int,
+    help="Number of workers to use during dataloading."
+)
+
 # ---------------------- New GradCAM & Debug Options ----------------------
 parser.add_argument(
     "--gradcam_cnn_model_layer",
@@ -382,10 +389,10 @@ logging.info(f"Adjusting labels with offset {label_offset}")
 # specifies the number of output elements. Otherwise we can check the number of elements in the
 # webdataset.
 if args.convert_idx_to_classes == 1:
-    label_size = (getVectorSize(args.dataset, decode_strs, label_range) *
+    label_size = (dataset_utility.getVectorSize(args.dataset, decode_strs, label_range) *
                   args.num_outputs)
 else:
-    label_size = getVectorSize(args.dataset, decode_strs, label_range)
+    label_size = dataset_utility.getVectorSize(args.dataset, decode_strs, label_range)
 
 # See if we can deduce the label names
 label_names = None
@@ -406,15 +413,13 @@ if args.normalize_outputs:
     logging.info(
         "Reading dataset to compute label statistics for normalization.")
     label_stats = [OnlineStatistics() for _ in range(label_size)]
-    label_dataset = wds.WebDataset(args.dataset,
-                                   shardshuffle=20000 //
-                                   in_frames).to_tuple(*args.labels)
+    label_dataset = dataset_utility.makeDataset(args.dataset, args.labels)
     label_dataloader = torch.utils.data.DataLoader(label_dataset,
                                                    num_workers=0,
                                                    batch_size=1)
     for data in label_dataloader:
         for label, stat in zip(
-                extractVectors(data, slice(0, label_size))[0].tolist(),
+                dataset_utility.extractVectors(data, slice(0, label_size))[0].tolist(),
                 label_stats):
             stat.sample(label)
     label_means = torch.tensor([stat.mean() for stat in label_stats]).cuda()
@@ -457,38 +462,32 @@ else:
 # TODO FIXME Deterministic shuffle only shuffles within a range. Should perhaps manipulate what is
 # in the tar file by shuffling filenames after the dataset is created.
 logging.info(f"Training with dataset {args.dataset}")
-dataset = (
-    wds.WebDataset(args.dataset, shardshuffle=20000 // in_frames).shuffle(
-        20000 // in_frames, initial=20000 // in_frames)
-    # TODO This will hardcode all images to single channel numpy float images, but that isn't clear
-    # from any documentation.
-    # TODO Why "l" rather than decode to torch directly with "torchl"?
-    .decode("l").to_tuple(*decode_strs))
-image_size = getImageSize(args.dataset, decode_strs)
+dataset = dataset_utility.makeDataset(
+        args.dataset, decode_strs, shuffle = 20000 // in_frames, shardshuffle=20000 // in_frames)
+image_size = dataset_utility.getImageSize(args.dataset, decode_strs)
 logging.info(f"Decoding images of size {image_size}")
 
 batch_size = 32
 dataloader = torch.utils.data.DataLoader(dataset,
-                                         num_workers=0,
+                                         num_workers=args.num_workers,
                                          batch_size=batch_size)
 if args.evaluate:
-    eval_dataset = (wds.WebDataset(
-        args.evaluate,
-        shardshuffle=20000 // in_frames).decode("l").to_tuple(*decode_strs))
+    eval_dataset = dataset_utility.makeDataset(
+            args.evaluate, decode_strs, shuffle = 20000 // in_frames, shardshuffle=20000 // in_frames)
     eval_dataloader = torch.utils.data.DataLoader(eval_dataset,
-                                                  num_workers=0,
+                                                  num_workers=args.num_workers,
                                                   batch_size=batch_size)
     logging.info(f"Loaded evaluation dataset from {args.evaluate}")
 
 # ---------------------- Model Setup ----------------------
 # Configure model arguments and instantiate the chosen model.
 model_args = {
-    "in_dimensions": (in_frames, image_size[1], image_size[2]),
+    "in_dimensions": (in_frames, image_size[-2], image_size[-1]),
     "out_classes": label_handler.size(),
 }
 vector_input_size = 0
 if len(args.vector_inputs) > 0:
-    vector_input_size = getVectorSize(args.dataset, decode_strs, vector_range)
+    vector_input_size = dataset_utility.getVectorSize(args.dataset, decode_strs, vector_range)
     model_args["vector_input_size"] = vector_input_size
 
 skip_last_relu = args.loss_fun in regression_loss
@@ -816,7 +815,7 @@ if args.evaluate:
                         "resnet18",
                         "resnet34",
                 ]:
-                    target_classes = (extractVectors(
+                    target_classes = (dataset_utility.extractVectors(
                         dl_tuple, label_range).cpu().tolist())
                     model_names = ["model_a", "model_b"]
                     for last_layer, model_name in zip(
@@ -842,7 +841,7 @@ if args.evaluate:
 
                 vector_input = None
                 if 0 < vector_input_size:
-                    vector_input = extractVectors(dl_tuple,
+                    vector_input = dataset_utility.extractVectors(dl_tuple,
                                                   vector_range).cuda()
 
                 # Visualization masks are not supported with all model types yet.
@@ -856,7 +855,7 @@ if args.evaluate:
 
                 # Convert the labels to a one hot encoding to serve at the DNN target.
                 # The label class is 1 based, but need to be 0-based for the one_hot function.
-                labels = extractVectors(dl_tuple, label_range).cuda()
+                labels = dataset_utility.extractVectors(dl_tuple, label_range).cuda()
 
                 if args.skip_metadata:
                     metadata = [""] * labels.size(0)

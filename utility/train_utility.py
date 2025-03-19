@@ -273,6 +273,9 @@ def trainEpoch(
                 )
 
             labels = extractVectors(dl_tuple, label_handler.range()).to(device)
+            # The loss function doesn't like a (batch x 1) tensor
+            if labels.size(-1) == 1:
+                labels = labels.flatten()
             vector_inputs = None
             if vector_range.start != vector_range.stop:
                 vector_inputs = extractVectors(dl_tuple, vector_range).to(device)
@@ -404,6 +407,9 @@ def evalEpoch(
                     vector_input = extractVectors(dl_tuple, vector_range).to(device)
                 out = net.forward(net_input, vector_input)
                 labels = extractVectors(dl_tuple, label_handler.range()).to(device)
+                # The loss function doesn't like a (batch x 1) tensor
+                if labels.size(-1) == 1:
+                    labels = labels.flatten()
 
                 loss = loss_fn(out, label_handler.preprocess(labels))
             # Fill in the loss statistics
