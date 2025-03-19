@@ -238,16 +238,16 @@ class ConfusionMatrix:
         """
         results = '\n'.join(
             [
-            "Confusion Matrix:\n{}\n".format(str(self)),
-            "Accuracy:  {}".format(self.accuracy())
+                "Confusion Matrix:\n{}\n".format(str(self)),
+                "Accuracy:  {}".format(self.accuracy())
             ]
         )
         for row in range(len(self.cmatrix)):
             # Print out class statistics if this class was present in the data.
-            if 0 < sum(self[cidx]):
+            if 0 < sum(self[row]):
                 precision, recall = self.calculateRecallPrecision(row)
                 results += "\nClass {} precision={}, recall={}".format(row, precision, recall)
-
+        return results
 
 # Need a special comparison function that won't attempt to do something that tensors do not
 # support. Used if args.save_top_n or args.save_worst_n are used.
