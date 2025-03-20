@@ -194,18 +194,55 @@ parser.add_argument(
     type=int,
 )
 
+# flatbin stuff
+parser.add_argument(
+    "--binary-training-optimization",
+    action="store_true",
+    required=False,
+    help="Convert and train with binary files",
+    default=False,
+)
+
+parser.add_argument(
+    "--use-dataloader-workers",
+    action="store_true",
+    default=False,
+    required=False,
+    help="Whether to use dataloader workers in the training script.",
+)
+
+parser.add_argument(
+    "--max-dataloader-workers",
+    type=int,
+    default=3,
+    required=False,
+    help=
+    "The number of dataloader workers, default=3. Only works when the `--use-dataloader-workers` flag is passed.",
+)
+
+parser.add_argument(
+    "--loss-fn",
+    type=int,
+    default="CrossEntropyLoss",
+    choices=[
+        "NLLLoss",
+        "BCEWithLogitsLoss",
+        "CrossEntropyLoss",
+        "L1Loss",
+        "MSELoss",
+        "BCELoss",
+    ],
+    required=False,
+    help="The loss function to be used for the training script",
+)
+
 args = parser.parse_args()
 
 # program_dir = "/research/projects/grail/rmartin/analysis-results/code/bee_analysis"
 program_dir = os.path.join(os.getcwd(), args.path_to_file)
 dataPrepProgram = os.path.join(program_dir, "VidActRecDataprep.py")
 # The training python program
-trainProgram = os.path.join(program_dir, "VidActRecTrain.py")  # ! FIX THIS TOO
-
-# command to run the evaluation and training program
-# trainCommand    = 'srun -G 1 python3 $TRAINPROGRAM --not_deterministic --epochs 10 --modeltype $MODEL --evaluate' # <eval-set> <a-set> <b-set> ...
-# <eval-set> <a-set> <b-set> ...
-trainCommand = f"python3 $TRAINPROGRAM --num_outputs {args.num_outputs} --sample_frames {args.frames_per_sample} --gradcam_cnn_model_layer {' '.join(args.gradcam_cnn_model_layer)} --not_deterministic --epochs {args.epochs} --modeltype $MODEL --label_offset $LABEL_OFFSET --evaluate"
+trainProgram = os.path.join(program_dir, "VidActRecTrain.py")
 
 datacsvname = args.datacsv
 numOfSets = args.k
@@ -219,6 +256,24 @@ crop_x_offset = args.crop_x_offset
 crop_y_offset = args.crop_y_offset
 label_offset = args.label_offset
 training_only = args.training_only
+
+# command to run the evaluation and training program
+# <eval-set> <a-set> <b-set> ...
+trainCommand = (
+    f"python3 {trainProgram} --num_outputs {args.num_outputs}"
+    f" --sample_frames {args.frames_per_sample} "
+    f" --gradcam_cnn_model_layer {' '.join(args.gradcam_cnn_model_layer)} "
+    f" --not_deterministic --epochs {args.epochs}"
+    f"--modeltype {model_name}"
+    f"--label_offset {label_offset} "
+    " --evaluate "
+    f" --loss_fun {args.loss_fn} ")
+
+if args.binary_training_optimization:
+    trainCommand += " --labels cls " " --convert_idx_to_classes 1 " " --skip-metadata "
+
+if args.use_dataloader__workers:
+    trainCommand += f" --num_workers {args.max_dataloader_workers} "
 
 logging.info(f"dataset is {datacsvname}")
 
@@ -292,8 +347,6 @@ training_batch_file.write("cd " + currentDir + " \n")
 training_batch_file.write(
     "echo start-is: `date` \n \n")  # add start timestamp to training file
 
-trainCommand = trainCommand.replace("$MODEL", model_name)
-
 for dataset_num in range(numOfSets):
     train_job_filename = "train" + "_" + str(dataset_num) + ".sh"
 
@@ -305,16 +358,17 @@ for dataset_num in range(numOfSets):
         trainFile.write("export TRAINPROGRAM=" + trainProgram + "\n")
         trainFile.write("cd " + currentDir + " \n")
         trainFile.write("echo start-is: `date` \n \n")  # add start timestamp
-        traincommand_local = trainCommand.replace("$TRAINPROGRAM",
-                                                  trainProgram)
-        traincommand_local = traincommand_local.replace(
-            "$LABEL_OFFSET", str(label_offset))
-        traincommand_local = (traincommand_local + " " +
-                              f"{baseName}_{str(dataset_num)}.tar")
+        traincommand_local = trainCommand
+        traincommand_local = (
+            traincommand_local + " " +
+            f"{baseName}_{str(dataset_num)}.{'tar' if not args.binary_training_optimization else 'bin'}"
+        )
         for trainingSetNum in range(numOfSets):
             if int(trainingSetNum) != int(dataset_num):
-                traincommand_local = (traincommand_local + " " +
-                                      f"{baseName}_{str(trainingSetNum)}.tar")
+                traincommand_local = (
+                    traincommand_local + " " +
+                    f"{baseName}_{str(trainingSetNum)}.{'tar' if not args.binary_training_optimization else 'bin'}"
+                )
 
         trainFile.write(
             traincommand_local +
