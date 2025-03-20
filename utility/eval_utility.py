@@ -16,6 +16,7 @@ class OnlineStatistics:
     Makes use of Welford's algorithm for online variance:
     https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
     """
+
     def __init__(self):
         """Initialize the variables."""
         self._population = 0
@@ -61,7 +62,8 @@ class OnlineStatistics:
 
 class RegressionResults:
     """A data structure to track regression results during training."""
-    def __init__(self, size, units = None, names = None):
+
+    def __init__(self, size, units=None, names=None):
         """Initialize storage for size regression outputs.
 
         Arguments:
@@ -86,17 +88,23 @@ class RegressionResults:
 
     def __str__(self):
         out_str = "\t\t\terror mean,\terror variance,\terror max,\tsample mean,\tsample variance\t sample max\n"
-        out_str += "average:\t{},\t{},\t{}\n".format(self.prediction_overall.mean(),
-                self.prediction_overall.variance(),
-                self.prediction_overall.max())
-        for row, stats in enumerate(zip(self.prediction_statistics, self.label_statistics)):
-            out_str += "{}:\t{},\t{},\t{},\t{},\t{},\t{}\n".format(self.names[row],
-                    str(stats[0].mean())+self.units[row],
-                    stats[0].variance(),
-                    str(stats[0].max())+self.units[row],
-                    str(stats[1].mean())+self.units[row],
-                    stats[1].variance(),
-                    str(stats[1].max())+self.units[row])
+        out_str += "average:\t{},\t{},\t{}\n".format(
+            self.prediction_overall.mean(),
+            self.prediction_overall.variance(),
+            self.prediction_overall.max(),
+        )
+        for row, stats in enumerate(
+            zip(self.prediction_statistics, self.label_statistics)
+        ):
+            out_str += "{}:\t{},\t{},\t{},\t{},\t{},\t{}\n".format(
+                self.names[row],
+                str(stats[0].mean()) + self.units[row],
+                stats[0].variance(),
+                str(stats[0].max()) + self.units[row],
+                str(stats[1].mean()) + self.units[row],
+                stats[1].variance(),
+                str(stats[1].max()) + self.units[row],
+            )
         return out_str
 
     def mean(self):
@@ -106,7 +114,7 @@ class RegressionResults:
         return [stats.mean() for stats in self.prediction_statistics]
 
     def update(self, predictions, labels):
-        """ Update the statistics matrix with a new set of predictions and labels.
+        """Update the statistics matrix with a new set of predictions and labels.
 
         Arguments:
             predictions (torch.tensor): [batch, size] predictions.
@@ -134,15 +142,16 @@ class RegressionResults:
 
 class ConfusionMatrix:
     """A confusion matrix with functions to extract evaluation statistics."""
+
     def __init__(self, size):
-        """ Initialize a size by size confusion matrix.
+        """Initialize a size by size confusion matrix.
 
         Arguments:
             size         (int): The number of classes used in the evaluation.
         """
         # Make a confusion matrix, the first index is the class label and the second is the
         # model prediction.
-        self.cmatrix=[[0] * size for _ in range(size)]
+        self.cmatrix = [[0] * size for _ in range(size)]
         # Track these outside of the matrix. When working with multilabel classification it is
         # simplest to treat classification one class at a time.
         self.true_positives = [0] * size
@@ -164,7 +173,7 @@ class ConfusionMatrix:
         return self.cmatrix[key]
 
     def update(self, predictions, labels):
-        """ Update the confusion matrix with a new set of predictions and labels.
+        """Update the confusion matrix with a new set of predictions and labels.
 
         Arguments:
             predictions (torch.tensor): [batch, size] predictions.
@@ -219,15 +228,15 @@ class ConfusionMatrix:
         # Find all of the positives for this class, then find just the true positives.
         all_positives = self.true_positives[class_idx] + self.false_positives[class_idx]
         if 0 < all_positives:
-            precision = self.true_positives[class_idx]/all_positives
+            precision = self.true_positives[class_idx] / all_positives
         else:
-            precision = 0.
+            precision = 0.0
 
         class_total = self.true_positives[class_idx] + self.false_negatives[class_idx]
         if 0 < class_total:
-            recall = self.true_positives[class_idx]/class_total
+            recall = self.true_positives[class_idx] / class_total
         else:
-            recall = 0.
+            recall = 0.0
 
         return precision, recall
 
@@ -236,18 +245,21 @@ class ConfusionMatrix:
         Returns:
             str: String of the results.
         """
-        results = '\n'.join(
+        results = "\n".join(
             [
                 "Confusion Matrix:\n{}\n".format(str(self)),
-                "Accuracy:  {}".format(self.accuracy())
+                "Accuracy:  {}".format(self.accuracy()),
             ]
         )
         for row in range(len(self.cmatrix)):
             # Print out class statistics if this class was present in the data.
             if 0 < sum(self[row]):
                 precision, recall = self.calculateRecallPrecision(row)
-                results += "\nClass {} precision={}, recall={}".format(row, precision, recall)
+                results += "\nClass {} precision={}, recall={}".format(
+                    row, precision, recall
+                )
         return results
+
 
 # Need a special comparison function that won't attempt to do something that tensors do not
 # support. Used if args.save_top_n or args.save_worst_n are used.
@@ -263,6 +275,7 @@ class MaxNode:
     def __lt__(self, other):
         return self.score < other.score
 
+
 # Turns the heapq from a max heap into a min heap by using greater than in the less than operator.
 class MinNode:
     def __init__(self, score, label, prediction, image, metadata, mask):
@@ -276,7 +289,8 @@ class MinNode:
     def __lt__(self, other):
         return self.score > other.score
 
-def saveWorstN(worstn, worstn_path, classname, vis_func = None):
+
+def saveWorstN(worstn, worstn_path, classname, vis_func=None):
     """Saves samples from the priority queue worstn into the given path.
 
     Arguments:
@@ -286,21 +300,27 @@ def saveWorstN(worstn, worstn_path, classname, vis_func = None):
         vis_func               (function): Extra processing to display the label and DNN output on the image.
     """
     for i, node in enumerate(worstn):
-        img = transforms.ToPILImage()(node.image).convert('L')
+        img = transforms.ToPILImage()(node.image).convert("L")
         if 0 < len(node.metadata):
-            timestamp = node.metadata.split(',')[2].replace(' ', '_')
+            timestamp = node.metadata.split(",")[2].replace(" ", "_")
         else:
             timestamp = "unknown"
-        img.save(f"{worstn_path}/class-{classname}_time-{timestamp}_score-{node.score}.png")
+        img.save(
+            f"{worstn_path}/class-{classname}_time-{timestamp}_score-{node.score}.png"
+        )
         if node.mask is not None:
             # Save the mask
-            mask_img = transforms.ToPILImage()(node.mask.data).convert('L')
-            mask_img.save(f"{worstn_path}/class-{classname}_time-{timestamp}_score-{node.score}_mask.png")
+            mask_img = transforms.ToPILImage()(node.mask.data).convert("L")
+            mask_img.save(
+                f"{worstn_path}/class-{classname}_time-{timestamp}_score-{node.score}_mask.png"
+            )
             # Also save the image with the mask an overlay
             overlay_tensor = transforms.PILToTensor()(img.convert("RGB"))
             overlay_tensor[1] += transforms.PILToTensor()(mask_img)[0]
             overlay_img = transforms.ToPILImage()(overlay_tensor)
-            overlay_img.save(f"{worstn_path}/class-{classname}_time-{timestamp}_score-{node.score}_overlay.png")
+            overlay_img.save(
+                f"{worstn_path}/class-{classname}_time-{timestamp}_score-{node.score}_overlay.png"
+            )
         if vis_func is not None:
             # Generate the visualization image
             filename = f"{worstn_path}/class-{classname}_time-{timestamp}_score-{node.score}_labelvis.png"
@@ -310,7 +330,7 @@ def saveWorstN(worstn, worstn_path, classname, vis_func = None):
 class WorstExamples:
     """Class to store the worst (or best) examples during training or validation."""
 
-    def __init__(self, path, class_names, num_to_save, worst_mode = True, vis_func = None):
+    def __init__(self, path, class_names, num_to_save, worst_mode=True, vis_func=None):
         """
 
         Arguments:
@@ -353,12 +373,20 @@ class WorstExamples:
 
         # If there are empty slots then just insert.
         if len(self.worstn[label_position]) < self.n:
-            heapq.heappush(self.worstn[label_position], MinNode(error, label_value, nn_output, image, metadata, None))
+            heapq.heappush(
+                self.worstn[label_position],
+                MinNode(error, label_value, nn_output, image, metadata, None),
+            )
         # Otherwise check to see if this should be inserted
         elif error < self.worstn[label_position][0].score:
-            heapq.heapreplace(self.worstn[label_position], MinNode(error, label_value, nn_output, image, metadata, None))
+            heapq.heapreplace(
+                self.worstn[label_position],
+                MinNode(error, label_value, nn_output, image, metadata, None),
+            )
 
-    def greater_than_test(self, label_position, label_value, nn_output, image, metadata):
+    def greater_than_test(
+        self, label_position, label_value, nn_output, image, metadata
+    ):
         """Test and possibly insert a new example.
 
         Arguments:
@@ -374,10 +402,16 @@ class WorstExamples:
 
         # If there are empty slots then just insert.
         if len(self.worstn[label_position]) < self.n:
-            heapq.heappush(self.worstn[label_position], MaxNode(error, label_value, nn_output, image, metadata, None))
+            heapq.heappush(
+                self.worstn[label_position],
+                MaxNode(error, label_value, nn_output, image, metadata, None),
+            )
         # Otherwise check to see if this should be inserted
         elif error > self.worstn[label_position][0].score:
-            heapq.heapreplace(self.worstn[label_position], MaxNode(error, label_value, nn_output, image, metadata, None))
+            heapq.heapreplace(
+                self.worstn[label_position],
+                MaxNode(error, label_value, nn_output, image, metadata, None),
+            )
 
     def save(self, epoch=None):
         """Save worst examples for an epoch."""
@@ -391,4 +425,9 @@ class WorstExamples:
         except FileExistsError:
             pass
         for i, classname in enumerate(self.class_names):
-            saveWorstN(worstn=self.worstn[i], worstn_path=worstn_path_epoch, classname=classname, vis_func=self.vis_func)
+            saveWorstN(
+                worstn=self.worstn[i],
+                worstn_path=worstn_path_epoch,
+                classname=classname,
+                vis_func=self.vis_func,
+            )
