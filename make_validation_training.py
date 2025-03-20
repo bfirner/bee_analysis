@@ -222,7 +222,7 @@ parser.add_argument(
 
 parser.add_argument(
     "--loss-fn",
-    type=int,
+    type=str,
     default="CrossEntropyLoss",
     choices=[
         "NLLLoss",
