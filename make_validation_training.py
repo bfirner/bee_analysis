@@ -272,7 +272,7 @@ trainCommand = (
 if args.binary_training_optimization:
     trainCommand += " --labels cls " " --convert_idx_to_classes 1 " " --skip-metadata "
 
-if args.use_dataloader__workers:
+if args.use_dataloader_workers:
     trainCommand += f" --num_workers {args.max_dataloader_workers} "
 
 logging.info(f"dataset is {datacsvname}")
