@@ -12,7 +12,7 @@ from torchvision import transforms
 
 class OnlineStatistics:
     """Calculator that tracks a running mean and variance.
-    
+
     Makes use of Welford's algorithm for online variance:
     https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
 
@@ -51,7 +51,7 @@ class OnlineStatistics:
     def sample(self, value):
         """Add the given value to the population.
 
-        :param value: 
+        :param value:
 
         """
         if math.isnan(value):
