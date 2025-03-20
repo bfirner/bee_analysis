@@ -258,6 +258,7 @@ trainCommand = (
     f"--modeltype {model_name}"
     f"--label_offset {label_offset} "
     " --evaluate "
+    f" --loss_fun {args.loss_fn} "
 )
 
 if (args.binary_training_optimization):
