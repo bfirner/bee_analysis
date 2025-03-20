@@ -104,7 +104,8 @@ class RegressionResults:
             self.prediction_overall.max(),
         )
         for row, stats in enumerate(
-                zip(self.prediction_statistics, self.label_statistics)):
+            zip(self.prediction_statistics, self.label_statistics)
+        ):
             out_str += "{}:\t{},\t{},\t{},\t{},\t{},\t{}\n".format(
                 self.names[row],
                 str(stats[0].mean()) + self.units[row],
@@ -243,15 +244,13 @@ class ConfusionMatrix:
 
         """
         # Find all of the positives for this class, then find just the true positives.
-        all_positives = self.true_positives[class_idx] + self.false_positives[
-            class_idx]
+        all_positives = self.true_positives[class_idx] + self.false_positives[class_idx]
         if 0 < all_positives:
             precision = self.true_positives[class_idx] / all_positives
         else:
             precision = 0.0
 
-        class_total = self.true_positives[class_idx] + self.false_negatives[
-            class_idx]
+        class_total = self.true_positives[class_idx] + self.false_negatives[class_idx]
         if 0 < class_total:
             recall = self.true_positives[class_idx] / class_total
         else:
@@ -268,16 +267,19 @@ class ConfusionMatrix:
         :rtype: str
 
         """
-        results = "\n".join([
-            "Confusion Matrix:\n{}\n".format(str(self)),
-            "Accuracy:  {}".format(self.accuracy(1e-20)),
-        ])
+        results = "\n".join(
+            [
+                "Confusion Matrix:\n{}\n".format(str(self)),
+                "Accuracy:  {}".format(self.accuracy(1e-20)),
+            ]
+        )
         for row in range(len(self.cmatrix)):
             # Print out class statistics if this class was present in the data.
             if 0 < sum(self[row]):
                 precision, recall = self.calculateRecallPrecision(row)
                 results += "\nClass {} precision={}, recall={}".format(
-                    row, precision, recall)
+                    row, precision, recall
+                )
         return results
 
 
@@ -348,19 +350,13 @@ def saveWorstN(worstn, worstn_path, classname, vis_func=None):
         if vis_func is not None:
             # Generate the visualization image
             filename = f"{worstn_path}/class-{classname}_time-{timestamp}_score-{node.score}_labelvis.png"
-            vis_img = vis_func(filename, node.image, node.label,
-                               node.prediction)
+            vis_img = vis_func(filename, node.image, node.label, node.prediction)
 
 
 class WorstExamples:
     """Class to store the worst (or best) examples during training or validation."""
 
-    def __init__(self,
-                 path,
-                 class_names,
-                 num_to_save,
-                 worst_mode=True,
-                 vis_func=None):
+    def __init__(self, path, class_names, num_to_save, worst_mode=True, vis_func=None):
         """
 
         Arguments:
@@ -387,8 +383,7 @@ class WorstExamples:
 
         self.vis_func = vis_func
 
-    def less_than_test(self, label_position, label_value, nn_output, image,
-                       metadata):
+    def less_than_test(self, label_position, label_value, nn_output, image, metadata):
         """Test and possibly insert a new example.
 
         :param label_position: int
@@ -415,8 +410,9 @@ class WorstExamples:
                 MinNode(error, label_value, nn_output, image, metadata, None),
             )
 
-    def greater_than_test(self, label_position, label_value, nn_output, image,
-                          metadata):
+    def greater_than_test(
+        self, label_position, label_value, nn_output, image, metadata
+    ):
         """Test and possibly insert a new example.
 
         :param label_position: int
@@ -450,8 +446,7 @@ class WorstExamples:
 
         """
         if epoch is not None:
-            worstn_path_epoch = os.path.join(self.worstn_path,
-                                             f"epoch_{epoch}")
+            worstn_path_epoch = os.path.join(self.worstn_path, f"epoch_{epoch}")
         else:
             worstn_path_epoch = self.worstn_path
         # Create the directory if it does not exist
