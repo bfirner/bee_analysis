@@ -29,6 +29,7 @@ import webdataset as wds
 from torchvision import transforms
 
 import utility.dataset_utility as dataset_utility
+import utility.train_utility as train_utility
 
 from models.alexnet import AlexLikeNet
 from models.bennet import BenNet
@@ -49,11 +50,6 @@ from utility.eval_utility import RegressionResults
 from utility.eval_utility import WorstExamples
 from utility.model_utility import restoreModelAndState
 from utility.saliency_utils import plot_gradcam_for_multichannel_input
-from utility.train_utility import evalEpoch
-from utility.train_utility import LabelHandler
-from utility.train_utility import trainEpoch
-from utility.train_utility import updateWithoutScaler
-from utility.train_utility import updateWithScaler
 
 # ---------------------- Argument Parser ----------------------
 # Added: Set up the command-line arguments as per the provided instructions.
@@ -401,7 +397,7 @@ if args.convert_idx_to_classes != 1:
     for label_idx in range(len(args.labels)):
         label_names.append(args.labels[label_idx])
 
-label_handler = LabelHandler(label_size, label_range, label_names)
+label_handler = train_utility.LabelHandler(label_size, label_range, label_names)
 
 # The label value may need to be adjusted, for example if the label class is 1 based, but
 # should be 0-based for the one_hot function. This is done by subtracting the label_offset from the
@@ -643,7 +639,7 @@ if not args.no_train:
             else:
                 totals = ConfusionMatrix(size=label_handler.size())
 
-            trainEpoch(
+            train_utility.trainEpoch(
                 net=net,
                 optimizer=optimizer,
                 scaler=scaler,
@@ -702,7 +698,7 @@ if not args.no_train:
                         size=label_handler.size(), names=label_handler.names())
                 else:
                     eval_totals = ConfusionMatrix(size=label_handler.size())
-                evalEpoch(
+                train_utility.evalEpoch(
                     net=net,
                     label_handler=label_handler,
                     eval_stats=eval_totals,
@@ -801,12 +797,7 @@ if args.evaluate:
                 # Normalize inputs: input = (input - mean)/stddev
                 if args.normalize:
                     # Normalize per channel, so compute over height and width
-                    v, m = torch.var_mean(
-                        net_input,
-                        dim=(net_input.dim() - 2, net_input.dim() - 1),
-                        keepdim=True,
-                    )
-                    net_input = (net_input - m) / v
+                    net_input = train_utility.normalizeImages(net_input)
 
                 # GradCAM plotting if enabled (only for alexnet type with gradcam layers)
                 if args.gradcam_cnn_model_layer and args.modeltype in [
