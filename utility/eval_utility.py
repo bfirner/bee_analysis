@@ -221,7 +221,7 @@ class ConfusionMatrix:
                     else:
                         self.true_negatives[cidx] += 1
 
-    def accuracy(self, epsilon = 1e-20):
+    def accuracy(self, epsilon=1e-20):
         """
 
 
