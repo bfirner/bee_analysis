@@ -221,7 +221,7 @@ class ConfusionMatrix:
                     else:
                         self.true_negatives[cidx] += 1
 
-    def accuracy(self):
+    def accuracy(self, epsilon = 1e-20):
         """
 
 
@@ -233,7 +233,7 @@ class ConfusionMatrix:
         accuracy in multi-label systems should be expected to be lower.
 
         """
-        return self.correct_count / (self.prediction_count + 1e-20)
+        return self.correct_count / (self.prediction_count + epsilon)
 
     def calculateRecallPrecision(self, class_idx):
         """
@@ -270,7 +270,7 @@ class ConfusionMatrix:
         """
         results = "\n".join([
             "Confusion Matrix:\n{}\n".format(str(self)),
-            "Accuracy:  {}".format(self.accuracy()),
+            "Accuracy:  {}".format(self.accuracy(1e-20)),
         ])
         for row in range(len(self.cmatrix)):
             # Print out class statistics if this class was present in the data.
