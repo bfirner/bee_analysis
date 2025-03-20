@@ -264,8 +264,8 @@ trainCommand = (
     f" --sample_frames {args.frames_per_sample} "
     f" --gradcam_cnn_model_layer {' '.join(args.gradcam_cnn_model_layer)} "
     f" --not_deterministic --epochs {args.epochs}"
-    f"--modeltype {model_name}"
-    f"--label_offset {label_offset} "
+    f" --modeltype {model_name} "
+    f" --label_offset {label_offset} "
     " --evaluate "
     f" --loss_fun {args.loss_fn} ")
 
