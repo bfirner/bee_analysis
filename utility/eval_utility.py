@@ -216,7 +216,7 @@ class ConfusionMatrix:
         In a multi-label system a prediction is only counted as accurate if *all* labels match, so
         accuracy in multi-label systems should be expected to be lower.
         """
-        return self.correct_count / self.prediction_count
+        return self.correct_count / (self.prediction_count + 1e-20)
 
     def calculateRecallPrecision(self, class_idx):
         """
