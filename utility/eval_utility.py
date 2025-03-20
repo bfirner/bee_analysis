@@ -12,7 +12,7 @@ from torchvision import transforms
 
 class OnlineStatistics:
     """Calculator that tracks a running mean and variance.
-
+    
     Makes use of Welford's algorithm for online variance:
     https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
 
@@ -51,7 +51,7 @@ class OnlineStatistics:
     def sample(self, value):
         """Add the given value to the population.
 
-        :param value:
+        :param value: 
 
         """
         if math.isnan(value):
@@ -225,7 +225,7 @@ class ConfusionMatrix:
     def accuracy(self, epsilon=1e-20):
         """
 
-
+        :param epsilon:  (Default value = 1e-20)
         :returns: This returns the fraction of predictions which are wholely correct compared to the total
         number of predictions. For a single label prediction this is equivalent to:
         (true positives + true negatives) /
@@ -442,7 +442,7 @@ class WorstExamples:
     def save(self, epoch=None):
         """Save worst examples for an epoch.
 
-        :param epoch:  (Default value = None)
+        :param epoch: Default value = None)
 
         """
         if epoch is not None:
