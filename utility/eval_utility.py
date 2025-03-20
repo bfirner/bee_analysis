@@ -226,15 +226,13 @@ class ConfusionMatrix:
             tuple (precision, recall): Precision and recall for the class_idx element.
         """
         # Find all of the positives for this class, then find just the true positives.
-        all_positives = self.true_positives[class_idx] + \
-            self.false_positives[class_idx]
+        all_positives = self.true_positives[class_idx] + self.false_positives[class_idx]
         if 0 < all_positives:
             precision = self.true_positives[class_idx] / all_positives
         else:
             precision = 0.0
 
-        class_total = self.true_positives[class_idx] + \
-            self.false_negatives[class_idx]
+        class_total = self.true_positives[class_idx] + self.false_negatives[class_idx]
         if 0 < class_total:
             recall = self.true_positives[class_idx] / class_total
         else:
@@ -326,8 +324,7 @@ def saveWorstN(worstn, worstn_path, classname, vis_func=None):
         if vis_func is not None:
             # Generate the visualization image
             filename = f"{worstn_path}/class-{classname}_time-{timestamp}_score-{node.score}_labelvis.png"
-            vis_img = vis_func(filename, node.image,
-                               node.label, node.prediction)
+            vis_img = vis_func(filename, node.image, node.label, node.prediction)
 
 
 class WorstExamples:
@@ -419,8 +416,7 @@ class WorstExamples:
     def save(self, epoch=None):
         """Save worst examples for an epoch."""
         if epoch is not None:
-            worstn_path_epoch = os.path.join(
-                self.worstn_path, f"epoch_{epoch}")
+            worstn_path_epoch = os.path.join(self.worstn_path, f"epoch_{epoch}")
         else:
             worstn_path_epoch = self.worstn_path
         # Create the directory if it does not exist
