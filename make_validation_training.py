@@ -261,17 +261,11 @@ trainCommand = (
     f" --loss_fun {args.loss_fn} "
 )
 
-if (args.binary_training_optimization):
-    trainCommand += (
-        " --labels cls "
-        " --convert_idx_to_classes 1 "
-        " --skip-metadata "
-    )
+if args.binary_training_optimization:
+    trainCommand += " --labels cls " " --convert_idx_to_classes 1 " " --skip-metadata "
 
-if (args.use_dataloader__workers):
-    trainCommand += (
-        f" --num_workers {args.max_dataloader_workers} "
-    )
+if args.use_dataloader__workers:
+    trainCommand += f" --num_workers {args.max_dataloader_workers} "
 
 logging.info(f"dataset is {datacsvname}")
 
@@ -339,8 +333,7 @@ if batchdir == ".":
 training_batch_file = open(training_filename, "w")
 training_batch_file.write("#!/usr/bin/bash \n")
 training_batch_file.write("source venv/bin/activate \n")
-training_batch_file.write(
-    "# batch file for getting the training results \n \n")
+training_batch_file.write("# batch file for getting the training results \n \n")
 training_batch_file.write("cd " + currentDir + " \n")
 training_batch_file.write(
     "echo start-is: `date` \n \n"
@@ -359,14 +352,16 @@ for dataset_num in range(numOfSets):
         trainFile.write("echo start-is: `date` \n \n")  # add start timestamp
         traincommand_local = trainCommand
         traincommand_local = (
-            traincommand_local + " " +
-            f"{baseName}_{str(dataset_num)}.{'tar' if not args.binary_training_optimization else 'bin'}"
+            traincommand_local
+            + " "
+            + f"{baseName}_{str(dataset_num)}.{'tar' if not args.binary_training_optimization else 'bin'}"
         )
         for trainingSetNum in range(numOfSets):
             if int(trainingSetNum) != int(dataset_num):
                 traincommand_local = (
-                    traincommand_local + " " +
-                    f"{baseName}_{str(trainingSetNum)}.{'tar' if not args.binary_training_optimization else 'bin'}"
+                    traincommand_local
+                    + " "
+                    + f"{baseName}_{str(trainingSetNum)}.{'tar' if not args.binary_training_optimization else 'bin'}"
                 )
 
         trainFile.write(
