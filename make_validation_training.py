@@ -233,7 +233,7 @@ args = parser.parse_args()
 program_dir = os.path.join(os.getcwd(), args.path_to_file)
 dataPrepProgram = os.path.join(program_dir, "VidActRecDataprep.py")
 # The training python program
-trainProgram = os.path.join(program_dir, "VidActRecTrain.py") 
+trainProgram = os.path.join(program_dir, "VidActRecTrain.py")
 
 datacsvname = args.datacsv
 numOfSets = args.k
@@ -339,7 +339,8 @@ if batchdir == ".":
 training_batch_file = open(training_filename, "w")
 training_batch_file.write("#!/usr/bin/bash \n")
 training_batch_file.write("source venv/bin/activate \n")
-training_batch_file.write("# batch file for getting the training results \n \n")
+training_batch_file.write(
+    "# batch file for getting the training results \n \n")
 training_batch_file.write("cd " + currentDir + " \n")
 training_batch_file.write(
     "echo start-is: `date` \n \n"
@@ -358,12 +359,14 @@ for dataset_num in range(numOfSets):
         trainFile.write("echo start-is: `date` \n \n")  # add start timestamp
         traincommand_local = trainCommand
         traincommand_local = (
-            traincommand_local + " " + f"{baseName}_{str(dataset_num)}.{'tar' if not args.binary_training_optimization else 'bin'}" 
+            traincommand_local + " " +
+            f"{baseName}_{str(dataset_num)}.{'tar' if not args.binary_training_optimization else 'bin'}"
         )
         for trainingSetNum in range(numOfSets):
             if int(trainingSetNum) != int(dataset_num):
                 traincommand_local = (
-                    traincommand_local + " " + f"{baseName}_{str(trainingSetNum)}.{'tar' if not args.binary_training_optimization else 'bin'}"
+                    traincommand_local + " " +
+                    f"{baseName}_{str(trainingSetNum)}.{'tar' if not args.binary_training_optimization else 'bin'}"
                 )
 
         trainFile.write(
