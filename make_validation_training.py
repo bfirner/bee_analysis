@@ -266,7 +266,6 @@ trainCommand = (
     f" --not_deterministic --epochs {args.epochs}"
     f" --modeltype {model_name} "
     f" --label_offset {label_offset} "
-    " --evaluate "
     f" --loss_fun {args.loss_fn} ")
 
 if args.binary_training_optimization:
@@ -274,6 +273,9 @@ if args.binary_training_optimization:
 
 if args.use_dataloader_workers:
     trainCommand += f" --num_workers {args.max_dataloader_workers} "
+
+# evaluation has to be last because it has to be placed adjacent to the tar files
+trainCommand+=  " --evaluate " 
 
 logging.info(f"dataset is {datacsvname}")
 
