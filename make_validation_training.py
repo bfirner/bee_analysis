@@ -269,7 +269,7 @@ trainCommand = (
     f" --loss_fun {args.loss_fn} ")
 
 if args.binary_training_optimization:
-    trainCommand += " --labels cls " " --convert_idx_to_classes 1 " " --skip-metadata "
+    trainCommand += " --labels cls " " --convert_idx_to_classes 1 " " --skip_metadata "
 
 if args.use_dataloader_workers:
     trainCommand += f" --num_workers {args.max_dataloader_workers} "
