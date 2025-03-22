@@ -831,13 +831,14 @@ if args.evaluate:
                     model_names = ["model_a", "model_b"]
 
                     # only make 200 gradcam plots, to reduce time it takes to make a plot
-                    if batch_count < 200:  
-                        batch_count+=1
+                    if batch_count < 200:
+                        batch_count += 1
                         with torch.set_grad_enabled(True):
                             for last_layer, model_name in zip(
                                     args.gradcam_cnn_model_layer, model_names):
-                                if (net_input.dim() == 5
-                                    ):  # Merge the frames and channel dimensions.
+                                if (
+                                        net_input.dim() == 5
+                                ):  # Merge the frames and channel dimensions.
                                     net_input = net_input.view(
                                         # [32, 5, 1, 720, 960] -> [32, 5, 720, 960]
                                         net_input.size(0),
@@ -848,9 +849,10 @@ if args.evaluate:
 
                                 try:
                                     num_cls = (len(set(target_classes))
-                                                if set(target_classes) else 3)
+                                               if set(target_classes) else 3)
                                     logging.info(
-                                        f"Plotting GradCAM for layer {last_layer}")
+                                        f"Plotting GradCAM for layer {last_layer}"
+                                    )
                                     plot_gradcam_for_multichannel_input(
                                         model=net,
                                         dataset=os.path.basename(
