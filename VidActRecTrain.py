@@ -53,7 +53,8 @@ from utility.saliency_utils import plot_gradcam_for_multichannel_input
 # ---------------------- Argument Parser ----------------------
 # Added: Set up the command-line arguments as per the provided instructions.
 parser = argparse.ArgumentParser(
-    description="Perform data preparation for DNN training on a video set.")
+    description="Perform data preparation for DNN training on a video set."
+)
 # (Keep existing arguments from first version)
 parser.add_argument(
     "--template",
@@ -61,16 +62,14 @@ parser.add_argument(
     default=None,
     choices=["bees", "multilabel_detection"],
     type=str,
-    help=("Set other options automatically based upon a typical training template."
-          "Template settings are overriden by other selected options."
-          "bees: Alexnet model with index labels are converted to one hot labels."
-          'multilabel: Multilabels are loaded from "detection.pth", binary cross entropy loss is used.'
-          ),
+    help=(
+        "Set other options automatically based upon a typical training template."
+        "Template settings are overriden by other selected options."
+        "bees: Alexnet model with index labels are converted to one hot labels."
+        'multilabel: Multilabels are loaded from "detection.pth", binary cross entropy loss is used.'
+    ),
 )
-parser.add_argument("dataset",
-                    nargs="+",
-                    type=str,
-                    help="Dataset for training.")
+parser.add_argument("dataset", nargs="+", type=str, help="Dataset for training.")
 
 parser.add_argument(
     "--sample_frames",
@@ -88,16 +87,13 @@ parser.add_argument(
     help="Base name for model, checkpoint, and metadata saving.",
 )
 
-parser.add_argument("--resume_from",
-                    type=str,
-                    required=False,
-                    help="Model weights to restore.")
+parser.add_argument(
+    "--resume_from", type=str, required=False, help="Model weights to restore."
+)
 
-parser.add_argument("--epochs",
-                    type=int,
-                    required=False,
-                    default=15,
-                    help="Total epochs to train.")
+parser.add_argument(
+    "--epochs", type=int, required=False, default=15, help="Total epochs to train."
+)
 
 parser.add_argument(
     "--seed",
@@ -294,9 +290,9 @@ args = parser.parse_args()
 
 # ---------------------- Setup Logging and Device ----------------------
 # Added: Configure logging and determine the device to use.
-logging.basicConfig(format="%(asctime)s: %(message)s",
-                    level=logging.INFO,
-                    datefmt="%Y-%m-%d %H:%M:%S")
+logging.basicConfig(
+    format="%(asctime)s: %(message)s", level=logging.INFO, datefmt="%Y-%m-%d %H:%M:%S"
+)
 if args.debug:
     logging.getLogger().setLevel(logging.DEBUG)
 logging.info(f"Parsed arguments: {args}")
@@ -358,8 +354,7 @@ for label_str in args.labels:
     decode_strs.append(label_str)
 
 # Vector inputs (if there are none then the slice will be an empty range)
-vector_range = slice(label_range.stop,
-                     label_range.stop + len(args.vector_inputs))
+vector_range = slice(label_range.stop, label_range.stop + len(args.vector_inputs))
 for vector_str in args.vector_inputs:
     decode_strs.append(vector_str)
 
@@ -381,11 +376,11 @@ logging.info(f"Adjusting labels with offset {label_offset}")
 # webdataset.
 if args.convert_idx_to_classes == 1:
     label_size = (
-        dataset_utility.getVectorSize(args.dataset, decode_strs, label_range) *
-        args.num_outputs)
+        dataset_utility.getVectorSize(args.dataset, decode_strs, label_range)
+        * args.num_outputs
+    )
 else:
-    label_size = dataset_utility.getVectorSize(args.dataset, decode_strs,
-                                               label_range)
+    label_size = dataset_utility.getVectorSize(args.dataset, decode_strs, label_range)
 
 # See if we can deduce the label names
 label_names = None
@@ -394,8 +389,7 @@ if args.convert_idx_to_classes != 1:
     for label_idx in range(len(args.labels)):
         label_names.append(args.labels[label_idx])
 
-label_handler = train_utility.LabelHandler(label_size, label_range,
-                                           label_names)
+label_handler = train_utility.LabelHandler(label_size, label_range, label_names)
 
 # The label value may need to be adjusted, for example if the label class is 1 based, but
 # should be 0-based for the one_hot function. This is done by subtracting the label_offset from the
@@ -404,40 +398,38 @@ label_handler = train_utility.LabelHandler(label_size, label_range,
 # labels and to put the labels in a better training range. Note that this only makes sense with a
 # regression loss, where the label_offset adjustment would not be used.
 if args.normalize_outputs:
-    logging.info(
-        "Reading dataset to compute label statistics for normalization.")
+    logging.info("Reading dataset to compute label statistics for normalization.")
     label_stats = [OnlineStatistics() for _ in range(label_size)]
     label_dataset = dataset_utility.makeDataset(args.dataset, args.labels)
-    label_dataloader = torch.utils.data.DataLoader(label_dataset,
-                                                   num_workers=0,
-                                                   batch_size=1)
+    label_dataloader = torch.utils.data.DataLoader(
+        label_dataset, num_workers=0, batch_size=1
+    )
     for data in label_dataloader:
         for label, stat in zip(
-                dataset_utility.extractVectors(data,
-                                               slice(0,
-                                                     label_size))[0].tolist(),
-                label_stats,
+            dataset_utility.extractVectors(data, slice(0, label_size))[0].tolist(),
+            label_stats,
         ):
             stat.sample(label)
     label_means = torch.tensor([stat.mean() for stat in label_stats]).cuda()
     label_stddevs = torch.tensor(
-        [math.sqrt(stat.variance()) for stat in label_stats]).cuda()
+        [math.sqrt(stat.variance()) for stat in label_stats]
+    ).cuda()
     if (label_stddevs.abs() < 0.0001).any():
-        logging.error(
-            "Some labels have extremely low variance -- check your dataset.")
+        logging.error("Some labels have extremely low variance -- check your dataset.")
         exit(1)
-    denormalizer = Denormalizer(means=label_means,
-                                stddevs=label_stddevs).to(device)
-    normalizer = Normalizer(means=label_means,
-                            stddevs=label_stddevs).to(device)
+    denormalizer = Denormalizer(means=label_means, stddevs=label_stddevs).to(device)
+    normalizer = Normalizer(means=label_means, stddevs=label_stddevs).to(device)
     label_handler.setPreprocess(lambda labels: normalizer(labels))
 else:
     denormalizer = None
     normalizer = None
     label_handler.setPreprocess(lambda labels: labels - label_offset)
 if args.convert_idx_to_classes == 1:
-    label_handler.setPreeval(lambda labels: torch.nn.functional.one_hot(
-        (labels - label_offset), num_classes=label_handler.size()))
+    label_handler.setPreeval(
+        lambda labels: torch.nn.functional.one_hot(
+            (labels - label_offset), num_classes=label_handler.size()
+        )
+    )
 
 # Network outputs may need to be postprocessed for evaluation if some postprocessing is being done
 # automatically by the loss function.
@@ -451,8 +443,9 @@ elif args.loss_fun == "BCEWithLogitsLoss":
     nn_postprocess = torch.nn.Sigmoid()
 else:
     # Otherwise just use an identify function unless normalization is being used.
-    nn_postprocess = ((lambda x: denormalizer(x))
-                      if denormalizer is not None else (lambda x: x))
+    nn_postprocess = (
+        (lambda x: denormalizer(x)) if denormalizer is not None else (lambda x: x)
+    )
 
 # ---------------------- Dataset Setup ----------------------
 # Build the webdataset with the given transformations.
@@ -469,9 +462,9 @@ image_size = dataset_utility.getImageSize(args.dataset, decode_strs)
 logging.info(f"Decoding images of size {image_size}")
 
 batch_size = 32
-dataloader = torch.utils.data.DataLoader(dataset,
-                                         num_workers=args.num_workers,
-                                         batch_size=batch_size)
+dataloader = torch.utils.data.DataLoader(
+    dataset, num_workers=args.num_workers, batch_size=batch_size
+)
 if args.evaluate:
     eval_dataset = dataset_utility.makeDataset(
         args.evaluate,
@@ -479,9 +472,9 @@ if args.evaluate:
         shuffle=20000 // in_frames,
         shardshuffle=20000 // in_frames,
     )
-    eval_dataloader = torch.utils.data.DataLoader(eval_dataset,
-                                                  num_workers=args.num_workers,
-                                                  batch_size=batch_size)
+    eval_dataloader = torch.utils.data.DataLoader(
+        eval_dataset, num_workers=args.num_workers, batch_size=batch_size
+    )
     logging.info(f"Loaded evaluation dataset from {args.evaluate}")
 
 # ---------------------- Model Setup ----------------------
@@ -492,9 +485,9 @@ model_args = {
 }
 vector_input_size = 0
 if len(args.vector_inputs) > 0:
-    vector_input_size = dataset_utility.getVectorSize(args.dataset,
-                                                      decode_strs,
-                                                      vector_range)
+    vector_input_size = dataset_utility.getVectorSize(
+        args.dataset, decode_strs, vector_range
+    )
     model_args["vector_input_size"] = vector_input_size
 
 skip_last_relu = args.loss_fun in regression_loss
@@ -506,9 +499,9 @@ if args.modeltype == "alexnet":
     model_args["skip_last_relu"] = skip_last_relu
     net = AlexLikeNet(**model_args).to(device)
     optimizer = torch.optim.SGD(net.parameters(), lr=1e-4)
-    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
-                                                        milestones=[3, 5, 7],
-                                                        gamma=0.2)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        optimizer, milestones=[3, 5, 7], gamma=0.2
+    )
     use_amp = False
 elif args.modeltype == "resnet18":
     # Model specific arguments
@@ -528,13 +521,12 @@ elif args.modeltype == "resnext50":
     # Model specific arguments
     model_args["expanded_linear"] = True
     net = ResNext50(**model_args).to(device)
-    optimizer = torch.optim.SGD(net.parameters(),
-                                lr=1e-2,
-                                weight_decay=1e-3,
-                                momentum=0.9)
-    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
-                                                        milestones=[1, 2, 3],
-                                                        gamma=0.1)
+    optimizer = torch.optim.SGD(
+        net.parameters(), lr=1e-2, weight_decay=1e-3, momentum=0.9
+    )
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        optimizer, milestones=[1, 2, 3], gamma=0.1
+    )
     batch_size = 64
 elif args.modeltype == "resnext34":
     # Model specific arguments
@@ -542,68 +534,61 @@ elif args.modeltype == "resnext34":
     model_args["use_dropout"] = False
     # Learning parameters were tuned on a dataset with about 80,000 examples
     net = ResNext34(**model_args).to(device)
-    optimizer = torch.optim.SGD(net.parameters(),
-                                lr=1e-2,
-                                weight_decay=1e-3,
-                                momentum=0.9)
-    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
-                                                        milestones=[2, 5, 9],
-                                                        gamma=0.2)
+    optimizer = torch.optim.SGD(
+        net.parameters(), lr=1e-2, weight_decay=1e-3, momentum=0.9
+    )
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        optimizer, milestones=[2, 5, 9], gamma=0.2
+    )
 elif args.modeltype == "resnext18":
     # Model specific arguments
     model_args["expanded_linear"] = True
     model_args["use_dropout"] = False
     # Learning parameters were tuned on a dataset with about 80,000 examples
     net = ResNext18(**model_args).to(device)
-    optimizer = torch.optim.SGD(net.parameters(),
-                                lr=1e-2,
-                                weight_decay=1e-3,
-                                momentum=0.9)
-    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
-                                                        milestones=[2, 5, 12],
-                                                        gamma=0.2)
+    optimizer = torch.optim.SGD(
+        net.parameters(), lr=1e-2, weight_decay=1e-3, momentum=0.9
+    )
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        optimizer, milestones=[2, 5, 12], gamma=0.2
+    )
 elif args.modeltype == "convnextxt":
     # Model specific arguments
     net = ConvNextExtraTiny(**model_args).to(device)
-    optimizer = torch.optim.SGD(net.parameters(),
-                                lr=1e-4,
-                                weight_decay=1e-4,
-                                momentum=0.9,
-                                nesterov=True)
-    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
-                                                        milestones=[4, 5, 12],
-                                                        gamma=0.2)
+    optimizer = torch.optim.SGD(
+        net.parameters(), lr=1e-4, weight_decay=1e-4, momentum=0.9, nesterov=True
+    )
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        optimizer, milestones=[4, 5, 12], gamma=0.2
+    )
     use_amp = True
 elif args.modeltype == "convnextt":
     # Model specific arguments
     net = ConvNextTiny(**model_args).to(device)
-    optimizer = torch.optim.SGD(net.parameters(),
-                                lr=1e-2,
-                                weight_decay=1e-4,
-                                momentum=0.9)
-    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
-                                                        milestones=[2, 5, 12],
-                                                        gamma=0.2)
+    optimizer = torch.optim.SGD(
+        net.parameters(), lr=1e-2, weight_decay=1e-4, momentum=0.9
+    )
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        optimizer, milestones=[2, 5, 12], gamma=0.2
+    )
 elif args.modeltype == "convnexts":
     # Model specific arguments
     net = ConvNextSmall(**model_args).to(device)
-    optimizer = torch.optim.SGD(net.parameters(),
-                                lr=1e-2,
-                                weight_decay=1e-4,
-                                momentum=1e-3)
-    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
-                                                        milestones=[2, 5, 12],
-                                                        gamma=0.2)
+    optimizer = torch.optim.SGD(
+        net.parameters(), lr=1e-2, weight_decay=1e-4, momentum=1e-3
+    )
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        optimizer, milestones=[2, 5, 12], gamma=0.2
+    )
 elif args.modeltype == "convnextb":
     # Model specific arguments
     net = ConvNextBase(**model_args).to(device)
-    optimizer = torch.optim.SGD(net.parameters(),
-                                lr=1e-2,
-                                weight_decay=1e-4,
-                                momentum=0.9)
-    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
-                                                        milestones=[2, 5, 12],
-                                                        gamma=0.2)
+    optimizer = torch.optim.SGD(
+        net.parameters(), lr=1e-2, weight_decay=1e-4, momentum=0.9
+    )
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        optimizer, milestones=[2, 5, 12], gamma=0.2
+    )
 logging.info(f"Model is {net}")
 
 if args.resume_from is not None:
@@ -649,8 +634,9 @@ if not args.no_train:
                     f"Saving worst training examples to {worst_training.worstn_path}."
                 )
             if args.loss_fun in regression_loss:
-                totals = RegressionResults(size=label_handler.size(),
-                                           names=label_handler.names())
+                totals = RegressionResults(
+                    size=label_handler.size(), names=label_handler.names()
+                )
             else:
                 totals = ConfusionMatrix(size=label_handler.size())
 
@@ -675,22 +661,17 @@ if not args.no_train:
             # Save checkpoint
             torch.save(
                 {
-                    "model_dict":
-                    net.state_dict(),
-                    "optim_dict":
-                    optimizer.state_dict(),
-                    "py_random_state":
-                    random.getstate(),
-                    "np_random_state":
-                    numpy.random.get_state(),
-                    "torch_rng_state":
-                    torch.get_rng_state(),
-                    "denormalizer_state_dict":
-                    (denormalizer.state_dict()
-                     if denormalizer is not None else None),
-                    "normalizer_state_dict":
-                    (normalizer.state_dict()
-                     if normalizer is not None else None),
+                    "model_dict": net.state_dict(),
+                    "optim_dict": optimizer.state_dict(),
+                    "py_random_state": random.getstate(),
+                    "np_random_state": numpy.random.get_state(),
+                    "torch_rng_state": torch.get_rng_state(),
+                    "denormalizer_state_dict": (
+                        denormalizer.state_dict() if denormalizer is not None else None
+                    ),
+                    "normalizer_state_dict": (
+                        normalizer.state_dict() if normalizer is not None else None
+                    ),
                     "metadata": {
                         "modeltype": args.modeltype,
                         "labels": args.labels,
@@ -710,7 +691,8 @@ if not args.no_train:
                 print(f"Evaluating epoch {epoch}")
                 if args.loss_fun in regression_loss:
                     eval_totals = RegressionResults(
-                        size=label_handler.size(), names=label_handler.names())
+                        size=label_handler.size(), names=label_handler.names()
+                    )
                 else:
                     eval_totals = ConfusionMatrix(size=label_handler.size())
                 train_utility.evalEpoch(
@@ -779,12 +761,11 @@ if args.evaluate:
             args.save_top_n,
             worst_mode=False,
         )
-        logging.info(
-            f"Saving top evaluation examples to {top_eval.worstn_path}.")
+        logging.info(f"Saving top evaluation examples to {top_eval.worstn_path}.")
     if args.save_worst_n is not None:
         worst_eval = WorstExamples(
-            args.outname.split(".")[0] + "-worstN-eval", class_names,
-            args.save_worst_n)
+            args.outname.split(".")[0] + "-worstN-eval", class_names, args.save_worst_n
+        )
         logging.info(
             f"Saving {args.save_worst_n} highest error evaluation images to {worst_eval.worstn_path}."
         )
@@ -817,13 +798,16 @@ if args.evaluate:
 
                 # GradCAM plotting if enabled (only for alexnet type with gradcam layers)
                 if args.gradcam_cnn_model_layer and args.modeltype in [
-                        "alexnet",
-                        "bennet",
-                        "resnet18",
-                        "resnet34",
+                    "alexnet",
+                    "bennet",
+                    "resnet18",
+                    "resnet34",
                 ]:
-                    target_classes = (dataset_utility.extractVectors(
-                        dl_tuple, label_range).cpu().tolist())
+                    target_classes = (
+                        dataset_utility.extractVectors(dl_tuple, label_range)
+                        .cpu()
+                        .tolist()
+                    )
                     model_names = ["model_a", "model_b"]
 
                     # only make 200 gradcam plots, to reduce time it takes to make a plot
@@ -831,9 +815,11 @@ if args.evaluate:
                         batch_count += 1
                         with torch.set_grad_enabled(True):
                             for last_layer, model_name in zip(
-                                    args.gradcam_cnn_model_layer, model_names):
-                                if (net_input.dim() == 5
-                                        ):  # Merge the frames and channel dimensions.
+                                args.gradcam_cnn_model_layer, model_names
+                            ):
+                                if (
+                                    net_input.dim() == 5
+                                ):  # Merge the frames and channel dimensions.
                                     net_input = net_input.view(
                                         # [32, 5, 1, 720, 960] -> [32, 5, 720, 960]
                                         net_input.size(0),
@@ -843,14 +829,19 @@ if args.evaluate:
                                     )
 
                                 try:
-                                    num_cls = (len(set(target_classes))
-                                               if set(target_classes) else 3)
+                                    num_cls = (
+                                        len(set(target_classes))
+                                        if set(target_classes)
+                                        else 3
+                                    )
                                     logging.info(
-                                        f"Plotting GradCAM for layer {last_layer}")
+                                        f"Plotting GradCAM for layer {last_layer}"
+                                    )
                                     plot_gradcam_for_multichannel_input(
                                         model=net,
-                                        dataset=os.path.basename(
-                                            args.evaluate).split(".")[0],
+                                        dataset=os.path.basename(args.evaluate).split(
+                                            "."
+                                        )[0],
                                         input_tensor=net_input,
                                         target_layer_name=[last_layer],
                                         model_name=model_name,
@@ -865,12 +856,11 @@ if args.evaluate:
                 vector_input = None
                 if 0 < vector_input_size:
                     vector_input = dataset_utility.extractVectors(
-                        dl_tuple, vector_range).cuda()
+                        dl_tuple, vector_range
+                    ).cuda()
 
                 # Visualization masks are not supported with all model types yet.
-                if args.modeltype in [
-                        "alexnet", "bennet", "resnet18", "resnet34"
-                ]:
+                if args.modeltype in ["alexnet", "bennet", "resnet18", "resnet34"]:
                     out, mask = net.vis_forward(net_input, vector_input)
                 else:
                     out = net.forward(net_input, vector_input, vector_input)
@@ -878,8 +868,7 @@ if args.evaluate:
 
                 # Convert the labels to a one hot encoding to serve at the DNN target.
                 # The label class is 1 based, but need to be 0-based for the one_hot function.
-                labels = dataset_utility.extractVectors(dl_tuple,
-                                                        label_range).cuda()
+                labels = dataset_utility.extractVectors(dl_tuple, label_range).cuda()
 
                 if args.skip_metadata:
                     metadata = [""] * labels.size(0)
@@ -898,8 +887,9 @@ if args.evaluate:
 
                     # Log the predictions
                     for i in range(post_labels.size(0)):
-                        logfile.write(",".join(
-                            (metadata[i], str(out[i]), str(post_labels[i]))))
+                        logfile.write(
+                            ",".join((metadata[i], str(out[i]), str(post_labels[i])))
+                        )
                         logfile.write("\n")
                     if worst_eval is not None or top_eval is not None:
                         # For each item in the batch see if it requires an update to the worst examples
@@ -936,5 +926,6 @@ if args.evaluate:
 
         with open("RUN_DESCRIPTION.log", "a") as run_desc:
             run_desc.write(
-                f"\n-- Final Results for evaluating with {args.evaluate} --\n")
+                f"\n-- Final Results for evaluating with {args.evaluate} --\n"
+            )
             run_desc.write(f"{totals.makeResults()}\n")
