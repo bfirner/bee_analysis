@@ -213,6 +213,7 @@ class ConfusionMatrix:
         """Return the accuracy of predictions in this ConfusionMatrix.
 
 
+        :param epsilon:  (Default value = 1e-20)
         :returns: This returns the fraction of predictions which are wholely correct compared to the total
         number of predictions. For a single label prediction this is equivalent to:
         (true positives + true negatives) /
