@@ -61,12 +61,11 @@ parser.add_argument(
     default=None,
     choices=["bees", "multilabel_detection"],
     type=str,
-    help=
-    ("Set other options automatically based upon a typical training template."
-     "Template settings are overriden by other selected options."
-     "bees: Alexnet model with index labels are converted to one hot labels."
-     'multilabel: Multilabels are loaded from "detection.pth", binary cross entropy loss is used.'
-     ),
+    help=("Set other options automatically based upon a typical training template."
+          "Template settings are overriden by other selected options."
+          "bees: Alexnet model with index labels are converted to one hot labels."
+          'multilabel: Multilabels are loaded from "detection.pth", binary cross entropy loss is used.'
+          ),
 )
 parser.add_argument("dataset",
                     nargs="+",
@@ -150,8 +149,7 @@ parser.add_argument(
     required=False,
     default=False,
     action="store_true",
-    help=
-    "Set this flag to skip training. Useful to load an already trained model for evaluation.",
+    help="Set this flag to skip training. Useful to load an already trained model for evaluation.",
 )
 
 parser.add_argument(
@@ -167,8 +165,7 @@ parser.add_argument(
     type=int,
     required=False,
     default=None,
-    help=
-    "Save N images for class with highest prediction score (with --evaluate).",
+    help="Save N images for class with highest prediction score (with --evaluate).",
 )
 
 parser.add_argument(
@@ -176,8 +173,7 @@ parser.add_argument(
     type=int,
     required=False,
     default=None,
-    help=
-    "Save N images for class with lowest prediction score (with --evaluate).",
+    help="Save N images for class with lowest prediction score (with --evaluate).",
 )
 
 parser.add_argument(
@@ -831,13 +827,13 @@ if args.evaluate:
                     model_names = ["model_a", "model_b"]
 
                     # only make 200 gradcam plots, to reduce time it takes to make a plot
-                    if batch_count < 200:  
-                        batch_count+=1
+                    if batch_count < 200:
+                        batch_count += 1
                         with torch.set_grad_enabled(True):
                             for last_layer, model_name in zip(
                                     args.gradcam_cnn_model_layer, model_names):
                                 if (net_input.dim() == 5
-                                    ):  # Merge the frames and channel dimensions.
+                                        ):  # Merge the frames and channel dimensions.
                                     net_input = net_input.view(
                                         # [32, 5, 1, 720, 960] -> [32, 5, 720, 960]
                                         net_input.size(0),
@@ -848,7 +844,7 @@ if args.evaluate:
 
                                 try:
                                     num_cls = (len(set(target_classes))
-                                                if set(target_classes) else 3)
+                                               if set(target_classes) else 3)
                                     logging.info(
                                         f"Plotting GradCAM for layer {last_layer}")
                                     plot_gradcam_for_multichannel_input(
