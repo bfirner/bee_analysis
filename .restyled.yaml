@@ -1,0 +1,5 @@
+# managed the formatters actually used
+
+restylers: 
+  - "!pyment"
+  - "*"
