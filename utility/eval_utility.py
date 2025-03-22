@@ -15,8 +15,6 @@ class OnlineStatistics:
 
     Makes use of Welford's algorithm for online variance:
     https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
-
-
     """
 
     def __init__(self):
@@ -27,33 +25,25 @@ class OnlineStatistics:
         self._max = None
 
     def reset(self):
-        """ """
         self._population = 0
         self._mean = 0
         self._m2 = 0
         self._max = None
 
     def mean(self):
-        """ """
         return self._mean
 
     def variance(self):
-        """ """
         if 0 < self._population:
             return self._m2 / self._population
         else:
             return None
 
     def max(self):
-        """ """
         return self._max
 
     def sample(self, value):
-        """Add the given value to the population.
-
-        :param value:
-
-        """
+        """Add the given value to the population."""
         if math.isnan(value):
             print("Ignoring nan value in OnlineStatistics.")
             return
@@ -117,19 +107,17 @@ class RegressionResults:
         return out_str
 
     def mean(self):
-        """ """
         return self.prediction_overall.mean()
 
     def labelMeans(self):
-        """ """
         return [stats.mean() for stats in self.prediction_statistics]
 
     def update(self, predictions, labels):
         """Update the statistics matrix with a new set of predictions and labels.
 
-        :param predictions: torch
-        :param labels: torch
-
+        Arguments:
+            predictions (torch.tensor): [batch, size] predictions.
+            labels      (torch.tensor): [batch, size] labels.
         """
         with torch.no_grad():
             avg_error = 0
@@ -145,12 +133,8 @@ class RegressionResults:
 
     def makeResults(self):
         """Generate human readable results.
-
-
-        :returns: String of the results.
-
-        :rtype: str
-
+        Returns:
+            str: String of the results.
         """
         return str(self)
 
@@ -190,9 +174,9 @@ class ConfusionMatrix:
     def update(self, predictions, labels):
         """Update the confusion matrix with a new set of predictions and labels.
 
-        :param predictions: torch
-        :param labels: torch
-
+        Arguments:
+            predictions (torch.tensor): [batch, size] predictions.
+            labels      (torch.tensor): [batch, size] labels.
         """
         # TODO FIXME Need to add two confusion matrices, one raw and one with a new column for low
         # confidence (e.g. no prediction)
@@ -222,25 +206,23 @@ class ConfusionMatrix:
                         self.true_negatives[cidx] += 1
 
     def accuracy(self, epsilon=1e-20):
-        """
+        """Return the accuracy of predictions in this ConfusionMatrix.
 
-        :param epsilon: Default value = 1e-20)
-        :returns: This returns the fraction of predictions which are wholely correct compared to the total
+        This returns the fraction of predictions which are wholely correct compared to the total
         number of predictions. For a single label prediction this is equivalent to:
         (true positives + true negatives) /
             (true positives + false positives + false negatives + true negatives)
         In a multi-label system a prediction is only counted as accurate if *all* labels match, so
         accuracy in multi-label systems should be expected to be lower.
-
         """
         return self.correct_count / (self.prediction_count + epsilon)
 
     def calculateRecallPrecision(self, class_idx):
         """
-
-        :param class_idx: int
-        :returns: tuple (precision, recall): Precision and recall for the class_idx element.
-
+        Arguments:
+            class_idx (int): Class index.
+        Return:
+            tuple (precision, recall): Precision and recall for the class_idx element.
         """
         # Find all of the positives for this class, then find just the true positives.
         all_positives = self.true_positives[class_idx] + self.false_positives[
@@ -261,12 +243,8 @@ class ConfusionMatrix:
 
     def makeResults(self):
         """Generate human readable results.
-
-
-        :returns: String of the results.
-
-        :rtype: str
-
+        Returns:
+            str: String of the results.
         """
         results = "\n".join([
             "Confusion Matrix:\n{}\n".format(str(self)),
@@ -317,11 +295,11 @@ class MinNode:
 def saveWorstN(worstn, worstn_path, classname, vis_func=None):
     """Saves samples from the priority queue worstn into the given path.
 
-    :param worstn: List
-    :param worstn_path: str
-    :param classname: str
-    :param vis_func: function (Default value = None)
-
+    Arguments:
+        worstn (List[MaxNode or MinNode]): List of nodes with data to save.
+        worstn_path                 (str): Path to save outputs.
+        classname                   (str): Classname for these images.
+        vis_func               (function): Extra processing to display the label and DNN output on the image.
     """
     for i, node in enumerate(worstn):
         img = transforms.ToPILImage()(node.image).convert("L")
@@ -391,12 +369,12 @@ class WorstExamples:
                        metadata):
         """Test and possibly insert a new example.
 
-        :param label_position: int
-        :param label_value: float
-        :param nn_output: float
-        :param image: tensor
-        :param metadata: dict
-
+        Arguments:
+            label_position (int): Desired model class output
+            label_value  (float): Desired value for this label
+            nn_output    (float): Model output for this class
+            image       (tensor): Image for this example
+            metadata      (dict): Metadata for this example
         """
         # Insert into an empty heap or replace the largest value in the minheap and heapify. The
         # greatest value is in the first position.
@@ -419,12 +397,12 @@ class WorstExamples:
                           metadata):
         """Test and possibly insert a new example.
 
-        :param label_position: int
-        :param label_value: float
-        :param nn_output: float
-        :param image: tensor
-        :param metadata: dict
-
+        Arguments:
+            label_position (int): Desired model class output
+            label_value  (float): Desired value for this label
+            nn_output    (float): Model output for this class
+            image       (tensor): Image for this example
+            metadata      (dict): Metadata for this example
         """
         # Insert into an empty heap or replace the smallest value in the maxheap and heapify. The
         # greatest value is in the first position.
