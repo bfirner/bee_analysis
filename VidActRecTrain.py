@@ -70,7 +70,8 @@ parser.add_argument(
         'multilabel: Multilabels are loaded from "detection.pth", binary cross entropy loss is used.'
     ),
 )
-parser.add_argument("dataset", nargs="+", type=str, help="Dataset for training.")
+parser.add_argument("dataset", nargs="+", type=str,
+                    help="Dataset for training.")
 
 parser.add_argument(
     "--sample_frames",
@@ -355,7 +356,8 @@ for label_str in args.labels:
     decode_strs.append(label_str)
 
 # Vector inputs (if there are none then the slice will be an empty range)
-vector_range = slice(label_range.stop, label_range.stop + len(args.vector_inputs))
+vector_range = slice(label_range.stop, label_range.stop +
+                     len(args.vector_inputs))
 for vector_str in args.vector_inputs:
     decode_strs.append(vector_str)
 
@@ -381,7 +383,8 @@ if args.convert_idx_to_classes == 1:
         * args.num_outputs
     )
 else:
-    label_size = dataset_utility.getVectorSize(args.dataset, decode_strs, label_range)
+    label_size = dataset_utility.getVectorSize(
+        args.dataset, decode_strs, label_range)
 
 # See if we can deduce the label names
 label_names = None
@@ -390,7 +393,8 @@ if args.convert_idx_to_classes != 1:
     for label_idx in range(len(args.labels)):
         label_names.append(args.labels[label_idx])
 
-label_handler = train_utility.LabelHandler(label_size, label_range, label_names)
+label_handler = train_utility.LabelHandler(
+    label_size, label_range, label_names)
 
 # The label value may need to be adjusted, for example if the label class is 1 based, but
 # should be 0-based for the one_hot function. This is done by subtracting the label_offset from the
@@ -399,7 +403,8 @@ label_handler = train_utility.LabelHandler(label_size, label_range, label_names)
 # labels and to put the labels in a better training range. Note that this only makes sense with a
 # regression loss, where the label_offset adjustment would not be used.
 if args.normalize_outputs:
-    logging.info("Reading dataset to compute label statistics for normalization.")
+    logging.info(
+        "Reading dataset to compute label statistics for normalization.")
     label_stats = [OnlineStatistics() for _ in range(label_size)]
     label_dataset = dataset_utility.makeDataset(args.dataset, args.labels)
     label_dataloader = torch.utils.data.DataLoader(
@@ -407,7 +412,8 @@ if args.normalize_outputs:
     )
     for data in label_dataloader:
         for label, stat in zip(
-            dataset_utility.extractVectors(data, slice(0, label_size))[0].tolist(),
+            dataset_utility.extractVectors(
+                data, slice(0, label_size))[0].tolist(),
             label_stats,
         ):
             stat.sample(label)
@@ -416,10 +422,13 @@ if args.normalize_outputs:
         [math.sqrt(stat.variance()) for stat in label_stats]
     ).cuda()
     if (label_stddevs.abs() < 0.0001).any():
-        logging.error("Some labels have extremely low variance -- check your dataset.")
+        logging.error(
+            "Some labels have extremely low variance -- check your dataset.")
         exit(1)
-    denormalizer = Denormalizer(means=label_means, stddevs=label_stddevs).to(device)
-    normalizer = Normalizer(means=label_means, stddevs=label_stddevs).to(device)
+    denormalizer = Denormalizer(
+        means=label_means, stddevs=label_stddevs).to(device)
+    normalizer = Normalizer(
+        means=label_means, stddevs=label_stddevs).to(device)
     label_handler.setPreprocess(lambda labels: normalizer(labels))
 else:
     denormalizer = None
@@ -762,10 +771,12 @@ if args.evaluate:
             args.save_top_n,
             worst_mode=False,
         )
-        logging.info(f"Saving top evaluation examples to {top_eval.worstn_path}.")
+        logging.info(
+            f"Saving top evaluation examples to {top_eval.worstn_path}.")
     if args.save_worst_n is not None:
         worst_eval = WorstExamples(
-            args.outname.split(".")[0] + "-worstN-eval", class_names, args.save_worst_n
+            args.outname.split(
+                ".")[0] + "-worstN-eval", class_names, args.save_worst_n
         )
         logging.info(
             f"Saving {args.save_worst_n} highest error evaluation images to {worst_eval.worstn_path}."
@@ -809,7 +820,7 @@ if args.evaluate:
                         .tolist()
                     )
                     model_names = ["model_a", "model_b"]
-                    
+
                     with torch.set_grad_enabled(True):
                         for last_layer, model_name in zip(
                             args.gradcam_cnn_model_layer, model_names
@@ -831,7 +842,8 @@ if args.evaluate:
                                     if set(target_classes)
                                     else 3
                                 )
-                                logging.info(f"Plotting GradCAM for layer {last_layer}")
+                                logging.info(
+                                    f"Plotting GradCAM for layer {last_layer}")
                                 plot_gradcam_for_multichannel_input(
                                     model=net,
                                     dataset=os.path.basename(args.evaluate).split(".")[
@@ -863,7 +875,8 @@ if args.evaluate:
 
                 # Convert the labels to a one hot encoding to serve at the DNN target.
                 # The label class is 1 based, but need to be 0-based for the one_hot function.
-                labels = dataset_utility.extractVectors(dl_tuple, label_range).cuda()
+                labels = dataset_utility.extractVectors(
+                    dl_tuple, label_range).cuda()
 
                 if args.skip_metadata:
                     metadata = [""] * labels.size(0)
@@ -883,7 +896,8 @@ if args.evaluate:
                     # Log the predictions
                     for i in range(post_labels.size(0)):
                         logfile.write(
-                            ",".join((metadata[i], str(out[i]), str(post_labels[i])))
+                            ",".join(
+                                (metadata[i], str(out[i]), str(post_labels[i])))
                         )
                         logfile.write("\n")
                     if worst_eval is not None or top_eval is not None:
@@ -920,5 +934,6 @@ if args.evaluate:
         print(totals.makeResults())
 
         with open("RUN_DESCRIPTION.log", "a") as run_desc:
-            run_desc.write(f"\n-- Final Results for evaluating with {args.evaluate} --\n")
+            run_desc.write(
+                f"\n-- Final Results for evaluating with {args.evaluate} --\n")
             run_desc.write(f"{totals.makeResults()}\n")
