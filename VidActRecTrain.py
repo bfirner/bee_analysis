@@ -918,3 +918,7 @@ if args.evaluate:
         # Print evaluation information
         print(f"Evaluation results:")
         print(totals.makeResults())
+
+        with open("RUN_DESCRIPTION.log", "a") as run_desc:
+            run_desc.write(f"\n-- Final Results for evaluating with {args.evaluate} --\n")
+            run_desc.write(f"{totals.makeResults()}\n")
