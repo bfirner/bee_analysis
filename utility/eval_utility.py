@@ -43,7 +43,11 @@ class OnlineStatistics:
         return self._max
 
     def sample(self, value):
-        """Add the given value to the population."""
+        """Add the given value to the population.
+
+        :param value:
+
+        """
         if math.isnan(value):
             print("Ignoring nan value in OnlineStatistics.")
             return
@@ -208,7 +212,8 @@ class ConfusionMatrix:
     def accuracy(self, epsilon=1e-20):
         """Return the accuracy of predictions in this ConfusionMatrix.
 
-        This returns the fraction of predictions which are wholely correct compared to the total
+
+        :returns: This returns the fraction of predictions which are wholely correct compared to the total
         number of predictions. For a single label prediction this is equivalent to:
         (true positives + true negatives) /
             (true positives + false positives + false negatives + true negatives)
@@ -424,7 +429,7 @@ class WorstExamples:
     def save(self, epoch=None):
         """Save worst examples for an epoch.
 
-        :param epoch: Default value = None)
+        :param epoch:  (Default value = None)
 
         """
         if epoch is not None:
