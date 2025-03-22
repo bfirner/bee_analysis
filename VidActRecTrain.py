@@ -803,6 +803,7 @@ if args.evaluate:
 
         with open(args.outname.split(".")[0] + ".log", "w") as logfile:
             logfile.write("video_path,frame,time,label,prediction\n")
+            batch_count = 0
             for batch_num, dl_tuple in enumerate(eval_dataloader):
                 # Decoding only the luminance channel means that the channel dimension has gone away here.
                 if in_frames == 1:
@@ -829,38 +830,43 @@ if args.evaluate:
                         dl_tuple, label_range).cpu().tolist())
                     model_names = ["model_a", "model_b"]
 
-                    with torch.set_grad_enabled(True):
-                        for last_layer, model_name in zip(
-                                args.gradcam_cnn_model_layer, model_names):
-                            if (net_input.dim() == 5
+                    # only make 200 gradcam plots, to reduce time it takes to make a plot
+                    if batch_count < 200:
+                        batch_count += 1
+                        with torch.set_grad_enabled(True):
+                            for last_layer, model_name in zip(
+                                    args.gradcam_cnn_model_layer, model_names):
+                                if (
+                                        net_input.dim() == 5
                                 ):  # Merge the frames and channel dimensions.
-                                net_input = net_input.view(
-                                    # [32, 5, 1, 720, 960] -> [32, 5, 720, 960]
-                                    net_input.size(0),
-                                    net_input.size(1) * net_input.size(2),
-                                    net_input.size(3),
-                                    net_input.size(4),
-                                )
+                                    net_input = net_input.view(
+                                        # [32, 5, 1, 720, 960] -> [32, 5, 720, 960]
+                                        net_input.size(0),
+                                        net_input.size(1) * net_input.size(2),
+                                        net_input.size(3),
+                                        net_input.size(4),
+                                    )
 
-                            try:
-                                num_cls = (len(set(target_classes))
-                                           if set(target_classes) else 3)
-                                logging.info(
-                                    f"Plotting GradCAM for layer {last_layer}")
-                                plot_gradcam_for_multichannel_input(
-                                    model=net,
-                                    dataset=os.path.basename(
-                                        args.evaluate).split(".")[0],
-                                    input_tensor=net_input,
-                                    target_layer_name=[last_layer],
-                                    model_name=model_name,
-                                    target_classes=target_classes,
-                                    number_of_classes=num_cls,
-                                )
-                            except Exception as e:
-                                logging.error(
-                                    f"GradCAM error for layer {last_layer}: {e}"
-                                )
+                                try:
+                                    num_cls = (len(set(target_classes))
+                                               if set(target_classes) else 3)
+                                    logging.info(
+                                        f"Plotting GradCAM for layer {last_layer}"
+                                    )
+                                    plot_gradcam_for_multichannel_input(
+                                        model=net,
+                                        dataset=os.path.basename(
+                                            args.evaluate).split(".")[0],
+                                        input_tensor=net_input,
+                                        target_layer_name=[last_layer],
+                                        model_name=model_name,
+                                        target_classes=target_classes,
+                                        number_of_classes=num_cls,
+                                    )
+                                except Exception as e:
+                                    logging.error(
+                                        f"GradCAM error for layer {last_layer}: {e}"
+                                    )
 
                 vector_input = None
                 if 0 < vector_input_size:
