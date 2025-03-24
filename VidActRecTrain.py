@@ -69,8 +69,7 @@ parser.add_argument(
         'multilabel: Multilabels are loaded from "detection.pth", binary cross entropy loss is used.'
     ),
 )
-parser.add_argument("dataset", nargs="+", type=str,
-                    help="Dataset for training.")
+parser.add_argument("dataset", nargs="+", type=str, help="Dataset for training.")
 
 parser.add_argument(
     "--sample_frames",
@@ -355,8 +354,7 @@ for label_str in args.labels:
     decode_strs.append(label_str)
 
 # Vector inputs (if there are none then the slice will be an empty range)
-vector_range = slice(label_range.stop, label_range.stop +
-                     len(args.vector_inputs))
+vector_range = slice(label_range.stop, label_range.stop + len(args.vector_inputs))
 for vector_str in args.vector_inputs:
     decode_strs.append(vector_str)
 
@@ -382,8 +380,7 @@ if args.convert_idx_to_classes == 1:
         * args.num_outputs
     )
 else:
-    label_size = dataset_utility.getVectorSize(
-        args.dataset, decode_strs, label_range)
+    label_size = dataset_utility.getVectorSize(args.dataset, decode_strs, label_range)
 
 # See if we can deduce the label names
 label_names = None
@@ -392,8 +389,7 @@ if args.convert_idx_to_classes != 1:
     for label_idx in range(len(args.labels)):
         label_names.append(args.labels[label_idx])
 
-label_handler = train_utility.LabelHandler(
-    label_size, label_range, label_names)
+label_handler = train_utility.LabelHandler(label_size, label_range, label_names)
 
 # The label value may need to be adjusted, for example if the label class is 1 based, but
 # should be 0-based for the one_hot function. This is done by subtracting the label_offset from the
@@ -402,8 +398,7 @@ label_handler = train_utility.LabelHandler(
 # labels and to put the labels in a better training range. Note that this only makes sense with a
 # regression loss, where the label_offset adjustment would not be used.
 if args.normalize_outputs:
-    logging.info(
-        "Reading dataset to compute label statistics for normalization.")
+    logging.info("Reading dataset to compute label statistics for normalization.")
     label_stats = [OnlineStatistics() for _ in range(label_size)]
     label_dataset = dataset_utility.makeDataset(args.dataset, args.labels)
     label_dataloader = torch.utils.data.DataLoader(
@@ -411,8 +406,7 @@ if args.normalize_outputs:
     )
     for data in label_dataloader:
         for label, stat in zip(
-            dataset_utility.extractVectors(
-                data, slice(0, label_size))[0].tolist(),
+            dataset_utility.extractVectors(data, slice(0, label_size))[0].tolist(),
             label_stats,
         ):
             stat.sample(label)
@@ -421,13 +415,10 @@ if args.normalize_outputs:
         [math.sqrt(stat.variance()) for stat in label_stats]
     ).cuda()
     if (label_stddevs.abs() < 0.0001).any():
-        logging.error(
-            "Some labels have extremely low variance -- check your dataset.")
+        logging.error("Some labels have extremely low variance -- check your dataset.")
         exit(1)
-    denormalizer = Denormalizer(
-        means=label_means, stddevs=label_stddevs).to(device)
-    normalizer = Normalizer(
-        means=label_means, stddevs=label_stddevs).to(device)
+    denormalizer = Denormalizer(means=label_means, stddevs=label_stddevs).to(device)
+    normalizer = Normalizer(means=label_means, stddevs=label_stddevs).to(device)
     label_handler.setPreprocess(lambda labels: normalizer(labels))
 else:
     denormalizer = None
@@ -770,12 +761,10 @@ if args.evaluate:
             args.save_top_n,
             worst_mode=False,
         )
-        logging.info(
-            f"Saving top evaluation examples to {top_eval.worstn_path}.")
+        logging.info(f"Saving top evaluation examples to {top_eval.worstn_path}.")
     if args.save_worst_n is not None:
         worst_eval = WorstExamples(
-            args.outname.split(
-                ".")[0] + "-worstN-eval", class_names, args.save_worst_n
+            args.outname.split(".")[0] + "-worstN-eval", class_names, args.save_worst_n
         )
         logging.info(
             f"Saving {args.save_worst_n} highest error evaluation images to {worst_eval.worstn_path}."
@@ -803,8 +792,7 @@ if args.evaluate:
                     raw_input = []
                     for i in range(in_frames):
                         if 3 == dl_tuple[i].dim():
-                            raw_input.append(
-                                dl_tuple[i].unsqueeze(1).to(device))
+                            raw_input.append(dl_tuple[i].unsqueeze(1).to(device))
                         else:
                             raw_input.append(dl_tuple[i].to(device))
                     net_input = torch.cat(raw_input, dim=1)
@@ -865,10 +853,12 @@ if args.evaluate:
                     vector_input = None
                     if vector_range.start != vector_range.stop:
                         vector_input = train_utility.extractVectors(
-                            dl_tuple, vector_range).to(device)
+                            dl_tuple, vector_range
+                        ).to(device)
                     out = net.forward(net_input, vector_input)
                     labels = train_utility.extractVectors(
-                        dl_tuple, label_handler.range()).to(device)
+                        dl_tuple, label_handler.range()
+                    ).to(device)
                     # The loss function doesn't like a (batch x 1) tensor
                     if labels.size(-1) == 1:
                         labels = labels.flatten()
@@ -882,8 +872,9 @@ if args.evaluate:
 
                 # Convert the labels to a one hot encoding to serve at the DNN target.
                 # The label class is 1 based, but need to be 0-based for the one_hot function.
-                labels = dataset_utility.extractVectors(
-                    dl_tuple, label_range).to(device)
+                labels = dataset_utility.extractVectors(dl_tuple, label_range).to(
+                    device
+                )
 
                 if args.skip_metadata:
                     metadata = [""] * labels.size(0)
@@ -905,8 +896,7 @@ if args.evaluate:
                     # Log the predictions
                     for i in range(post_labels.size(0)):
                         logfile.write(
-                            ",".join(
-                                (metadata[i], str(out[i]), str(post_labels[i])))
+                            ",".join((metadata[i], str(out[i]), str(post_labels[i])))
                         )
                         logfile.write("\n")
                     if worst_eval is not None or top_eval is not None:
