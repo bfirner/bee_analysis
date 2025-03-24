@@ -834,16 +834,16 @@ if args.evaluate:
                                         if set(target_classes)
                                         else 3
                                     )
-                                    logging.info(
-                                        f"Plotting GradCAM for layer {last_layer}"
-                                    )
+                                    # logging.info(
+                                    #     f"Plotting GradCAM for layer {last_layer}"
+                                    # )
                                     plot_gradcam_for_multichannel_input(
                                         model=net,
                                         dataset=os.path.basename(args.evaluate).split(
                                             "."
                                         )[0],
                                         input_tensor=net_input,
-                                        target_layer_name=[last_layer],
+                                        target_layer_name=last_layer,
                                         model_name=model_name,
                                         target_classes=target_classes,
                                         number_of_classes=num_cls,
