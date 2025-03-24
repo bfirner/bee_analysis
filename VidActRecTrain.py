@@ -784,13 +784,19 @@ if args.evaluate:
             for batch_num, dl_tuple in enumerate(eval_dataloader):
                 # Decoding only the luminance channel means that the channel dimension has gone away here.
                 if in_frames == 1:
-                    net_input = dl_tuple[0].unsqueeze(1).to(device=device)
+                    if 3 == dl_tuple[0].dim():
+                        net_input = dl_tuple[0].unsqueeze(1).to(device)
+                    else:
+                        net_input = dl_tuple[0].to(device)
                 else:
-                    raw_input = [
-                        dl_tuple[i].unsqueeze(1).to(device=device)
-                        for i in range(in_frames)
-                    ]
+                    raw_input = []
+                    for i in range(in_frames):
+                        if 3 == dl_tuple[i].dim():
+                            raw_input.append(dl_tuple[i].unsqueeze(1).to(device))
+                        else:
+                            raw_input.append(dl_tuple[i].to(device))
                     net_input = torch.cat(raw_input, dim=1)
+
                 # Normalize inputs: input = (input - mean)/stddev
                 if args.normalize:
                     # Normalize per channel, so compute over height and width
@@ -817,26 +823,16 @@ if args.evaluate:
                             for last_layer, model_name in zip(
                                 args.gradcam_cnn_model_layer, model_names
                             ):
-                                if (
-                                    net_input.dim() == 5
-                                ):  # Merge the frames and channel dimensions.
-                                    net_input = net_input.view(
-                                        # [32, 5, 1, 720, 960] -> [32, 5, 720, 960]
-                                        net_input.size(0),
-                                        net_input.size(1) * net_input.size(2),
-                                        net_input.size(3),
-                                        net_input.size(4),
-                                    )
-
                                 try:
                                     num_cls = (
                                         len(set(target_classes))
                                         if set(target_classes)
                                         else 3
                                     )
-                                    # logging.info(
-                                    #     f"Plotting GradCAM for layer {last_layer}"
-                                    # )
+                                    if batch_count % 20 == 0:
+                                        logging.info(
+                                            f"Plotting GradCAM for batch # {batch_count} for layer {last_layer}"
+                                        )
                                     plot_gradcam_for_multichannel_input(
                                         model=net,
                                         dataset=os.path.basename(args.evaluate).split(
@@ -853,20 +849,15 @@ if args.evaluate:
                                         f"GradCAM error for layer {last_layer}: {e}"
                                     )
 
-                vector_input = None
-                if 0 < vector_input_size:
-                    vector_input = dataset_utility.extractVectors(
-                        dl_tuple, vector_range
-                    ).cuda()
-
-                if net_input.dim() == 5:
-                    net_input = net_input.view(
-                        # [32, 5, 1, 720, 960] -> [32, 5, 720, 960]
-                        net_input.size(0),
-                        net_input.size(1) * net_input.size(2),
-                        net_input.size(3),
-                        net_input.size(4),
-                    )
+                with torch.amp.autocast("cuda"):
+                    vector_input = None
+                    if vector_range.start != vector_range.stop:
+                        vector_input = train_utility.extractVectors(dl_tuple, vector_range).to(device)
+                    out = net.forward(net_input, vector_input)
+                    labels = train_utility.extractVectors(dl_tuple, label_handler.range()).to(device)
+                    # The loss function doesn't like a (batch x 1) tensor
+                    if labels.size(-1) == 1:
+                        labels = labels.flatten()
 
                 # Visualization masks are not supported with all model types yet.
                 if args.modeltype in ["alexnet", "bennet", "resnet18", "resnet34"]:
@@ -877,7 +868,7 @@ if args.evaluate:
 
                 # Convert the labels to a one hot encoding to serve at the DNN target.
                 # The label class is 1 based, but need to be 0-based for the one_hot function.
-                labels = dataset_utility.extractVectors(dl_tuple, label_range).cuda()
+                labels = dataset_utility.extractVectors(dl_tuple, label_range).to(device)
 
                 if args.skip_metadata:
                     metadata = [""] * labels.size(0)
@@ -893,6 +884,8 @@ if args.evaluate:
                     # Labels may also require postprocessing, for example to convert to a one-hot
                     # encoding.
                     post_labels = label_handler.preeval(labels)
+                    
+                    totals.update(predictions=post_out, labels=post_labels)
 
                     # Log the predictions
                     for i in range(post_labels.size(0)):
