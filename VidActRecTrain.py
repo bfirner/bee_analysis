@@ -738,93 +738,63 @@ if not args.no_train:
 # Added: If evaluation dataset was provided, perform post-training evaluation and optionally generate GradCAM plots.
 if args.evaluate:
     logging.info("Starting post-training evaluation.")
-    top_eval = None
-    worst_eval = None
-    if args.save_top_n is not None:
-        top_eval = WorstExamples(
-            args.outname.split(".")[0] + "-topN-eval",
-            class_names,
-            args.save_top_n,
-            worst_mode=False,
-        )
-        logging.info(
-            f"Saving top evaluation examples to {top_eval.worstn_path}.")
-    if args.save_worst_n is not None:
-        worst_eval = WorstExamples(
-            args.outname.split(".")[0] + "-worstN-eval", class_names,
-            args.save_worst_n)
-        logging.info(
-            f"Saving {args.save_worst_n} highest error evaluation images to {worst_eval.worstn_path}."
-        )
     net.eval()
     with torch.no_grad():
         # Make a confusion matrix or loss statistics
-        # TODO FIXME Move this evaluation step into the evaluation function as well.
-        if args.loss_fun in regression_loss:
-            totals = RegressionResults(size=label_size)
-        else:
-            totals = ConfusionMatrix(size=label_size)
-
-        with open(args.outname.split(".")[0] + ".log", "w") as logfile:
-            logfile.write("video_path,frame,time,label,prediction\n")
-            batch_count = 0
-            for batch_num, dl_tuple in enumerate(eval_dataloader):
-                # Decoding only the luminance channel means that the channel dimension has gone away here.
-                if in_frames == 1:
-                    if 3 == dl_tuple[0].dim():
-                        net_input = dl_tuple[0].unsqueeze(1).to(device)
-                    else:
-                        net_input = dl_tuple[0].to(device)
+        batch_count = 0
+        for batch_num, dl_tuple in enumerate(eval_dataloader):
+            # Decoding only the luminance channel means that the channel dimension has gone away here.
+            if in_frames == 1:
+                if 3 == dl_tuple[0].dim():
+                    net_input = dl_tuple[0].unsqueeze(1).to(device)
                 else:
-                    raw_input = []
-                    for i in range(in_frames):
-                        if 3 == dl_tuple[i].dim():
-                            raw_input.append(
-                                dl_tuple[i].unsqueeze(1).to(device))
-                        else:
-                            raw_input.append(dl_tuple[i].to(device))
-                    net_input = torch.cat(raw_input, dim=1)
+                    net_input = dl_tuple[0].to(device)
+            else:
+                raw_input = []
+                for i in range(in_frames):
+                    if 3 == dl_tuple[i].dim():
+                        raw_input.append(
+                            dl_tuple[i].unsqueeze(1).to(device))
+                    else:
+                        raw_input.append(dl_tuple[i].to(device))
+                net_input = torch.cat(raw_input, dim=1)
 
-                # Normalize inputs: input = (input - mean)/stddev
-                if args.normalize:
-                    # Normalize per channel, so compute over height and width
-                    net_input = train_utility.normalizeImages(net_input)
 
-                # GradCAM plotting if enabled (only for alexnet type with gradcam layers)
-                if args.gradcam_cnn_model_layer and args.modeltype in [
-                        "alexnet",
-                        "bennet",
-                        "resnet18",
-                        "resnet34",
-                ]:
-                    target_classes = (dataset_utility.extractVectors(
-                        dl_tuple, label_range).cpu().tolist())
-                    model_names = ["model_a", "model_b"]
+            # GradCAM plotting if enabled (only for alexnet type with gradcam layers)
+            if args.gradcam_cnn_model_layer and args.modeltype in [
+                    "alexnet",
+                    "bennet",
+                    "resnet18",
+                    "resnet34",
+            ]:
+                target_classes = (dataset_utility.extractVectors(
+                    dl_tuple, label_range).cpu().tolist())
+                model_names = ["model_a", "model_b"]
 
-                    # only make 200 gradcam plots, to reduce time it takes to make a plot
-                    if batch_count < 200:
-                        batch_count += 1
-                        with torch.set_grad_enabled(True):
-                            for last_layer, model_name in zip(
-                                    args.gradcam_cnn_model_layer, model_names):
-                                try:
-                                    num_cls = (len(set(target_classes))
-                                               if set(target_classes) else 3)
-                                    if batch_count % 20 == 0:
-                                        logging.info(
-                                            f"Plotting GradCAM for batch # {batch_count} for layer {last_layer}"
-                                        )
-                                    plot_gradcam_for_multichannel_input(
-                                        model=net,
-                                        dataset=os.path.basename(
-                                            args.evaluate).split(".")[0],
-                                        input_tensor=net_input,
-                                        target_layer_name=last_layer,
-                                        model_name=model_name,
-                                        target_classes=target_classes,
-                                        number_of_classes=num_cls,
+                # only make 200 gradcam plots, to reduce time it takes to make a plot
+                if batch_count < 200:
+                    batch_count += 1
+                    with torch.set_grad_enabled(True):
+                        for last_layer, model_name in zip(
+                                args.gradcam_cnn_model_layer, model_names):
+                            try:
+                                num_cls = (len(set(target_classes))
+                                            if set(target_classes) else 3)
+                                if batch_count % 20 == 0:
+                                    logging.info(
+                                        f"Plotting GradCAM for batch # {batch_count} for layer {last_layer}"
                                     )
-                                except Exception as e:
-                                    logging.error(
-                                        f"GradCAM error for layer {last_layer}: {e}"
-                                    )
+                                plot_gradcam_for_multichannel_input(
+                                    model=net,
+                                    dataset=os.path.basename(
+                                        args.evaluate).split(".")[0],
+                                    input_tensor=net_input,
+                                    target_layer_name=last_layer,
+                                    model_name=model_name,
+                                    target_classes=target_classes,
+                                    number_of_classes=num_cls,
+                                )
+                            except Exception as e:
+                                logging.error(
+                                    f"GradCAM error for layer {last_layer}: {e}"
+                                )
