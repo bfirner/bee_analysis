@@ -727,6 +727,7 @@ if not args.no_train:
                     normalize_images=args.normalize,
                     loss_fn=loss_fn,
                     nn_postprocess=nn_postprocess,
+                    write_to_description=False if epoch < args.epoch - 1 else True
                 )
             # End training loop; final checkpoint saved above.
     except Exception as e:
@@ -827,9 +828,3 @@ if args.evaluate:
                                     logging.error(
                                         f"GradCAM error for layer {last_layer}: {e}"
                                     )
-
-
-        # with open("RUN_DESCRIPTION.log", "a") as run_desc:
-        #     run_desc.write(
-        #         f"\n-- Final Results for evaluating with {args.evaluate} --\n")
-        #     run_desc.write(f"{totals.makeResults()}\n")

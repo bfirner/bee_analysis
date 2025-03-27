@@ -364,6 +364,7 @@ def evalEpoch(
     normalize_images,
     loss_fn,
     nn_postprocess,
+    write_to_description=False,
     encode_position=False,
     worst_eval=None,
     best_eval=None,
@@ -460,4 +461,10 @@ def evalEpoch(
             worst_eval.save()
         if best_eval is not None:
             best_eval.save()
+        if write_to_description:
+            with open("RUN_DESCRIPTION.log", "a") as run_desc:
+                run_desc.write(
+                    f"\n-- Final Results for evaluating with {args.evaluate} --\n")
+                run_desc.write(f"{eval_stats.makeResults()}\n")
+
     net.train()
