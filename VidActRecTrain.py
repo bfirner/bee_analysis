@@ -733,43 +733,6 @@ if not args.no_train:
         logging.error(f"Exception during training: {e}")
         raise e
 
-if args.loss_fun not in regression_loss:
-    if "CrossEntropyLoss" == args.loss_fun:
-        # Outputs of most classification networks are considered probabilities (but only take that in a
-        # very loose sense of the word). The Softmax function forces its inputs to sum to 1 as
-        # probabilities should do.
-        sm = torch.nn.Softmax(dim=1)
-
-        def nn_postprocess(classes):
-            """
-
-            :param classes:
-
-            """
-            return torch.round(sm(classes)).clamp(0, 1)
-
-    elif "BCEWithLogitsLoss" == args.loss_fun:
-        sigm = torch.nn.Sigmoid()
-
-        def nn_postprocess(classes):
-            """
-
-            :param classes:
-
-            """
-            return torch.round(sigm(classes)).clamp(0, 1)
-
-    else:
-
-        def nn_postprocess(classes):
-            """
-
-            :param classes:
-
-            """
-            return torch.round(classes).clamp(0, 1)
-
-
 # ---------------------- Post-Training Evaluation & GradCAM ----------------------
 # Added: If evaluation dataset was provided, perform post-training evaluation and optionally generate GradCAM plots.
 if args.evaluate:
@@ -865,88 +828,8 @@ if args.evaluate:
                                         f"GradCAM error for layer {last_layer}: {e}"
                                     )
 
-                with torch.amp.autocast("cuda"):
-                    vector_input = None
-                    if vector_range.start != vector_range.stop:
-                        vector_input = train_utility.extractVectors(
-                            dl_tuple, vector_range).to(device)
-                    out = net.forward(net_input, vector_input)
-                    labels = train_utility.extractVectors(
-                        dl_tuple, label_handler.range()).to(device)
-                    # The loss function doesn't like a (batch x 1) tensor
-                    if labels.size(-1) == 1:
-                        labels = labels.flatten()
 
-                # Visualization masks are not supported with all model types yet.
-                if args.modeltype in [
-                        "alexnet", "bennet", "resnet18", "resnet34"
-                ]:
-                    out, mask = net.vis_forward(net_input, vector_input)
-                else:
-                    out = net.forward(net_input, vector_input, vector_input)
-                    mask = [None] * batch_size
-
-                # Convert the labels to a one hot encoding to serve at the DNN target.
-                # The label class is 1 based, but need to be 0-based for the one_hot function.
-                labels = dataset_utility.extractVectors(dl_tuple,
-                                                        label_range).to(device)
-
-                if args.skip_metadata:
-                    metadata = [""] * labels.size(0)
-                else:
-                    metadata = dl_tuple[metadata_index]
-
-                loss = loss_fn(out, label_handler.preprocess(labels))
-
-                # Fill in the loss statistics and best/worst examples
-                with torch.no_grad():
-                    # The postprocessesing could include Softmax, denormalization, etc.
-                    post_out = nn_postprocess(out)
-                    # Labels may also require postprocessing, for example to convert to a one-hot
-                    # encoding.
-                    post_labels = label_handler.preeval(labels)
-
-                    totals.update(predictions=post_out, labels=post_labels)
-
-                    # Log the predictions
-                    for i in range(post_labels.size(0)):
-                        logfile.write(",".join(
-                            (metadata[i], str(out[i]), str(post_labels[i]))))
-                        logfile.write("\n")
-                    if worst_eval is not None or top_eval is not None:
-                        # For each item in the batch see if it requires an update to the worst examples
-                        # If the DNN should have predicted this image was a member of the labelled class
-                        # then see if this image should be inserted into the worst_n queue for the
-                        # labelled class based upon the DNN output for this class.
-                        input_images = dl_tuple[0]
-                        for i in range(post_labels.size(0)):
-                            label = torch.argwhere(post_labels[i])[0].item()
-                            if worst_eval is not None:
-                                worst_eval.test(
-                                    label,
-                                    out[i][label].item(),
-                                    input_images[i],
-                                    metadata[i],
-                                )
-                            if top_eval is not None:
-                                top_eval.test(
-                                    label,
-                                    out[i][label].item(),
-                                    input_images[i],
-                                    metadata[i],
-                                )
-
-        # Save the worst and best examples
-        if worst_eval is not None:
-            worst_eval.save("evaluation")
-        if top_eval is not None:
-            top_eval.save("evaluation")
-
-        # Print evaluation information
-        print(f"Evaluation results:")
-        print(totals.makeResults())
-
-        with open("RUN_DESCRIPTION.log", "a") as run_desc:
-            run_desc.write(
-                f"\n-- Final Results for evaluating with {args.evaluate} --\n")
-            run_desc.write(f"{totals.makeResults()}\n")
+        # with open("RUN_DESCRIPTION.log", "a") as run_desc:
+        #     run_desc.write(
+        #         f"\n-- Final Results for evaluating with {args.evaluate} --\n")
+        #     run_desc.write(f"{totals.makeResults()}\n")
