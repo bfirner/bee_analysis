@@ -729,7 +729,7 @@ if not args.no_train:
                     normalize_images=args.normalize,
                     loss_fn=loss_fn,
                     nn_postprocess=nn_postprocess,
-                    write_to_description=epoch >= args.epochs - 1
+                    write_to_description=epoch >= args.epochs - 1,
                 )
             # End training loop; final checkpoint saved above.
     except Exception as e:
@@ -755,12 +755,10 @@ if args.evaluate:
                 raw_input = []
                 for i in range(in_frames):
                     if 3 == dl_tuple[i].dim():
-                        raw_input.append(
-                            dl_tuple[i].unsqueeze(1).to(device))
+                        raw_input.append(dl_tuple[i].unsqueeze(1).to(device))
                     else:
                         raw_input.append(dl_tuple[i].to(device))
                 net_input = torch.cat(raw_input, dim=1)
-
 
             # GradCAM plotting if enabled (only for alexnet type with gradcam layers)
             if args.gradcam_cnn_model_layer and args.modeltype in [
@@ -781,7 +779,7 @@ if args.evaluate:
                                 args.gradcam_cnn_model_layer, model_names):
                             try:
                                 num_cls = (len(set(target_classes))
-                                            if set(target_classes) else 3)
+                                           if set(target_classes) else 3)
                                 if batch_count % 20 == 0:
                                     logging.info(
                                         f"Plotting GradCAM for batch # {batch_count} for layer {last_layer}"
