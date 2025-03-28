@@ -1,3 +1,5 @@
+# The provided code is performing post-training evaluation and potentially generating GradCAM plots if
+# the evaluation dataset was provided. Here is a breakdown of the key steps:
 #! /usr/bin/python3
 """
 This will train a model using a webdataset tar archive for data input.
@@ -727,7 +729,7 @@ if not args.no_train:
                     normalize_images=args.normalize,
                     loss_fn=loss_fn,
                     nn_postprocess=nn_postprocess,
-                    write_to_description=False if epoch < args.epoch - 1 else True
+                    write_to_description=False if epoch < args.epochs - 1 else True
                 )
             # End training loop; final checkpoint saved above.
     except Exception as e:
