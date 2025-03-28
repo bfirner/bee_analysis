@@ -464,7 +464,7 @@ def evalEpoch(
         if write_to_description:
             with open("RUN_DESCRIPTION.log", "a") as run_desc:
                 run_desc.write(
-                    f"\n-- Final Results for evaluating with {args.evaluate} --\n")
+                    f"\n-- Final Results for K-Fold Set --\n")
                 run_desc.write(f"{eval_stats.makeResults()}\n")
 
     net.train()
