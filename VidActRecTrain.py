@@ -729,7 +729,7 @@ if not args.no_train:
                     normalize_images=args.normalize,
                     loss_fn=loss_fn,
                     nn_postprocess=nn_postprocess,
-                    write_to_description=False if epoch < args.epochs - 1 else True
+                    write_to_description=epoch >= args.epochs - 1
                 )
             # End training loop; final checkpoint saved above.
     except Exception as e:
