@@ -761,7 +761,9 @@ if args.evaluate:
                         raw_input.append(dl_tuple[i].to(device))
                 net_input = torch.cat(raw_input, dim=1)
 
-
+            if args.normalize:
+                net_input = train_utility.normalizeImages(net_input)
+            
             # GradCAM plotting if enabled (only for alexnet type with gradcam layers)
             if args.gradcam_cnn_model_layer and args.modeltype in [
                     "alexnet",
