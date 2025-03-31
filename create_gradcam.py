@@ -1,7 +1,8 @@
+import logging
 import os
+
 import torch
 import webdataset as wds
-import logging
 
 # Import or define your models and GradCAM utility:
 #
@@ -14,25 +15,29 @@ import logging
 #
 # Make sure these imports match your directory structure.
 
+
 def restore_model(checkpoint_path, net):
     """
     Restores model weights from a given checkpoint file.
     """
-    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    checkpoint = torch.load(checkpoint_path,
+                            map_location="cpu",
+                            weights_only=False)
     net.load_state_dict(checkpoint["model_dict"])
     logging.info(f"Model weights restored from {checkpoint_path}")
 
+
 def run_gradcam(
-    checkpoint:str,
-    dataset_path:str,
-    modeltype:str,
-    gradcam_cnn_model_layer:list,
+    checkpoint: str,
+    dataset_path: str,
+    modeltype: str,
+    gradcam_cnn_model_layer: list,
     num_images=2,
     sample_frames=1,
     label_offset=1,
     num_outputs=3,
     height=720,
-    width = 960
+    width=960,
 ):
     """
     Runs GradCAM on a given model + dataset using minimal logic.
@@ -40,8 +45,8 @@ def run_gradcam(
     Args:
         checkpoint (str): Path to the saved model checkpoint file.
         dataset_path (str): Path to the WebDataset tar file.
-        modeltype (str): One of the architectures ["alexnet", "bennet", 
-            "resnet18", "resnet34", "resnext50", "resnext34", "resnext18", 
+        modeltype (str): One of the architectures ["alexnet", "bennet",
+            "resnet18", "resnet34", "resnext50", "resnext34", "resnext18",
             "convnextxt", "convnextt", "convnexts", "convnextb"].
         gradcam_cnn_model_layer (list of str): List of layer names to apply GradCAM to.
         num_images (int): Number of samples to load from dataset for GradCAM.
@@ -66,78 +71,79 @@ def run_gradcam(
 
     if modeltype == "alexnet":
         from models.alexnet import AlexLikeNet
+
         net = AlexLikeNet(
             in_dimensions=(sample_frames, h, w),
             out_classes=num_outputs,
-            linear_size=512
+            linear_size=512,
         )
     elif modeltype == "bennet":
         from models.bennet import BenNet
-        net = BenNet(
-            in_dimensions=(sample_frames, h, w),
-            out_classes=num_outputs
-        )
+
+        net = BenNet(in_dimensions=(sample_frames, h, w),
+                     out_classes=num_outputs)
     elif modeltype == "resnet18":
         from models.resnet import ResNet18
+
         net = ResNet18(
             in_dimensions=(sample_frames, h, w),
             out_classes=num_outputs,
-            expanded_linear=True
+            expanded_linear=True,
         )
     elif modeltype == "resnet34":
         from models.resnet import ResNet34
+
         net = ResNet34(
             in_dimensions=(sample_frames, h, w),
             out_classes=num_outputs,
-            expanded_linear=True
+            expanded_linear=True,
         )
     elif modeltype == "resnext50":
         from models.resnext import ResNext50
+
         net = ResNext50(
             in_dimensions=(sample_frames, h, w),
             out_classes=num_outputs,
-            expanded_linear=True
+            expanded_linear=True,
         )
     elif modeltype == "resnext34":
         from models.resnext import ResNext34
+
         net = ResNext34(
             in_dimensions=(sample_frames, h, w),
             out_classes=num_outputs,
             expanded_linear=False,
-            use_dropout=False
+            use_dropout=False,
         )
     elif modeltype == "resnext18":
         from models.resnext import ResNext18
+
         net = ResNext18(
             in_dimensions=(sample_frames, h, w),
             out_classes=num_outputs,
             expanded_linear=True,
-            use_dropout=False
+            use_dropout=False,
         )
     elif modeltype == "convnextxt":
         from models.convnext import ConvNextExtraTiny
-        net = ConvNextExtraTiny(
-            in_dimensions=(sample_frames, h, w),
-            out_classes=num_outputs
-        )
+
+        net = ConvNextExtraTiny(in_dimensions=(sample_frames, h, w),
+                                out_classes=num_outputs)
     elif modeltype == "convnextt":
         from models.convnext import ConvNextTiny
-        net = ConvNextTiny(
-            in_dimensions=(sample_frames, h, w),
-            out_classes=num_outputs
-        )
+
+        net = ConvNextTiny(in_dimensions=(sample_frames, h, w),
+                           out_classes=num_outputs)
     elif modeltype == "convnexts":
         from models.convnext import ConvNextSmall
-        net = ConvNextSmall(
-            in_dimensions=(sample_frames, h, w),
-            out_classes=num_outputs
-        )
+
+        net = ConvNextSmall(in_dimensions=(sample_frames, h, w),
+                            out_classes=num_outputs)
     elif modeltype == "convnextb":
         from models.convnext import ConvNextBase
-        net = ConvNextBase(
-            in_dimensions=(sample_frames, h, w),
-            out_classes=num_outputs
-        )
+
+        net = ConvNextBase(in_dimensions=(sample_frames, h, w),
+                           out_classes=num_outputs)
     else:
         raise ValueError(f"Unknown model type: {modeltype}")
 
@@ -155,15 +161,17 @@ def run_gradcam(
     # Minimal decode: we assume each sample has N frames (like 0.png, 1.png, etc.)
     # plus a 'cls' label. Adjust the keys if your data is different.
     decode_strs = [f"{i}.png" for i in range(sample_frames)] + ["cls"]
-    
+
     dataset = (
-        wds.WebDataset(dataset_path, shardshuffle=20000 // sample_frames)
-        .decode("l")  # decode as grayscale images; adjust if you have color data
-        .to_tuple(*decode_strs)
-    )
+        wds.
+        WebDataset(dataset_path, shardshuffle=20000 // sample_frames).decode(
+            "l")  # decode as grayscale images; adjust if you have color data
+        .to_tuple(*decode_strs))
 
     # We'll just load one small batch with `num_images` items:
-    loader = torch.utils.data.DataLoader(dataset, batch_size=num_images, num_workers=0)
+    loader = torch.utils.data.DataLoader(dataset,
+                                         batch_size=num_images,
+                                         num_workers=0)
 
     # --------------------------------------------------------------------------
     # 5. Forward pass and GradCAM
@@ -180,8 +188,9 @@ def run_gradcam(
         else:
             raw_input = []
             for i in range(sample_frames):
-                raw_input.append(batch[i].unsqueeze(1).to(device))  
-            net_input = torch.cat(raw_input, dim=1)  # shape: [B, sample_frames, H, W]
+                raw_input.append(batch[i].unsqueeze(1).to(device))
+            # shape: [B, sample_frames, H, W]
+            net_input = torch.cat(raw_input, dim=1)
             labels = batch[sample_frames].to(device)
 
         # Adjust label offset if needed
@@ -201,10 +210,11 @@ def run_gradcam(
                         target_layer_name=[layer_name],
                         model_name=modeltype,
                         target_classes=labels.tolist(),
-                        number_of_classes=num_outputs
+                        number_of_classes=num_outputs,
                     )
                 except Exception as e:
-                    logging.info(f"Error plotting GradCAM for layer {layer_name}: {e}")
+                    logging.info(
+                        f"Error plotting GradCAM for layer {layer_name}: {e}")
 
         break  # Process only the first batch and stop.
 
