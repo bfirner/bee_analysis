@@ -141,8 +141,7 @@ class LabelHandler:
         if label_names is not None:
             self.label_names = label_names
         else:
-            self.label_names = [
-                "label-{}".format(i) for i in range(label_size)]
+            self.label_names = ["label-{}".format(i) for i in range(label_size)]
 
         # Default to no preprocessing. The user can call setPreprocess to add one.
         self.preprocess_func = None
@@ -200,8 +199,7 @@ def createPositionMask(height, width):
             for x in range(width):
                 # By taking the difference of one pixel to the next the CNN can discover the pixel
                 # position relative to the center of the image.
-                mask[0, y, x] = abs(y / height - 0.5) ** 2 + \
-                    abs(x / width - 0.5) ** 2
+                mask[0, y, x] = abs(y / height - 0.5) ** 2 + abs(x / width - 0.5) ** 2
         return mask
 
 
@@ -270,8 +268,7 @@ def trainEpoch(
                         net_input.size(-2), net_input.size(-1)
                     ).to(device)
                 net_input = torch.cat(
-                    (net_input, position_mask.expand(
-                        net_input.size(0), -1, -1, -1)),
+                    (net_input, position_mask.expand(net_input.size(0), -1, -1, -1)),
                     dim=1,
                 )
 
@@ -281,8 +278,7 @@ def trainEpoch(
                 labels = labels.flatten()
             vector_inputs = None
             if vector_range.start != vector_range.stop:
-                vector_inputs = extractVectors(
-                    dl_tuple, vector_range).to(device)
+                vector_inputs = extractVectors(dl_tuple, vector_range).to(device)
 
         if scaler is not None:
             out, loss = updateWithScaler(
@@ -403,19 +399,16 @@ def evalEpoch(
                         net_input.size(-2), net_input.size(-1)
                     ).to(device)
                 net_input = torch.cat(
-                    (net_input, position_mask.expand(
-                        net_input.size(0), -1, -1, -1)),
+                    (net_input, position_mask.expand(net_input.size(0), -1, -1, -1)),
                     dim=1,
                 )
 
             with torch.amp.autocast("cuda"):
                 vector_input = None
                 if vector_range.start != vector_range.stop:
-                    vector_input = extractVectors(
-                        dl_tuple, vector_range).to(device)
+                    vector_input = extractVectors(dl_tuple, vector_range).to(device)
                 out = net.forward(net_input, vector_input)
-                labels = extractVectors(
-                    dl_tuple, label_handler.range()).to(device)
+                labels = extractVectors(dl_tuple, label_handler.range()).to(device)
                 # The loss function doesn't like a (batch x 1) tensor
                 if labels.size(-1) == 1:
                     labels = labels.flatten()
@@ -471,8 +464,7 @@ def evalEpoch(
             best_eval.save()
         if write_to_description:
             with open("RUN_DESCRIPTION.log", "a") as run_desc:
-                run_desc.write(
-                    f"\n-- Final Results for {outname} --\n")
+                run_desc.write(f"\n-- Final Results for {outname} --\n")
                 run_desc.write(f"{eval_stats.makeResults()}\n")
 
     net.train()
