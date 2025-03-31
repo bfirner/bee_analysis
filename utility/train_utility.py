@@ -1,5 +1,4 @@
 #! /usr/bin/python3
-
 """
 Utility functions for PyTorch training
 """
@@ -8,8 +7,8 @@ import logging
 
 import torch
 
-# Helper function to convert to images
 from utility.dataset_utility import extractVectors
+# Helper function to convert to images
 
 
 def normalizeImages(images, epsilon=1e-05):
