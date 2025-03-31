@@ -364,6 +364,7 @@ def evalEpoch(
     normalize_images,
     loss_fn,
     nn_postprocess,
+    outname,
     write_to_description=False,
     encode_position=False,
     worst_eval=None,
@@ -464,7 +465,7 @@ def evalEpoch(
         if write_to_description:
             with open("RUN_DESCRIPTION.log", "a") as run_desc:
                 run_desc.write(
-                    f"\n-- Final Results for K-Fold Set --\n")
+                    f"\n-- Final Results for {outname} --\n")
                 run_desc.write(f"{eval_stats.makeResults()}\n")
 
     net.train()
