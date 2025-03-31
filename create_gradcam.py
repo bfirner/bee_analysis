@@ -14,25 +14,28 @@ import logging
 #
 # Make sure these imports match your directory structure.
 
+
 def restore_model(checkpoint_path, net):
     """
     Restores model weights from a given checkpoint file.
     """
-    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    checkpoint = torch.load(
+        checkpoint_path, map_location="cpu", weights_only=False)
     net.load_state_dict(checkpoint["model_dict"])
     logging.info(f"Model weights restored from {checkpoint_path}")
 
+
 def run_gradcam(
-    checkpoint:str,
-    dataset_path:str,
-    modeltype:str,
-    gradcam_cnn_model_layer:list,
+    checkpoint: str,
+    dataset_path: str,
+    modeltype: str,
+    gradcam_cnn_model_layer: list,
     num_images=2,
     sample_frames=1,
     label_offset=1,
     num_outputs=3,
     height=720,
-    width = 960
+    width=960
 ):
     """
     Runs GradCAM on a given model + dataset using minimal logic.
@@ -155,7 +158,7 @@ def run_gradcam(
     # Minimal decode: we assume each sample has N frames (like 0.png, 1.png, etc.)
     # plus a 'cls' label. Adjust the keys if your data is different.
     decode_strs = [f"{i}.png" for i in range(sample_frames)] + ["cls"]
-    
+
     dataset = (
         wds.WebDataset(dataset_path, shardshuffle=20000 // sample_frames)
         .decode("l")  # decode as grayscale images; adjust if you have color data
@@ -163,7 +166,8 @@ def run_gradcam(
     )
 
     # We'll just load one small batch with `num_images` items:
-    loader = torch.utils.data.DataLoader(dataset, batch_size=num_images, num_workers=0)
+    loader = torch.utils.data.DataLoader(
+        dataset, batch_size=num_images, num_workers=0)
 
     # --------------------------------------------------------------------------
     # 5. Forward pass and GradCAM
@@ -180,8 +184,9 @@ def run_gradcam(
         else:
             raw_input = []
             for i in range(sample_frames):
-                raw_input.append(batch[i].unsqueeze(1).to(device))  
-            net_input = torch.cat(raw_input, dim=1)  # shape: [B, sample_frames, H, W]
+                raw_input.append(batch[i].unsqueeze(1).to(device))
+            # shape: [B, sample_frames, H, W]
+            net_input = torch.cat(raw_input, dim=1)
             labels = batch[sample_frames].to(device)
 
         # Adjust label offset if needed
@@ -204,7 +209,8 @@ def run_gradcam(
                         number_of_classes=num_outputs
                     )
                 except Exception as e:
-                    logging.info(f"Error plotting GradCAM for layer {layer_name}: {e}")
+                    logging.info(
+                        f"Error plotting GradCAM for layer {layer_name}: {e}")
 
         break  # Process only the first batch and stop.
 
