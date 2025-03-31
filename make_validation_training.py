@@ -384,6 +384,7 @@ for dataset_num in range(numOfSets):
             f"-G {args.gpus if args.gpus > 0 else 1}"
             f" -c 8 "
             f" -n 4 "
+            f" --mem=600G "
             f" --time={args.time_to_run_training} "
             f" -o {baseName}_trainlog_{str(dataset_num)}.log "
             f"{train_job_filename} "
