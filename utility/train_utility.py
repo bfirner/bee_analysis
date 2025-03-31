@@ -3,8 +3,9 @@
 """
 Utility functions for PyTorch training
 """
-import logging
 import datetime
+import logging
+
 import torch
 
 # Helper function to convert to images
