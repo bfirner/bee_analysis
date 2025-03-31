@@ -20,9 +20,7 @@ def restore_model(checkpoint_path, net):
     """
     Restores model weights from a given checkpoint file.
     """
-    checkpoint = torch.load(checkpoint_path,
-                            map_location="cpu",
-                            weights_only=False)
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     net.load_state_dict(checkpoint["model_dict"])
     logging.info(f"Model weights restored from {checkpoint_path}")
 
@@ -80,8 +78,7 @@ def run_gradcam(
     elif modeltype == "bennet":
         from models.bennet import BenNet
 
-        net = BenNet(in_dimensions=(sample_frames, h, w),
-                     out_classes=num_outputs)
+        net = BenNet(in_dimensions=(sample_frames, h, w), out_classes=num_outputs)
     elif modeltype == "resnet18":
         from models.resnet import ResNet18
 
@@ -127,23 +124,23 @@ def run_gradcam(
     elif modeltype == "convnextxt":
         from models.convnext import ConvNextExtraTiny
 
-        net = ConvNextExtraTiny(in_dimensions=(sample_frames, h, w),
-                                out_classes=num_outputs)
+        net = ConvNextExtraTiny(
+            in_dimensions=(sample_frames, h, w), out_classes=num_outputs
+        )
     elif modeltype == "convnextt":
         from models.convnext import ConvNextTiny
 
-        net = ConvNextTiny(in_dimensions=(sample_frames, h, w),
-                           out_classes=num_outputs)
+        net = ConvNextTiny(in_dimensions=(sample_frames, h, w), out_classes=num_outputs)
     elif modeltype == "convnexts":
         from models.convnext import ConvNextSmall
 
-        net = ConvNextSmall(in_dimensions=(sample_frames, h, w),
-                            out_classes=num_outputs)
+        net = ConvNextSmall(
+            in_dimensions=(sample_frames, h, w), out_classes=num_outputs
+        )
     elif modeltype == "convnextb":
         from models.convnext import ConvNextBase
 
-        net = ConvNextBase(in_dimensions=(sample_frames, h, w),
-                           out_classes=num_outputs)
+        net = ConvNextBase(in_dimensions=(sample_frames, h, w), out_classes=num_outputs)
     else:
         raise ValueError(f"Unknown model type: {modeltype}")
 
@@ -163,15 +160,13 @@ def run_gradcam(
     decode_strs = [f"{i}.png" for i in range(sample_frames)] + ["cls"]
 
     dataset = (
-        wds.
-        WebDataset(dataset_path, shardshuffle=20000 // sample_frames).decode(
-            "l")  # decode as grayscale images; adjust if you have color data
-        .to_tuple(*decode_strs))
+        wds.WebDataset(dataset_path, shardshuffle=20000 // sample_frames)
+        .decode("l")  # decode as grayscale images; adjust if you have color data
+        .to_tuple(*decode_strs)
+    )
 
     # We'll just load one small batch with `num_images` items:
-    loader = torch.utils.data.DataLoader(dataset,
-                                         batch_size=num_images,
-                                         num_workers=0)
+    loader = torch.utils.data.DataLoader(dataset, batch_size=num_images, num_workers=0)
 
     # --------------------------------------------------------------------------
     # 5. Forward pass and GradCAM
@@ -213,8 +208,7 @@ def run_gradcam(
                         number_of_classes=num_outputs,
                     )
                 except Exception as e:
-                    logging.info(
-                        f"Error plotting GradCAM for layer {layer_name}: {e}")
+                    logging.info(f"Error plotting GradCAM for layer {layer_name}: {e}")
 
         break  # Process only the first batch and stop.
 
