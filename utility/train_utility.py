@@ -470,7 +470,7 @@ def evalEpoch(
             best_eval.save()
         if write_to_description:
             with open("RUN_DESCRIPTION.log", "a") as run_desc:
-                run_desc.write(f"\n-- Final Results for {outname} --\n")
+                run_desc.write(f"\n-- Final Results for Evaluating {outname} --\n")
                 run_desc.write(f"{eval_stats.makeResults()}\n")
 
     net.train()
