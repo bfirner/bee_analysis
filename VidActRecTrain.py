@@ -731,7 +731,7 @@ if not args.no_train:
                     loss_fn=loss_fn,
                     nn_postprocess=nn_postprocess,
                     write_to_description=epoch >= args.epochs - 1,
-                    outname=args.outname,
+                    outname=args.evaluate,
                 )
             # End training loop; final checkpoint saved above.
     except Exception as e:
