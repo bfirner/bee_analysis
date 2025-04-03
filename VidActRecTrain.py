@@ -754,7 +754,7 @@ if args.evaluate:
             dataset_path=args.evaluate.replace(".bin", ".tar"),
             modeltype=args.modeltype,
             gradcam_cnn_model_layer=args.gradcam_cnn_model_layer,
-            num_images=300,
+            num_images=150,
             sample_frames=args.sample_frames,
             label_offset=args.label_offset,
             height=image_size[-2],
