@@ -302,7 +302,7 @@ parser.add_argument(
     type=int,
     required=False,
     default=3,
-    help="Number of folds (gradcam folders to create)."
+    help="Number of folds (gradcam folders to create).",
 )
 
 args = parser.parse_args()
@@ -759,7 +759,8 @@ if args.evaluate:
     ]:
 
         for fold in range(args.k):
-            output_folder = f"model_{chr(97 + fold)}"  # Creates folder names: model_a, model_b, etc. per k fold #
+            # Creates folder names: model_a, model_b, etc. per k fold #
+            output_folder = f"model_{chr(97 + fold)}"
             run_gradcam(
                 checkpoint=args.outname,
                 dataset_path=args.evaluate.replace(".bin", ".tar"),
