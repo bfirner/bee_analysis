@@ -54,9 +54,7 @@ def run_gradcam(
         sample_frames (int): If data is multi-frame, how many frames per sample.
         label_offset (int): If labels in your dataset start at 1 (instead of 0), set offset accordingly.
         num_outputs (int): Number of output classes for the model.
-        height (int): Height of each image.
-        width (int): Width of each image.
-        output_folder (str): Name of the folder where GradCAM outputs should be saved. If None, uses dataset basename.
+        image_size (tuple): (channels, height, width) shape of each frame.
 
     Returns:
         None. (GradCAM images are produced by plot_gradcam_for_multichannel_input().)
@@ -69,6 +67,7 @@ def run_gradcam(
     # --------------------------------------------------------------------------
     # 2. Construct the model
     # --------------------------------------------------------------------------
+    # Adjust these imports/definitions to match wherever your model definitions live.
     h, w = height, width
 
     if modeltype == "alexnet":
@@ -160,6 +159,8 @@ def run_gradcam(
     # --------------------------------------------------------------------------
     # 4. Build a small DataLoader for the WebDataset
     # --------------------------------------------------------------------------
+    # Minimal decode: we assume each sample has N frames (like 0.png, 1.png, etc.)
+    # plus a 'cls' label. Adjust the keys if your data is different.
     decode_strs = [f"{i}.png" for i in range(sample_frames)] + ["cls"]
 
     dataset = (
@@ -167,6 +168,8 @@ def run_gradcam(
         WebDataset(dataset_path, shardshuffle=20000 // sample_frames).decode(
             "l")  # decode as grayscale images; adjust if you have color data
         .to_tuple(*decode_strs))
+
+    # We'll just load one small batch with `num_images` items:
     loader = torch.utils.data.DataLoader(dataset,
                                          batch_size=num_images,
                                          num_workers=0)
@@ -174,13 +177,16 @@ def run_gradcam(
     # --------------------------------------------------------------------------
     # 5. Forward pass and GradCAM
     # --------------------------------------------------------------------------
+    # We'll do only one iteration (i.e., one batch).
     from utility.saliency_utils import plot_gradcam_for_multichannel_input
+
 
     # Use the output_folder if provided; otherwise, use the dataset's basename.
     save_folder = (output_folder if output_folder is not None else
                    os.path.basename(dataset_path))
-
     for batch in loader:
+        # If sample_frames == 1, batch[0] is your image tensor, batch[1] is the label
+        # If sample_frames > 1, batch[0..(sample_frames-1)] are images, batch[sample_frames] is label
         if sample_frames == 1:
             net_input = batch[0].unsqueeze(1).to(device)  # shape: [B, 1, H, W]
             labels = batch[1].to(device)
@@ -188,13 +194,16 @@ def run_gradcam(
             raw_input = []
             for i in range(sample_frames):
                 raw_input.append(batch[i].unsqueeze(1).to(device))
+            # shape: [B, sample_frames, H, W]
             net_input = torch.cat(raw_input, dim=1)
             labels = batch[sample_frames].to(device)
 
         # Adjust label offset if needed
         labels -= label_offset
 
-        # Process GradCAM for each specified layer
+        # For demonstration, you might run GradCAM on each layer in gradcam_cnn_model_layer.
+        # If you are using multi-model arrays (e.g., model_a, model_b) you’d adapt accordingly.
+        # The below code just demonstrates calling your GradCAM function for each listed layer:
         with torch.set_grad_enabled(True):
             for layer_name in gradcam_cnn_model_layer:
                 try:

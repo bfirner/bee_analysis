@@ -304,7 +304,6 @@ parser.add_argument(
     default=3,
     help="Number of folds (gradcam folders to create).",
 )
-
 args = parser.parse_args()
 
 # ---------------------- Setup Logging and Device ----------------------
@@ -757,7 +756,6 @@ if args.evaluate:
             "resnet18",
             "resnet34",
     ]:
-
         for fold in range(args.k):
             # Creates folder names: model_a, model_b, etc. per k fold #
             output_folder = f"model_{chr(97 + fold)}"
@@ -773,3 +771,4 @@ if args.evaluate:
                 width=image_size[-1],
                 output_folder=output_folder,
             )
+
