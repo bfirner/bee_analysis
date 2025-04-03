@@ -28,16 +28,17 @@ def restore_model(checkpoint_path, net):
 
 
 def run_gradcam(
-    checkpoint: str,
-    dataset_path: str,
-    modeltype: str,
-    gradcam_cnn_model_layer: list,
-    num_images=2,
-    sample_frames=1,
-    label_offset=1,
-    num_outputs=3,
-    height=720,
-    width=960,
+        checkpoint: str,
+        dataset_path: str,
+        modeltype: str,
+        gradcam_cnn_model_layer: list,
+        num_images=2,
+        sample_frames=1,
+        label_offset=1,
+        num_outputs=3,
+        height=720,
+        width=960,
+        output_folder=None,  # New parameter to specify the output folder
 ):
     """
     Runs GradCAM on a given model + dataset using minimal logic.
@@ -179,6 +180,9 @@ def run_gradcam(
     # We'll do only one iteration (i.e., one batch).
     from utility.saliency_utils import plot_gradcam_for_multichannel_input
 
+    # Use the output_folder if provided; otherwise, use the dataset's basename.
+    save_folder = (output_folder if output_folder is not None else
+                   os.path.basename(dataset_path))
     for batch in loader:
         # If sample_frames == 1, batch[0] is your image tensor, batch[1] is the label
         # If sample_frames > 1, batch[0..(sample_frames-1)] are images, batch[sample_frames] is label
@@ -202,10 +206,13 @@ def run_gradcam(
         with torch.set_grad_enabled(True):
             for layer_name in gradcam_cnn_model_layer:
                 try:
-                    logging.info(f"Running GradCAM for layer {layer_name}...")
+                    logging.info(
+                        f"Running GradCAM for layer {layer_name} in folder {save_folder}..."
+                    )
                     plot_gradcam_for_multichannel_input(
                         model=net,
-                        dataset=os.path.basename(dataset_path),
+                        dataset=
+                        save_folder,  # Use the designated folder name here
                         input_tensor=net_input,
                         target_layer_name=[layer_name],
                         model_name=modeltype,
@@ -215,7 +222,6 @@ def run_gradcam(
                 except Exception as e:
                     logging.info(
                         f"Error plotting GradCAM for layer {layer_name}: {e}")
-
         break  # Process only the first batch and stop.
 
     logging.info("GradCAM process completed.")
