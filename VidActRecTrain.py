@@ -771,4 +771,3 @@ if args.evaluate:
                 width=image_size[-1],
                 output_folder=output_folder,
             )
-

@@ -180,7 +180,6 @@ def run_gradcam(
     # We'll do only one iteration (i.e., one batch).
     from utility.saliency_utils import plot_gradcam_for_multichannel_input
 
-
     # Use the output_folder if provided; otherwise, use the dataset's basename.
     save_folder = (output_folder if output_folder is not None else
                    os.path.basename(dataset_path))
