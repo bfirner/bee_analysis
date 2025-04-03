@@ -297,6 +297,14 @@ parser.add_argument(
     help="Enable debugging output.",
 )
 
+parser.add_argument(
+    "--k",
+    type=int,
+    required=False,
+    default=3,
+    help="Number of folds (gradcam folders to create)."
+)
+
 args = parser.parse_args()
 
 # ---------------------- Setup Logging and Device ----------------------
@@ -749,14 +757,18 @@ if args.evaluate:
             "resnet18",
             "resnet34",
     ]:
-        run_gradcam(
-            checkpoint=args.outname,
-            dataset_path=args.evaluate.replace(".bin", ".tar"),
-            modeltype=args.modeltype,
-            gradcam_cnn_model_layer=args.gradcam_cnn_model_layer,
-            num_images=150,
-            sample_frames=args.sample_frames,
-            label_offset=args.label_offset,
-            height=image_size[-2],
-            width=image_size[-1],
-        )
+
+        for fold in range(args.k):
+            output_folder = f"model_{chr(97 + fold)}"  # Creates folder names: model_a, model_b, etc. per k fold #
+            run_gradcam(
+                checkpoint=args.outname,
+                dataset_path=args.evaluate.replace(".bin", ".tar"),
+                modeltype=args.modeltype,
+                gradcam_cnn_model_layer=args.gradcam_cnn_model_layer,
+                num_images=300,
+                sample_frames=args.sample_frames,
+                label_offset=args.label_offset,
+                height=image_size[-2],
+                width=image_size[-1],
+                output_folder=output_folder,
+            )
