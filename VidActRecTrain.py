@@ -757,6 +757,7 @@ if args.evaluate:
             "resnet18",
             "resnet34",
     ]:
+
         for fold in range(args.k):
             output_folder = f"model_{chr(97 + fold)}"  # Creates folder names: model_a, model_b, etc. per k fold #
             run_gradcam(
