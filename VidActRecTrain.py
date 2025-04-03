@@ -64,12 +64,11 @@ parser.add_argument(
     default=None,
     choices=["bees", "multilabel_detection"],
     type=str,
-    help=
-    ("Set other options automatically based upon a typical training template."
-     "Template settings are overriden by other selected options."
-     "bees: Alexnet model with index labels are converted to one hot labels."
-     'multilabel: Multilabels are loaded from "detection.pth", binary cross entropy loss is used.'
-     ),
+    help=("Set other options automatically based upon a typical training template."
+          "Template settings are overriden by other selected options."
+          "bees: Alexnet model with index labels are converted to one hot labels."
+          'multilabel: Multilabels are loaded from "detection.pth", binary cross entropy loss is used.'
+          ),
 )
 parser.add_argument("dataset",
                     nargs="+",
@@ -153,8 +152,7 @@ parser.add_argument(
     required=False,
     default=False,
     action="store_true",
-    help=
-    "Set this flag to skip training. Useful to load an already trained model for evaluation.",
+    help="Set this flag to skip training. Useful to load an already trained model for evaluation.",
 )
 
 parser.add_argument(
@@ -170,8 +168,7 @@ parser.add_argument(
     type=int,
     required=False,
     default=None,
-    help=
-    "Save N images for class with highest prediction score (with --evaluate).",
+    help="Save N images for class with highest prediction score (with --evaluate).",
 )
 
 parser.add_argument(
@@ -179,8 +176,7 @@ parser.add_argument(
     type=int,
     required=False,
     default=None,
-    help=
-    "Save N images for class with lowest prediction score (with --evaluate).",
+    help="Save N images for class with lowest prediction score (with --evaluate).",
 )
 
 parser.add_argument(
@@ -759,7 +755,8 @@ if args.evaluate:
     ]:
 
         for fold in range(args.k):
-            output_folder = f"model_{chr(97 + fold)}"  # Creates folder names: model_a, model_b, etc. per k fold #
+            # Creates folder names: model_a, model_b, etc. per k fold #
+            output_folder = f"model_{chr(97 + fold)}"
             run_gradcam(
                 checkpoint=args.outname,
                 dataset_path=args.evaluate.replace(".bin", ".tar"),

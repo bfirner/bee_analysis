@@ -177,7 +177,8 @@ def run_gradcam(
     from utility.saliency_utils import plot_gradcam_for_multichannel_input
 
     # Use the output_folder if provided; otherwise, use the dataset's basename.
-    save_folder = output_folder if output_folder is not None else os.path.basename(dataset_path)
+    save_folder = output_folder if output_folder is not None else os.path.basename(
+        dataset_path)
 
     for batch in loader:
         if sample_frames == 1:
@@ -197,7 +198,8 @@ def run_gradcam(
         with torch.set_grad_enabled(True):
             for layer_name in gradcam_cnn_model_layer:
                 try:
-                    logging.info(f"Running GradCAM for layer {layer_name} in folder {save_folder}...")
+                    logging.info(
+                        f"Running GradCAM for layer {layer_name} in folder {save_folder}...")
                     plot_gradcam_for_multichannel_input(
                         model=net,
                         dataset=save_folder,  # Use the designated folder name here
@@ -208,7 +210,8 @@ def run_gradcam(
                         number_of_classes=num_outputs,
                     )
                 except Exception as e:
-                    logging.info(f"Error plotting GradCAM for layer {layer_name}: {e}")
+                    logging.info(
+                        f"Error plotting GradCAM for layer {layer_name}: {e}")
         break  # Process only the first batch and stop.
 
     logging.info("GradCAM process completed.")
