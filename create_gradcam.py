@@ -181,7 +181,7 @@ def run_gradcam(
     from utility.saliency_utils import plot_gradcam_for_multichannel_input
 
     # Use the output_folder if provided; otherwise, use the dataset's basename.
-    save_folder = (output_folder if output_folder is not None else
+    save_folder = (os.path.join(output_folder, os.path.basename(dataset_path)) if output_folder is not None else
                    os.path.basename(dataset_path))
     for batch in loader:
         # If sample_frames == 1, batch[0] is your image tensor, batch[1] is the label
@@ -211,7 +211,8 @@ def run_gradcam(
                     )
                     plot_gradcam_for_multichannel_input(
                         model=net,
-                        dataset=os.path.basename(dataset_path),
+                        save_folder=save_folder,
+                        dataset=dataset,
                         input_tensor=net_input,
                         target_layer_name=[layer_name],
                         model_name=modeltype,

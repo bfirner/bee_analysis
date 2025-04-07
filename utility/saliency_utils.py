@@ -30,11 +30,11 @@ def get_layer_by_name(model, layer_name):
 
 def plot_saliency_map(
     model,
+    save_folder,
     input_tensor,
     target_class=None,
     batch_num=None,
     model_name="model",
-    dataset_name="dataset_0",
 ):
     """
     Generates a saliency map for the given input tensor and model.
@@ -77,7 +77,7 @@ def plot_saliency_map(
     if saliency.ndim > 2:
         saliency = saliency.mean(axis=tuple(range(saliency.ndim - 2)))
     # Create directory if it doesn't exist
-    directory = f"saliency_maps/{dataset_name}/"
+    directory = f"saliency_maps/{save_folder}/"
     if not os.path.exists(directory):
         os.makedirs(directory)
 
@@ -114,6 +114,7 @@ def get_layer_by_name(model, layer_name):
 
 def plot_gradcam_for_multichannel_input(
     model,
+    save_folder,
     dataset,
     input_tensor,
     target_layer_name: str,
@@ -183,7 +184,7 @@ def plot_gradcam_for_multichannel_input(
                 return
         
         # Define directory path for each batch, model and class
-        class_directory = f"gradcam_plots/{dataset}/class_{target_class}/"
+        class_directory = f"gradcam_plots/{save_folder}/class_{target_class}/"
         os.makedirs(class_directory, exist_ok=True)
         # Process each channel in the image
         for channel_idx in range(input_image.shape[1]):
@@ -216,7 +217,7 @@ def plot_gradcam_for_multichannel_input(
             # Save the figure
             filename = os.path.join(
                 class_directory,
-                f"gradcam_overlay_class{target_class}_batch{batch_num}_image{batch_idx}_channel{channel_idx}_layer{target_layer_name}.png",
+                f"gradcam_overlay_class{target_class}_batch{batch_num}_image{batch_idx}_channel{channel_idx}_layer{target_layer_name}_{dataset}.png",
             )
             plt.savefig(filename)
             plt.close(fig)
@@ -226,6 +227,7 @@ def plot_gradcam_for_multichannel_input(
                 input_tensor,
                 target_class=target_classes[0],
                 model_name=model_name,
+                save_folder=save_folder,
                 dataset_name=dataset,
                 batch_num=batch_num,
             )
