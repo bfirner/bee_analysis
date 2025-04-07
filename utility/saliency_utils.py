@@ -77,7 +77,7 @@ def plot_saliency_map(
     if saliency.ndim > 2:
         saliency = saliency.mean(axis=tuple(range(saliency.ndim - 2)))
     # Create directory if it doesn't exist
-    directory = f"saliency_maps/{dataset_name}/batch{batch_num}"
+    directory = f"saliency_maps/{dataset_name}/"
     if not os.path.exists(directory):
         os.makedirs(directory)
 
@@ -86,7 +86,7 @@ def plot_saliency_map(
     plt.imshow(saliency, cmap="hot")
     plt.title(f"Saliency Map - {model_name}")
     plt.axis("off")
-    filename = os.path.join(directory, f"saliency_map_{model_name}.png")
+    filename = os.path.join(directory, f"saliency_map_{model_name}_batch{batch_num}.png")
     plt.savefig(filename)
     plt.close()
 
@@ -183,7 +183,7 @@ def plot_gradcam_for_multichannel_input(
                 return
         
         # Define directory path for each batch, model and class
-        class_directory = f"gradcam_plots/{dataset}/class_{target_class}/{model_name}"
+        class_directory = f"gradcam_plots/{dataset}/class_{target_class}/"
         os.makedirs(class_directory, exist_ok=True)
         # Process each channel in the image
         for channel_idx in range(input_image.shape[1]):

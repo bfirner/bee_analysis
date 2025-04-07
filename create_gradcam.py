@@ -172,7 +172,7 @@ def run_gradcam(
     # We'll just load one small batch with `num_images` items:
     loader = torch.utils.data.DataLoader(dataset,
                                          batch_size=num_images,
-                                         num_workers=0)
+                                         num_workers=12)
 
     # --------------------------------------------------------------------------
     # 5. Forward pass and GradCAM
@@ -211,8 +211,7 @@ def run_gradcam(
                     )
                     plot_gradcam_for_multichannel_input(
                         model=net,
-                        dataset=
-                        save_folder,  # Use the designated folder name here
+                        dataset=os.path.basename(dataset_path),
                         input_tensor=net_input,
                         target_layer_name=[layer_name],
                         model_name=modeltype,
