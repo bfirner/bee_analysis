@@ -756,18 +756,14 @@ if args.evaluate:
             "resnet18",
             "resnet34",
     ]:
-        for fold in range(args.k):
-            # Creates folder names: model_a, model_b, etc. per k fold #
-            output_folder = f"model_{chr(97 + fold)}"
-            run_gradcam(
+        run_gradcam(
                 checkpoint=args.outname,
                 dataset_path=args.evaluate.replace(".bin", ".tar"),
                 modeltype=args.modeltype,
                 gradcam_cnn_model_layer=args.gradcam_cnn_model_layer,
-                num_images=300,
+                num_images=130,
                 sample_frames=args.sample_frames,
                 label_offset=args.label_offset,
                 height=image_size[-2],
                 width=image_size[-1],
-                output_folder=output_folder,
-            )
+        )
