@@ -217,14 +217,14 @@ def plot_gradcam_for_multichannel_input(
             # Save the figure
             filename = os.path.join(
                 class_directory,
-                f"gradcam_overlay_class{target_class}_batch{batch_num}_image{batch_idx}_channel{channel_idx}_layer{target_layer_name}_{dataset}.png",
+                f"gradcam_overlay_class{target_class}_batch{batch_num}_image{batch_idx}_channel{channel_idx}_layer{target_layer_name}.png",
             )
             plt.savefig(filename)
             plt.close(fig)
         try:
             plot_saliency_map(
-                model,
-                input_tensor,
+                model=model,
+                input_tensor=input_tensor,
                 target_class=target_classes[0],
                 model_name=model_name,
                 save_folder=save_folder,
