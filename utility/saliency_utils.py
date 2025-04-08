@@ -228,7 +228,6 @@ def plot_gradcam_for_multichannel_input(
                 target_class=target_classes[0],
                 model_name=model_name,
                 save_folder=save_folder,
-                dataset_name=dataset,
                 batch_num=batch_num,
             )
         except Exception as e:
