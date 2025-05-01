@@ -13,7 +13,7 @@ def get_layer_by_name(model, layer_name):
     """
     if isinstance(layer_name, list):
         layer_name = layer_name[0]
-    parts = layer_name.split('.')
+    parts = layer_name.split(".")
     layer = model
     for part in parts:
         layer = getattr(layer, part)
@@ -53,8 +53,7 @@ def plot_saliency_map(
     # Extract and process saliency
     saliency = input_tensor.grad.data.abs().squeeze().cpu().numpy()
     if saliency.ndim == 1:
-        saliency = saliency.reshape(
-            (input_tensor.shape[2], input_tensor.shape[3]))
+        saliency = saliency.reshape((input_tensor.shape[2], input_tensor.shape[3]))
     if saliency.ndim > 2:
         saliency = saliency.mean(axis=tuple(range(saliency.ndim - 2)))
 
@@ -65,12 +64,11 @@ def plot_saliency_map(
     # Plot and save
     plt.figure(figsize=(10, 10))
     plt.imshow(saliency, cmap="hot")
-    plt.title(
-        f"Saliency Map - {model_name} (True: {target_class}, Pred: {pred_class})")
+    plt.title(f"Saliency Map - {model_name} (True: {target_class}, Pred: {pred_class})")
     plt.axis("off")
     filename = os.path.join(
         directory,
-        f"saliency_map_{model_name}_batch{batch_num}_true{target_class}_pred{pred_class}.png"
+        f"saliency_map_{model_name}_batch{batch_num}_true{target_class}_pred{pred_class}.png",
     )
     plt.savefig(filename)
     plt.close()
@@ -126,7 +124,9 @@ def plot_gradcam_for_multichannel_input(
         class_count[true_class] += 1
         if class_count[true_class] > 100:
             continue
-        if len(class_count) == number_of_classes and all(count >= 100 for count in class_count.values()):
+        if len(class_count) == number_of_classes and all(
+            count >= 100 for count in class_count.values()
+        ):
             return
 
         class_directory = f"gradcam_plots/{save_folder}/class_{true_class}/"
@@ -135,28 +135,32 @@ def plot_gradcam_for_multichannel_input(
         # Iterate channels
         for channel_idx in range(input_images.shape[1]):
             channel_image = input_images[batch_idx, channel_idx]
-            channel_image = (channel_image - channel_image.min()) / \
-                (channel_image.max() - channel_image.min())
+            channel_image = (channel_image - channel_image.min()) / (
+                channel_image.max() - channel_image.min()
+            )
             channel_image_rgb = np.stack([channel_image] * 3, axis=-1)
 
             cam_image = show_cam_on_image(
-                channel_image_rgb, grayscale_cam[batch_idx], use_rgb=True)
+                channel_image_rgb, grayscale_cam[batch_idx], use_rgb=True
+            )
 
             # Plot side by side
             fig, axs = plt.subplots(1, 2, figsize=(10, 5))
             axs[0].imshow(channel_image, cmap="gray")
             axs[0].set_title(
-                f"Orig Ch {channel_idx+1}\nTrue: {true_class}, Pred: {pred_class}")
+                f"Orig Ch {channel_idx+1}\nTrue: {true_class}, Pred: {pred_class}"
+            )
             axs[0].axis("off")
 
             axs[1].imshow(cam_image)
             axs[1].set_title(
-                f"Grad-CAM Ch {channel_idx+1}\nTrue: {true_class}, Pred: {pred_class}")
+                f"Grad-CAM Ch {channel_idx+1}\nTrue: {true_class}, Pred: {pred_class}"
+            )
             axs[1].axis("off")
 
             filename = os.path.join(
                 class_directory,
-                f"gradcam_true{true_class}_pred{pred_class}_batch{batch_num}_img{batch_idx}_ch{channel_idx}_layer{target_layer_name}.png"
+                f"gradcam_true{true_class}_pred{pred_class}_batch{batch_num}_img{batch_idx}_ch{channel_idx}_layer{target_layer_name}.png",
             )
             plt.savefig(filename)
             plt.close(fig)
