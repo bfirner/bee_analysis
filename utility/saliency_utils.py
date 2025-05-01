@@ -54,7 +54,8 @@ def plot_saliency_map(
     # Extract and process saliency
     saliency = input_tensor.grad.data.abs().squeeze().cpu().numpy()
     if saliency.ndim == 1:
-        saliency = saliency.reshape((input_tensor.shape[2], input_tensor.shape[3]))
+        saliency = saliency.reshape(
+            (input_tensor.shape[2], input_tensor.shape[3]))
     if saliency.ndim > 2:
         saliency = saliency.mean(axis=tuple(range(saliency.ndim - 2)))
 
@@ -65,7 +66,9 @@ def plot_saliency_map(
     # Plot and save
     plt.figure(figsize=(10, 10))
     plt.imshow(saliency, cmap="hot")
-    plt.title(f"Saliency Map - {model_name} (True: {target_class}, Pred: {pred_class})")
+    plt.title(
+        f"Saliency Map - {model_name} (True: {target_class}, Pred: {pred_class})"
+    )
     plt.axis("off")
     filename = os.path.join(
         directory,
@@ -126,8 +129,7 @@ def plot_gradcam_for_multichannel_input(
         if class_count[true_class] > 100:
             continue
         if len(class_count) == number_of_classes and all(
-            count >= 100 for count in class_count.values()
-        ):
+                count >= 100 for count in class_count.values()):
             return
 
         class_directory = f"gradcam_plots/{save_folder}/class_{true_class}/"
@@ -137,13 +139,12 @@ def plot_gradcam_for_multichannel_input(
         for channel_idx in range(input_images.shape[1]):
             channel_image = input_images[batch_idx, channel_idx]
             channel_image = (channel_image - channel_image.min()) / (
-                channel_image.max() - channel_image.min()
-            )
+                channel_image.max() - channel_image.min())
             channel_image_rgb = np.stack([channel_image] * 3, axis=-1)
 
-            cam_image = show_cam_on_image(
-                channel_image_rgb, grayscale_cam[batch_idx], use_rgb=True
-            )
+            cam_image = show_cam_on_image(channel_image_rgb,
+                                          grayscale_cam[batch_idx],
+                                          use_rgb=True)
 
             # Plot side by side
             fig, axs = plt.subplots(1, 2, figsize=(10, 5))
