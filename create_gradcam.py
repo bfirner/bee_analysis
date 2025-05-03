@@ -172,7 +172,7 @@ def run_gradcam(
     # We'll just load one small batch with `num_images` items:
     loader = torch.utils.data.DataLoader(dataset,
                                          batch_size=num_images,
-                                         num_workers=12)
+                                         num_workers=64)
 
     # --------------------------------------------------------------------------
     # 5. Forward pass and GradCAM
