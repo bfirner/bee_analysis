@@ -10,7 +10,7 @@ fsspec==2025.3.0
 future==1.0.0
 grad-cam==1.5.4
 Jinja2==3.1.6
-joblib==1.4.2
+joblib==1.5.0
 kiwisolver==1.4.8
 MarkupSafe==3.0.2
 matplotlib==3.10.1
