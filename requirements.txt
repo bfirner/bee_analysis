@@ -19,7 +19,7 @@ networkx==3.4.2
 numpy==2.2.4
 opencv-python==4.11.0.86
 packaging==25.0
-pandas==2.2.3
+pandas==2.3.0
 pillow==11.2.1
 pygame==2.6.1
 pyparsing==3.2.1
