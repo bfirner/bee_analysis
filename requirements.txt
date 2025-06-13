@@ -37,6 +37,6 @@ torch==2.7.1
 torchvision==0.22.1
 tqdm==4.67.1
 ttach==0.0.3
-typing_extensions==4.13.1
+typing_extensions==4.14.0
 tzdata==2025.2
 webdataset==0.2.111
