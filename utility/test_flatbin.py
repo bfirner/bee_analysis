@@ -79,9 +79,3 @@ if 'x' in args.operations:
         if 'v' in args.operations and idx < len(extract_dataset):
             print(f"testing entry {idx+1}")
 
-
-
-#probe_dataset = flatbin_dataset.FlatbinDataset(args.tensorbin)
-#self.total_samples
-#self.entries_per_sample
-
