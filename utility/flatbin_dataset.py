@@ -152,7 +152,7 @@ def writeStoIData(binfile, data):
 
 def convertThenWriteIntData(binfile, data):
     # Convert with frombytes, then write as big endian int.
-    writeIntData(binfile, int.from_bytes(data))
+    writeIntData(binfile, int.from_bytes(data, byteorder='big'))
 
 def writeBinaryData(binfile, data):
     # Binary data that goes directly to disk
@@ -320,8 +320,10 @@ def dataloaderToFlatbin(dataloader, entries, output, metadata={}, handlers={}):
                 datum = datum[0].item()
             elif 1 == datum[0].dim():
                 datum = datum[0].tolist()
-        else:
+        elif isinstance(datum, list):
             datum = datum[0]
+        # Otherwise a datum loaded with the torch dataloader a batch size of 1 will not be inside of a tensor or a list
+
         # Check if a handler exists for this filename.
         handle_str = ""
         for handler, handle_as in handlers.items():
