@@ -500,9 +500,12 @@ elif 'convnextb' == args.modeltype:
     net = ConvNextBase(in_dimensions=image_size, out_classes=args.label_classes).cuda()
 print(f"Model is {net}")
 
+# Use device rather than .cuda() because of the use case of running on cpu
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 # See if the model weights can be restored.
 if args.resume_from is not None:
-    restoreModel(args.resume_from, net)
+    restoreModel(args.resume_from, net, device)
 
 # Always use the network in evaluation mode.
 net.eval()
