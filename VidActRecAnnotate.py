@@ -37,6 +37,7 @@ from models.convnext import (ConvNextExtraTiny, ConvNextTiny, ConvNextSmall, Con
 
 from utility.model_utility import restoreModel
 from utility.video_utility import (getVideoInfo, vidSamplingCommonCrop)
+from utility.image_provider import VideoReader
 
 def commandOutput(command):
     result = run(command, stdout=PIPE, stderr=PIPE, universal_newlines=True, shell=True)
@@ -370,7 +371,7 @@ class VideoAnnotator:
                     np_frame = numpy.frombuffer(in_bytes, numpy.uint8)
                 in_frame = torch.tensor(data=np_frame, dtype=torch.uint8,
                     ).reshape([1, in_height, in_width, self.channels])
-                in_frame = in_frame.permute(0, 3, 1, 2).to(dtype=torch.float).to_device(device)
+                in_frame = in_frame.permute(0, 3, 1, 2).to(dtype=torch.float).to(device)
                 sample_frames.append(in_frame)
 
 
@@ -473,10 +474,11 @@ image_size = (args.dnn_channels * args.frames_per_sample, args.height, args.widt
 
 # Use device rather than cuda(device) because of the use case of running on cpu
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+checkpoint = torch.load(args.resume_from, map_location=device, weights_only=False)
 
 # Model setup stuff
 if 'alexnet' == args.modeltype:
-    net = AlexLikeNet(in_dimensions=image_size, out_classes=args.label_classes, linear_size=512)
+    net = AlexLikeNet(**checkpoint["metadata"]["model_args"],)
 elif 'resnet18' == args.modeltype:
     net = ResNet18(in_dimensions=image_size, out_classes=args.label_classes, expanded_linear=True)
 elif 'resnet34' == args.modeltype:
@@ -501,7 +503,7 @@ elif 'convnexts' == args.modeltype:
     net = ConvNextSmall(in_dimensions=image_size, out_classes=args.label_classes)
 elif 'convnextb' == args.modeltype:
     net = ConvNextBase(in_dimensions=image_size, out_classes=args.label_classes)
-net = net.to_device(device)
+net = net.to(device)
 print(f"Model is {net}")
 
 # See if the model weights can be restored.
@@ -569,7 +571,7 @@ with open(args.datalist, newline='') as datacsv:
     header = next(conf_reader)
     # Remove all spaces from the header strings
     header = [''.join(col.split(' ')) for col in header]
-    file_col = header.index('file')
+    file_col = header.index('filename')
     class_col = header.index('class')
     beginf_col = header.index('beginframe')
     endf_col = header.index('endframe')
