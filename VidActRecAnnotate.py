@@ -370,7 +370,7 @@ class VideoAnnotator:
                     np_frame = numpy.frombuffer(in_bytes, numpy.uint8)
                 in_frame = torch.tensor(data=np_frame, dtype=torch.uint8,
                     ).reshape([1, in_height, in_width, self.channels])
-                in_frame = in_frame.permute(0, 3, 1, 2).to(dtype=torch.float).cuda()
+                in_frame = in_frame.permute(0, 3, 1, 2).to(dtype=torch.float).to_device(device)
                 sample_frames.append(in_frame)
 
 
@@ -471,37 +471,38 @@ class VideoAnnotator:
 
 image_size = (args.dnn_channels * args.frames_per_sample, args.height, args.width)
 
+# Use device rather than cuda(device) because of the use case of running on cpu
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 # Model setup stuff
 if 'alexnet' == args.modeltype:
-    net = AlexLikeNet(in_dimensions=image_size, out_classes=args.label_classes, linear_size=512).cuda()
+    net = AlexLikeNet(in_dimensions=image_size, out_classes=args.label_classes, linear_size=512)
 elif 'resnet18' == args.modeltype:
-    net = ResNet18(in_dimensions=image_size, out_classes=args.label_classes, expanded_linear=True).cuda()
+    net = ResNet18(in_dimensions=image_size, out_classes=args.label_classes, expanded_linear=True)
 elif 'resnet34' == args.modeltype:
-    net = ResNet34(in_dimensions=image_size, out_classes=args.label_classes, expanded_linear=True).cuda()
+    net = ResNet34(in_dimensions=image_size, out_classes=args.label_classes, expanded_linear=True)
 elif 'bennet' == args.modeltype:
-    net = BenNet(in_dimensions=image_size, out_classes=args.label_classes).cuda()
+    net = BenNet(in_dimensions=image_size, out_classes=args.label_classes)
 elif 'resnext50' == args.modeltype:
-    net = ResNext50(in_dimensions=image_size, out_classes=args.label_classes, expanded_linear=True).cuda()
+    net = ResNext50(in_dimensions=image_size, out_classes=args.label_classes, expanded_linear=True)
 elif 'resnext34' == args.modeltype:
     # Learning parameters were tuned on a dataset with about 80,000 examples
     net = ResNext34(in_dimensions=image_size, out_classes=args.label_classes, expanded_linear=False,
-            use_dropout=False).cuda()
+            use_dropout=False)
 elif 'resnext18' == args.modeltype:
     # Learning parameters were tuned on a dataset with about 80,000 examples
     net = ResNext18(in_dimensions=image_size, out_classes=args.label_classes, expanded_linear=True,
-            use_dropout=False).cuda()
+            use_dropout=False)
 elif 'convnextxt' == args.modeltype:
-    net = ConvNextExtraTiny(in_dimensions=image_size, out_classes=args.label_classes).cuda()
+    net = ConvNextExtraTiny(in_dimensions=image_size, out_classes=args.label_classes)
 elif 'convnextt' == args.modeltype:
-    net = ConvNextTiny(in_dimensions=image_size, out_classes=args.label_classes).cuda()
+    net = ConvNextTiny(in_dimensions=image_size, out_classes=args.label_classes)
 elif 'convnexts' == args.modeltype:
-    net = ConvNextSmall(in_dimensions=image_size, out_classes=args.label_classes).cuda()
+    net = ConvNextSmall(in_dimensions=image_size, out_classes=args.label_classes)
 elif 'convnextb' == args.modeltype:
-    net = ConvNextBase(in_dimensions=image_size, out_classes=args.label_classes).cuda()
+    net = ConvNextBase(in_dimensions=image_size, out_classes=args.label_classes)
+net = net.to_device(device)
 print(f"Model is {net}")
-
-# Use device rather than .cuda() because of the use case of running on cpu
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # See if the model weights can be restored.
 if args.resume_from is not None:
