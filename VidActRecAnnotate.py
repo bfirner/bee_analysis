@@ -35,6 +35,7 @@ from models.resnet import (ResNet18, ResNet34)
 from models.resnext import (ResNext18, ResNext34, ResNext50)
 from models.convnext import (ConvNextExtraTiny, ConvNextTiny, ConvNextSmall, ConvNextBase)
 
+from utility.model_utility import restoreModel
 from utility.video_utility import (getVideoInfo, vidSamplingCommonCrop)
 
 def commandOutput(command):
@@ -501,17 +502,7 @@ print(f"Model is {net}")
 
 # See if the model weights can be restored.
 if args.resume_from is not None:
-    checkpoint = torch.load(args.resume_from)
-    # Remove vis_layers from the checkpoint to support older models with the current code.
-    vis_names = [key for key in list(checkpoint['model_dict'].keys()) if key.startswith("vis_layers")]
-    for key in vis_names:
-        del checkpoint['model_dict'][key]
-    missing_keys, unexpected_keys = net.load_state_dict(checkpoint["model_dict"], strict=False)
-    if (unexpected_keys):
-        raise RuntimeError(f"Found unexpected keys in model checkpoint: {unexpected_keys}")
-    # Update the weights for the vis mask layers
-    net.createVisMaskLayers(net.output_sizes)
-    net = net.cuda()
+    restoreModel(args.resume_from, net)
 
 # Always use the network in evaluation mode.
 net.eval()
