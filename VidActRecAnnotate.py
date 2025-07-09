@@ -37,7 +37,6 @@ from models.convnext import (ConvNextExtraTiny, ConvNextTiny, ConvNextSmall, Con
 
 from utility.model_utility import restoreModel
 from utility.video_utility import (getVideoInfo, vidSamplingCommonCrop)
-from utility.image_provider import VideoReader
 
 def commandOutput(command):
     result = run(command, stdout=PIPE, stderr=PIPE, universal_newlines=True, shell=True)
