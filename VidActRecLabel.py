@@ -186,10 +186,14 @@ class AnnotatorUI():
                     self.patch_origin[dim] = self.patch_origin[dim] + self.patch_dims[dim]
                     self.patch_dims[dim] = self.patch_dims[dim] * -1
             patch_info = {
+                # The crops, width, and height from the source image
                 'crop_x_offset': self.patch_origin[0],
                 'crop_y_offset': self.patch_origin[1],
                 'width': self.patch_dims[0],
-                'height': self.patch_dims[1]
+                'height': self.patch_dims[1],
+                # Scale applied to the cropped patch
+                'scale': 1.0,
+                'frames_per_sample': 1
             }
             return patch_info
         self.patch_selection = False
