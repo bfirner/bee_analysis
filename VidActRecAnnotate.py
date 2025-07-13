@@ -35,6 +35,7 @@ from models.resnet import (ResNet18, ResNet34)
 from models.resnext import (ResNext18, ResNext34, ResNext50)
 from models.convnext import (ConvNextExtraTiny, ConvNextTiny, ConvNextSmall, ConvNextBase)
 
+from utility.model_utility import restoreModel
 from utility.video_utility import (getVideoInfo, vidSamplingCommonCrop)
 
 def commandOutput(command):
@@ -369,7 +370,7 @@ class VideoAnnotator:
                     np_frame = numpy.frombuffer(in_bytes, numpy.uint8)
                 in_frame = torch.tensor(data=np_frame, dtype=torch.uint8,
                     ).reshape([1, in_height, in_width, self.channels])
-                in_frame = in_frame.permute(0, 3, 1, 2).to(dtype=torch.float).cuda()
+                in_frame = in_frame.permute(0, 3, 1, 2).to(dtype=torch.float).to(device)
                 sample_frames.append(in_frame)
 
 
@@ -470,48 +471,43 @@ class VideoAnnotator:
 
 image_size = (args.dnn_channels * args.frames_per_sample, args.height, args.width)
 
+# Use device rather than cuda(device) because of the use case of running on cpu
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+checkpoint = torch.load(args.resume_from, map_location=device, weights_only=False)
+
 # Model setup stuff
 if 'alexnet' == args.modeltype:
-    net = AlexLikeNet(in_dimensions=image_size, out_classes=args.label_classes, linear_size=512).cuda()
+    net = AlexLikeNet(**checkpoint["metadata"]["model_args"],)
 elif 'resnet18' == args.modeltype:
-    net = ResNet18(in_dimensions=image_size, out_classes=args.label_classes, expanded_linear=True).cuda()
+    net = ResNet18(in_dimensions=image_size, out_classes=args.label_classes, expanded_linear=True)
 elif 'resnet34' == args.modeltype:
-    net = ResNet34(in_dimensions=image_size, out_classes=args.label_classes, expanded_linear=True).cuda()
+    net = ResNet34(in_dimensions=image_size, out_classes=args.label_classes, expanded_linear=True)
 elif 'bennet' == args.modeltype:
-    net = BenNet(in_dimensions=image_size, out_classes=args.label_classes).cuda()
+    net = BenNet(in_dimensions=image_size, out_classes=args.label_classes)
 elif 'resnext50' == args.modeltype:
-    net = ResNext50(in_dimensions=image_size, out_classes=args.label_classes, expanded_linear=True).cuda()
+    net = ResNext50(in_dimensions=image_size, out_classes=args.label_classes, expanded_linear=True)
 elif 'resnext34' == args.modeltype:
     # Learning parameters were tuned on a dataset with about 80,000 examples
     net = ResNext34(in_dimensions=image_size, out_classes=args.label_classes, expanded_linear=False,
-            use_dropout=False).cuda()
+            use_dropout=False)
 elif 'resnext18' == args.modeltype:
     # Learning parameters were tuned on a dataset with about 80,000 examples
     net = ResNext18(in_dimensions=image_size, out_classes=args.label_classes, expanded_linear=True,
-            use_dropout=False).cuda()
+            use_dropout=False)
 elif 'convnextxt' == args.modeltype:
-    net = ConvNextExtraTiny(in_dimensions=image_size, out_classes=args.label_classes).cuda()
+    net = ConvNextExtraTiny(in_dimensions=image_size, out_classes=args.label_classes)
 elif 'convnextt' == args.modeltype:
-    net = ConvNextTiny(in_dimensions=image_size, out_classes=args.label_classes).cuda()
+    net = ConvNextTiny(in_dimensions=image_size, out_classes=args.label_classes)
 elif 'convnexts' == args.modeltype:
-    net = ConvNextSmall(in_dimensions=image_size, out_classes=args.label_classes).cuda()
+    net = ConvNextSmall(in_dimensions=image_size, out_classes=args.label_classes)
 elif 'convnextb' == args.modeltype:
-    net = ConvNextBase(in_dimensions=image_size, out_classes=args.label_classes).cuda()
+    net = ConvNextBase(in_dimensions=image_size, out_classes=args.label_classes)
+net = net.to(device)
 print(f"Model is {net}")
 
 # See if the model weights can be restored.
 if args.resume_from is not None:
-    checkpoint = torch.load(args.resume_from)
-    # Remove vis_layers from the checkpoint to support older models with the current code.
-    vis_names = [key for key in list(checkpoint['model_dict'].keys()) if key.startswith("vis_layers")]
-    for key in vis_names:
-        del checkpoint['model_dict'][key]
-    missing_keys, unexpected_keys = net.load_state_dict(checkpoint["model_dict"], strict=False)
-    if (unexpected_keys):
-        raise RuntimeError(f"Found unexpected keys in model checkpoint: {unexpected_keys}")
-    # Update the weights for the vis mask layers
-    net.createVisMaskLayers(net.output_sizes)
-    net = net.cuda()
+    restoreModel(args.resume_from, net, device)
 
 # Always use the network in evaluation mode.
 net.eval()
@@ -574,7 +570,7 @@ with open(args.datalist, newline='') as datacsv:
     header = next(conf_reader)
     # Remove all spaces from the header strings
     header = [''.join(col.split(' ')) for col in header]
-    file_col = header.index('file')
+    file_col = header.index('filename')
     class_col = header.index('class')
     beginf_col = header.index('beginframe')
     endf_col = header.index('endframe')

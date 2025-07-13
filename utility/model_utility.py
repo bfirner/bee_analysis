@@ -77,9 +77,9 @@ def createModel(model_type, in_channels, frame_height, frame_width, output_size,
     return net
 
 
-def restoreModel(resume_from, net):
+def restoreModel(resume_from, net, device=torch.device("cpu")):
     """Restore a trained model"""
-    checkpoint = torch.load(resume_from, weights_only=False)
+    checkpoint = torch.load(resume_from, map_location=device, weights_only=False)
     net.load_state_dict(state_dict=checkpoint["model_dict"], strict=True)
 
 
@@ -103,7 +103,7 @@ def hasNormalizers(resume_from) -> bool:
     return checkpoint["denormalizer_state_dict"] is not None and checkpoint["normalizer_state_dict"] is not None
 
 
-def restoreNormalizers(resume_from):
+def restoreNormalizers(resume_from, device=None):
     """Restore normalizer and denormalizer. Check with hasNormalizers first."""
     if (device is None and torch.backends.cuda.is_built()) or device == 'cuda':
         checkpoint = torch.load(resume_from, weights_only=False)
@@ -186,7 +186,7 @@ class ModelReloader():
         self.checkpoint["metadata"]["improc"]['crop_x_offset'] = self.crop_x_offset
         self.checkpoint["metadata"]["improc"]['crop_y_offset'] = self.crop_y_offset
 
-        # TODO Add an option to choose
+        # Select cpu or cuda backend
         if not force_cpu and torch.backends.cuda.is_built():
             self.device = 'cuda'
         else:

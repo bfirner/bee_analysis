@@ -1,4 +1,4 @@
-av==14.4.0
+av==15.0.0
 braceexpand==0.1.7
 contourpy==1.3.1
 cvzone==1.6.1
@@ -17,10 +17,10 @@ matplotlib==3.10.1
 mpmath==1.3.0
 networkx==3.4.2
 numpy==2.2.4
-opencv-python==4.11.0.86
+opencv-python==4.12.0.88
 packaging==25.0
 pandas==2.3.0
-pillow==11.2.1
+pillow==11.3.0
 pygame==2.6.1
 pyparsing==3.2.1
 PySDL2==0.9.17
@@ -37,6 +37,6 @@ torch==2.7.1
 torchvision==0.22.1
 tqdm==4.67.1
 ttach==0.0.3
-typing_extensions==4.13.1
+typing_extensions==4.14.1
 tzdata==2025.2
 webdataset==0.2.111
