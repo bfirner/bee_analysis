@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import cv2
+
+
 
 """
 Copyright © 2025 Bernhard Firner
@@ -56,7 +59,7 @@ def convertImageBboxToPatch(improc, bbox):
         target_in_patch, left_x, right_x, top_y, bottom_y: visibility and integer pixel locations of the bounding box in the patch, possibly clipped at the edges.
     """
     # Image processing
-    scale_w, scale_h, crop_coords = patch_common.getCropCoords(improc)
+    scale_w, scale_h, crop_coords = getCropCoords(improc)
     # Image is scaled and then cropped
     left_x = bbox[0][0]*improc['scale']
     right_x = bbox[1][0]*improc['scale']
@@ -72,3 +75,38 @@ def convertImageBboxToPatch(improc, bbox):
     visible_bottom = int(min(bottom_y, crop_coords[3]))
 
     return True, visible_left, visible_right, visible_top, visible_bottom
+
+
+def imagePreprocessFromCoords(image, scale_w, scale_h, crop_coords, planes=1, src='BGR'):
+    # Crop and then resize for efficiency
+    left = round((image.shape[1] / scale_w) * crop_coords[0])
+    top = round((image.shape[0] / scale_h) * crop_coords[1])
+    right = round((image.shape[1] / scale_w) * crop_coords[2])
+    bottom = round((image.shape[0] / scale_h) * crop_coords[3])
+
+    # NOTE: We cannot trivially crop first if the source is YUV420 or some other format with unequal channel sizes.
+    cropped = image[top:bottom,left:right]
+    scaled = cv2.resize(cropped, (crop_coords[2] - crop_coords[0], crop_coords[3] - crop_coords[1]), interpolation=cv2.INTER_CUBIC)
+
+    if planes == 1:
+        if src == 'BGR':
+            patch = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY)
+        elif src == 'RGB':
+            patch = cv2.cvtColor(scaled, cv2.COLOR_RGB2GRAY)
+        else:
+            raise RuntimeError("Unhandled image type: {}".format(src))
+    elif planes == 3:
+        if src == 'BGR':
+            patch = cv2.cvtColor(scaled, cv2.COLOR_BGR2RGB)
+        elif src == 'RGB':
+            patch = scaled
+        else:
+            raise RuntimeError("Unhandled image type: {}".format(src))
+    else:
+        raise RuntimeError("Unhandled number of planes: {}".format(planes))
+    return patch
+
+
+def imagePreprocess(image, scale, width, height, crop_x_offset, crop_y_offset, planes=1):
+    scale_w, scale_h, crop_coords = getCropCoords(image.shape[1], image.shape[0], scale, width, height, crop_x_offset, crop_y_offset)
+    return imagePreprocessFromCoords(image, scale_w, scale_h, crop_coords, planes)
