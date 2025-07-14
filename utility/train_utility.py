@@ -4,6 +4,7 @@ Utility functions for PyTorch training
 """
 import datetime
 import logging
+import numpy
 
 import torch
 
@@ -18,6 +19,22 @@ def normalizeImages(images, epsilon=1e-05):
                           dim=(images.dim() - 2, images.dim() - 1),
                           keepdim=True)
     return (images - m) / (v + epsilon)
+
+
+def pilToNumpy(image):
+    if type(image) not in [numpy.float32, numpy.int8, numpy.int32]:
+        image = numpy.asarray(image)
+    image = image.astype(numpy.float32) / 255.0
+    # Need to change from channels last to channels first and add a batch dimension for consistency
+    if image.ndim == 4:
+        # Already has a batch dimension
+        return image.transpose(0, 3, 1, 2)
+    elif image.ndim == 2:
+        # Single channel images lose that dimension
+        return image.reshape((1, 1,) + image.shape)
+    else:
+        image = image.transpose(2, 0, 1)
+        return image.reshape((1, ) + image.shape)
 
 
 def updateWithScaler(loss_fn, net, image_input, vector_input, labels, scaler,

@@ -186,10 +186,14 @@ class AnnotatorUI():
                     self.patch_origin[dim] = self.patch_origin[dim] + self.patch_dims[dim]
                     self.patch_dims[dim] = self.patch_dims[dim] * -1
             patch_info = {
+                # The crops, width, and height from the source image
                 'crop_x_offset': self.patch_origin[0],
                 'crop_y_offset': self.patch_origin[1],
                 'width': self.patch_dims[0],
-                'height': self.patch_dims[1]
+                'height': self.patch_dims[1],
+                # Scale applied to the cropped patch
+                'scale': 1.0,
+                'frames_per_sample': 1
             }
             return patch_info
         self.patch_selection = False
@@ -420,8 +424,14 @@ def main():
 
     # TODO FIXME Handle case when the default font is not present
     default_font = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
-    if os.path.exists(default_font):
-        font = sdl2.ext.FontTTF(default_font, '14px', (255, 255, 255, 255))
+    mac_font = '/System/Library/Fonts/Supplemental/Arial.ttf'
+    
+    font_path = default_font if os.path.exists(default_font) else mac_font
+    if os.path.exists(font_path):
+        font = sdl2.ext.FontTTF(font_path, '14px', (255, 255, 255, 255))
+    else:
+        raise FileNotFoundError("No usable font found.")
+    
     font_height = sdl2.sdlttf.TTF_FontLineSkip(font.get_ttf_font())
 
     # For UI components
