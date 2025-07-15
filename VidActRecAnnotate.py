@@ -19,14 +19,20 @@ import random
 import sys
 import time
 import torch
+import cv2
+import numpy as np 
 
+# Import efficient video reading tools
+from utility.image_provider import VideoReader
+from utility.patch_common import getCropCoords, imagePreprocessFromCoords
+import gc  # for garbage collection
 # for logging when where program was run
 from subprocess import PIPE, run
 
 # Helper function to convert to images
 from torchvision import transforms
 # For annotation drawing
-from PIL import ImageDraw, ImageFont, ImageOps
+from PIL import ImageDraw, ImageFont, ImageOps, Image
 
 
 from models.alexnet import AlexLikeNet
@@ -189,11 +195,112 @@ print("Log: cwd: ", os.getcwd() )
 print("Log: Machine: ",machine_log)
 print("Log: Python_version: ",python_log)
 
+
+class EfficientVideoDecoder:
+    """Efficient video decoder using VideoReader from image_provider."""
+
+    def release(self):
+        """Release resources."""
+        # VideoReader doesn't have a release method, but we can close its container
+        if hasattr(self.reader, 'container') and self.reader.container is not None:
+            self.reader.container.close()
+    
+    def __init__(self, video_path, width, height, scale=1.0, crop_x=0, crop_y=0, 
+                begin_frame=1, end_frame=None, frames_per_sample=5, planes=1, src='RGB'):
+        # Store all parameters as instance attributes
+        self.video_path = video_path
+        self.width = width
+        self.height = height
+        self.scale = scale
+        self.crop_x = crop_x
+        self.crop_y = crop_y
+        self.begin_frame = begin_frame 
+        self.frames_per_sample = frames_per_sample
+        self.planes = planes  #Added planes and src as arguements
+        self.src = src
+        
+        # Initialize the video reader
+        self.reader = VideoReader(video_path)
+        # Use direct properties instead of get_width/get_height methods
+        video_width = self.reader.width
+        video_height = self.reader.height
+        
+        # Set end frame if not specified - use totalFrames() instead of get_frame_count()
+        if end_frame is None:
+            self.end_frame = self.reader.totalFrames()
+        else:
+            self.end_frame = end_frame
+            
+        print(f"Video begin and end frames are {self.begin_frame} and {self.end_frame}")
+        
+        # Set up image processing parameters
+        self.improc = {
+            'size': (video_width, video_height),
+            'scale': self.scale,
+            'width': self.width,
+            'height': self.height,
+            'crop_x_offset': self.crop_x,
+            'crop_y_offset': self.crop_y,
+            'frames_per_sample': self.frames_per_sample, 
+            'format': 'rgb24' 
+        }
+        
+        # Calculate actual dimensions after scaling and cropping
+        self.scale_w, self.scale_h, self.crop_coords = getCropCoords(self.improc)
+        self.in_width = self.width
+        self.in_height = self.height
+        
+        # Just set the current frame counter
+        self.current_frame = self.begin_frame
+        
+    def read_frame(self):
+        """Read a single frame from the video."""
+        if self.current_frame >= self.end_frame:
+            return None
+        
+        try:
+            # Use getFrame instead of read
+            frame = self.reader.getFrame(self.current_frame)
+            self.current_frame += 1
+            
+            # Process frame (scale and crop)
+            processed_frame = self.preprocess_frame(frame)
+            return processed_frame
+        except Exception as e:
+            print(f"Failed to read frame at position {self.current_frame}: {e}")
+            return None
+        
+    def preprocess_frame(self, frame):
+        """Preprocess a frame using optimized OpenCV implementation."""
+        # Use the optimized utility function
+        processed_frame = imagePreprocessFromCoords(
+            frame, 
+            self.scale_w, 
+            self.scale_h, 
+            self.crop_coords,
+            planes=self.planes,  # Set to 1 for grayscale (model expects 5 channels total)
+            src=self.src  # VideoReader returns RGB format
+        )
+        
+        # Convert to tensor with proper dimensions for the network
+        tensor_frame = torch.tensor(
+            data=processed_frame, 
+            dtype=torch.float
+        ).unsqueeze(0).unsqueeze(0)  # Add batch and channel dimensions
+        
+        return tensor_frame
+
 class VideoAnnotator:
 
     def __init__(self, video_labels, net, frame_interval, frames_per_sample, out_width=None,
-            out_height=None, scale=1.0, crop_x_offset=0, crop_y_offset=0, channels=3,
-             begin_frame=None, end_frame=None, output_name="annotated.mp4", bg_subtract="none"):
+        out_height=None, scale=1.0, crop_x_offset=0, crop_y_offset=0, channels=3,
+         begin_frame=None, end_frame=None, output_name="annotated.mp4", bg_subtract="none"):
+    
+        # Store the neural network
+        self.net = net
+        
+        # Use the correct path from the video_labels object
+        video_path = video_labels.videoname
         """
         Samples have no overlaps. For example, a 10 second video at 30fps has 300 samples of 1
         frame, 150 samples of 2 frames with a frame interval of 0, or 100 samples of 2 frames with a
@@ -257,216 +364,300 @@ class VideoAnnotator:
         """Set the seed used for sample generation in the iterator."""
         self.seed = seed
 
+    
+    def process_mask(self, mask, frame, in_width, in_height, display_frame):
+        """
+        Process mask data for visualization.
+        
+        Args:
+            mask: Mask data from neural network (can be None, list, or tensor)
+            frame: Current frame number for debug logging
+            in_width: Width of input frame
+            in_height: Height of input frame
+            display_frame: Frame to overlay heatmap onto
+            
+        Returns:
+            tuple: (processed_image, mask_total) - Image with heatmap and the processed mask
+        """
+        print(f"[DEBUG] Frame {frame}: Processing mask (type: {type(mask)})")
+        try:
+            mask_captures = None
+            mask_total = None
+            
+            # Handle different mask types
+            if mask is None:
+                print(f"[DEBUG] Frame {frame}: No mask available")
+                return None, None
+                
+            elif isinstance(mask, list) and len(mask) > 0:
+                # Process list of masks
+                print(f"[DEBUG] Frame {frame}: Mask list length: {len(mask)}")
+                mask_captures = []
+                for i, m in enumerate(mask):
+                    print(f"[DEBUG] Frame {frame}: Processing mask item {i}, shape: {m.shape}")
+                    mask_captures.append(m[:, :1].clone())
+                mask_total = sum(mask_captures)
+                print(f"[DEBUG] Frame {frame}: Mask processing complete")
+                
+            elif isinstance(mask, torch.Tensor):
+                # Handle tensor mask
+                print(f"[DEBUG] Frame {frame}: Processing tensor mask, shape: {mask.shape}")
+                # Take just the first sample if batch size > 1
+                if len(mask.shape) > 3:
+                    mask = mask[0]
+                # If multi-channel, use the mean across channels
+                if len(mask.shape) > 2 and mask.shape[0] > 1:
+                    mask_total = torch.mean(mask, dim=0, keepdim=True)
+                else:
+                    mask_total = mask
+                print(f"[DEBUG] Frame {frame}: Tensor mask processing complete")
+                
+            else:
+                print(f"[DEBUG] Frame {frame}: Unsupported mask type")
+                return None, None
+            
+            # Create heatmap visualization if mask exists
+            if mask_total is not None:
+                try:
+                    print(f"[DEBUG] Frame {frame}: Creating heatmap visualization")
+                    # Convert mask to numpy and rescale to 0-255
+                    with torch.no_grad():
+                        mask_np = mask_total.cpu().numpy()[0]  # Remove channel dimension
+                        
+                        # Normalize the mask to 0-1 range
+                        mask_min = mask_np.min()
+                        mask_max = mask_np.max()
+                        if mask_max > mask_min:
+                            mask_np = (mask_np - mask_min) / (mask_max - mask_min)
+                        
+                        # Resize mask to match image dimensions
+                        mask_np = cv2.resize(mask_np, (in_width, in_height))
+                        
+                        # Apply colormap (jet is common for heatmaps)
+                        heatmap = cv2.applyColorMap((mask_np * 255).astype(np.uint8), cv2.COLORMAP_JET)
+                        
+                        # Convert BGR to RGB (OpenCV uses BGR)
+                        heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
+                        
+                        # Convert display frame to numpy array for overlay
+                        display_np = display_frame.cpu().numpy()[0]  # Get first channel
+                        display_np = cv2.resize(display_np, (in_width, in_height))
+                        
+                        # Create a 3-channel image from grayscale
+                        display_rgb = np.stack([display_np, display_np, display_np], axis=2)
+                        
+                        # Overlay the heatmap with alpha blending
+                        alpha = 0.5  # Transparency level
+                        overlay = cv2.addWeighted(
+                            (display_rgb * 255).astype(np.uint8), 1-alpha,
+                            heatmap, alpha, 0
+                        )
+                        
+                        # Return the overlaid image
+                        return Image.fromarray(overlay), mask_total
+                        
+                except Exception as e:
+                    print(f"[ERROR] Frame {frame}: Failed to create heatmap: {e}")
+            
+            # Return original display frame if no visualization was created
+            cur_image = transforms.ToPILImage()(display_frame.cpu())
+            return cur_image, mask_total
+            
+        except Exception as e:
+            print(f"[ERROR] Frame {frame}: Error processing mask: {e}")
+            # Continue with empty masks
+            cur_image = transforms.ToPILImage()(display_frame.cpu())
+            return cur_image, None
+
+
+    def create_info_panel(self, frame, in_width, in_height, network_output, true_label):
+        """Create the information panel with predictions and labels."""
+        with torch.no_grad():
+            # Apply post-processing based on loss function
+            prediction = nn_postprocess(network_output)
+            pred_class = torch.argmax(prediction, dim=1).item()
+            confidence = prediction[0, pred_class].item()
+        
+        # Add safe class name lookup
+        class_name = args.class_names[pred_class] if pred_class < len(args.class_names) else f"Unknown ({pred_class})"
+        
+        # Create a new blank image for the info panel
+        info_width = in_width // 3
+        info_panel = Image.new('L', (info_width, in_height), 0)
+        draw = ImageDraw.Draw(info_panel)
+        
+        # Add title and frame number
+        draw.text((10, 10), f"Frame: {frame}", fill=255)
+        draw.text((10, 40), f"Prediction: {class_name}", fill=255)
+        draw.text((10, 70), f"Confidence: {confidence:.2f}", fill=255)
+        draw.text((10, 100), f"True label: {true_label}", fill=255)
+        
+        return info_panel, pred_class, confidence
+
+    def cleanup_resources(self, tensors_to_delete, sample_frames):
+        """Clean up memory resources to prevent memory leaks."""
+        # Delete specific tensors
+        for tensor in tensors_to_delete:
+            del tensor
+        
+        # Remove all frames and clear the list
+        for tensor in sample_frames:
+            del tensor
+        
+        # Force garbage collection
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        return []  # Return empty list for sample_frames
+
+    def create_output_video(self, temp_dir, frame_count):
+        """Create the output video from saved frames."""
+        if frame_count > 0:
+            print(f"[DEBUG] Creating video from {frame_count} saved frames")
+            frame_pattern = os.path.join(temp_dir, "frame_%06d.png")
+            
+            # Sanitize output filename and enclose in quotes
+            safe_output = f'"{self.output_name.replace(" ", "_")}"'
+            
+            ffmpeg_cmd = f"ffmpeg -y -framerate 30 -i {frame_pattern} -c:v libx264 -pix_fmt yuv420p -preset ultrafast -crf 23 {safe_output}"
+            print(f"[DEBUG] Running command: {ffmpeg_cmd}")
+            
+            # Run command and check for errors
+            exit_code = os.system(ffmpeg_cmd)
+            if exit_code != 0:
+                print(f"[ERROR] FFmpeg failed with exit code {exit_code}")
+                return False
+                
+            print(f"[DEBUG] Video saved to {self.output_name}")
+            return True
+        else:
+            print("[ERROR] No frames were processed!")
+            return False
+    
+    def run_neural_network(self, sample_frames, frame):
+        """Process frames through the neural network to get predictions and masks."""
+        print(f"[DEBUG] Frame {frame}: Processing batch of {len(sample_frames)} frames")
+        
+        with torch.no_grad():
+            # Concatenate frames into input tensor
+            image_input = torch.cat(sample_frames, 1)
+            
+            # Normalize the input
+            m = torch.mean(image_input)
+            v = torch.std(image_input)
+            net_input = (image_input - m) / v
+            
+            # Forward pass through the network
+            print(f"[DEBUG] Frame {frame}: Running forward pass")
+            out, mask = self.net.vis_forward(net_input)
+            print(f"[DEBUG] Frame {frame}: Network forward pass complete")
+    
+        return out, mask, net_input
 
     def process_video(self):
-        """An iterator that yields frames.
+        print(f"[DEBUG] Starting video processing for {self.path}")
+        print(f"[DEBUG] Target frames: {self.begin_frame} to {self.end_frame}")
 
-        Decode the video and write the annotated result.
-        """
-        # Open the video
-        # It is a bit unfortunate the we decode what is probably a YUV stream into rgb24, but this
-        # is what PIL supports easily. It is only really detrimental when we want just the Y
-        # channel.
-        if 3 == self.channels:
-            pix_fmt='rgb24'
-        else:
-            pix_fmt='gray'
-        in_width = self.out_width
-        in_height = self.out_height
+        # Create a directory for temporary frames
+        temp_dir = "temp_frames"
+        os.makedirs(temp_dir, exist_ok=True)
 
-        # Prepare a font for annotations. Just using the default font for now.
-        try:
-            font = ImageFont.truetype(font="DejaVuSans.ttf", size=14)
-        except OSError:
-            font = ImageFont.load_default()
-
-        # Initialize the background subtractor
-        if (self.bg_subtractor is not None):
-            from cv2 import (bitwise_and)
-            # Read in a few hundred frames
-            process1 = (
-                ffmpeg
-                .input(self.path)
-                # 400 is the default window for background subtractors
-                .trim(start_frame=1, end_frame=400)
-                # Scale
-                .filter('scale', self.scale*self.width, -1)
-                # The crop is automatically centered if the x and y parameters are not used.
-                .filter('crop', out_w=in_width, out_h=in_height, x=self.crop_x, y=self.crop_y)
-            )
-            if self.normalize:
-                # Full independence between color channels. The bee videos are basically a single color.
-                # Otherwise normalizing the channels independently may not be a good choice.
-                process1 = process1.filter('normalize', independence=1.0)
-
-            process1 = (
-                process1
-                # YUV444p is the alternative to rgb24, but the pretrained network expects rgb images.
-                #.output('pipe:', format='rawvideo', pix_fmt='yuv444p')
-                .output('pipe:', format='rawvideo', pix_fmt=pix_fmt)
-                .run_async(pipe_stdout=True, quiet=True)
-            )
-            in_bytes = process1.stdout.read(in_width * in_height * self.channels)
-            if in_bytes:
-                # Convert to numpy and feed to the background subtraction algorithm
-                np_frame = numpy.frombuffer(in_bytes, numpy.uint8)
-                fgMask = self.bg_subtractor.apply(np_frame)
-
-        # Begin the video input process from ffmpeg.
-        input_process = (
-            ffmpeg
-            .input(self.path)
-            # Scale
-            .filter('scale', self.scale*self.width, -1)
-            # The crop is automatically centered if the x and y parameters are not used.
-            .filter('crop', out_w=in_width, out_h=in_height, x=self.crop_x, y=self.crop_y)
-            # Full independence between color channels. The bee videos are basically a single color.
-            # Otherwise normalizing the channels independently may not be a good choice.
-            .filter('normalize', independence=1.0)
-            #.filter('reverse')
-            # YUV444p is the alternative to rgb24, but the pretrained network expects rgb images.
-            .output('pipe:', format='rawvideo', pix_fmt=pix_fmt)
-            .run_async(pipe_stdout=True, quiet=True)
+        CHUNK_SIZE = 500
+        
+        # Create the video decoder and initialize variables
+        decoder = EfficientVideoDecoder(
+            video_path=self.path,
+            width=self.width,
+            height=self.height,
+            scale=self.scale,
+            crop_x=self.crop_x,
+            crop_y=self.crop_y,
+            begin_frame=self.begin_frame,
+            end_frame=self.end_frame,
+            frames_per_sample=self.frames_per_sample,
+            planes = 1,
+            src = 'RGB'
         )
-        # Begin an output process from ffmpeg.
-        info_width = in_width // 3
-        output_process = (
-            ffmpeg
-            .input('pipe:', format='rawvideo', pix_fmt='rgb24', s=f'{in_width+info_width}x{in_height}')
-            .output(self.output_name, pix_fmt='rgb24')
-            .overwrite_output()
-            .run_async(pipe_stdin=True, quiet=True)
-        )
-        # Generator loop
-        # The first frame will be frame number 1
-        frame = 0
-        # Discard early frames
-        while frame < self.begin_frame:
-            in_bytes = input_process.stdout.read(in_width * in_height * self.channels)
-            if in_bytes:
-                frame += 1
-        # Read in all frames that should be processed
+        
+        in_width, in_height = decoder.in_width, decoder.in_height
+        frame = self.begin_frame
         sample_frames = []
-        while frame < self.end_frame:
-            # Fetch the next frame sample that can be sent through the neural network
-            in_bytes = input_process.stdout.read(in_width * in_height * self.channels)
-            if in_bytes:
-                # Numpy frame conversion either happens during background subtraction or
-                # later during sampling
-                np_frame = None
-                # Apply background subtraction if requested
-                if self.bg_subtractor is not None:
-                    # Convert to numpy
-                    np_frame = numpy.frombuffer(in_bytes, numpy.uint8)
-                    fgMask = self.bg_subtractor.apply(np_frame)
-                    # Curious use of a bitwise and involving the image and itself. Could use
-                    # a masked select instead.
-                    masked = bitwise_and(np_frame, np_frame, mask=fgMask)
-                    np_frame = masked.clip(max=255).astype(numpy.uint8)
-
-                frame += 1
-                # Convert to numpy (if not already handled by the background subtractor), and then to torch.
-                if np_frame is None:
-                    np_frame = numpy.frombuffer(in_bytes, numpy.uint8)
-                in_frame = torch.tensor(data=np_frame, dtype=torch.uint8,
-                    ).reshape([1, in_height, in_width, self.channels])
-                in_frame = in_frame.permute(0, 3, 1, 2).to(dtype=torch.float).to(device)
-                sample_frames.append(in_frame)
-
-
-            else:
-                # We reached the end of the video before reaching the desired end frame somehow.
-                input_process.wait()
-                # Close the output and return.
-                output_process.stdin.close()
-                output_process.wait()
-                return
-
-            if len(sample_frames) == self.frames_per_sample:
-                # If multiple frames are being used for inference then concat them along the channel
-                # dimension. Otherwise just use the single frame.
-
-                if 1 == self.frames_per_sample:
-                    image_input = sample_frames[0]
-                else:
-                    # Concatenate along the channel dimension since the first dimension will be
-                    # treated as the batch size.
-                    image_input = torch.cat(sample_frames, 1)
-
-                # Get the label for this frame. Multiframe inputs have the label of the newest frame.
-                label = self.video_labels.getLabel(frame)
-
-                # Now normalize the image and send it through the DNN. Then annotate the image with
-                # the label and result.
-                # Visualization masks are not supported with all model types yet.
-                with torch.no_grad():
-                    if args.normalize:
-                        # Normalize per channel, so compute over height and width
-                        v, m = torch.var_mean(image_input, dim=(image_input.dim()-2, image_input.dim()-1), keepdim=True)
-                        net_input = (image_input - m) / v
-                    else:
-                        net_input = image_input
-                    out, mask = net.vis_forward(net_input)
-                    out = nn_postprocess(out)
-
-                # Reconvert to an image for the output video stream
-                display_frame = sample_frames[-1][0]
-                # Convert to a color image is necessary
-                if 3 != self.channels:
-                    display_frame = display_frame.repeat(3, 1, 1)
-
-                # Draw bounding boxes around every large group of features
-                # Add all of the pixel features greater than 1% of the total into a set
-                mask_total = mask[0].sum().item()
-                #mask_captures = mask[0,0] > (mask_total/100.0)
-                mask_captures = mask[0,0] > 0.70
-                # Turn the image tensor green at the masked locations.
-                display_frame[1].masked_fill_(mask_captures, 255.0)
-
-                cur_image = transforms.ToPILImage()(display_frame.cpu()/255.0).convert('RGB')
-
-                # Segment mask captures into bounding boxes.
-                #mask_pixels = [(i, j) for i in range(mask.size(2)) for j
-                #        in range(mask.size(3)) if mask_captures[i,j]]
-                # Do bfs or dfs to cluster them
-                # Draw bounding boxes around the clusters
-
-                # Part 2: Assign clusters to classes.
-                # Before adding features into a set, create a set for each class.
-                # Go through the net.classifier part of the DNN (the linear layers) to assign
-                # classes by backpropping through each class prediction.
-
-                # Pad an empty space to the right.
-                padded_image = ImageOps.pad(cur_image, (in_width + info_width, in_height), centering=(0,0))
-
-                # Get the drawing context
-                cont = ImageDraw.Draw(padded_image)
-                # Annotate with the label
-                rows = len(self.video_labels.class_names) + 1
-                cont.text(((in_width + info_width//2), in_height//rows), f"Label: {label}",
-                        fill=(235, 235, 235), font=font, anchor="mm")
-
-                for row in range(2, rows):
-                    lname = self.video_labels.class_names[row-1]
-                    lscore = out[0,row-2].item()
-                    cont.text(((in_width + info_width//2), row * in_height//rows),
-                        f"{lname} score: {round(lscore, 3)}", fill=(235, 235, 235), font=font, anchor="mm")
-
-                # Write the frame
-                output_process.stdin.write(
-                    padded_image
-                    .tobytes()
-                )
-
-                # Remove the consumed frame from the samples.
-                sample_frames = sample_frames[1:]
-
-        # Read any remaining samples to finish the video decoding process.
-        while in_bytes:
-            in_bytes = input_process.stdout.read(self.out_width * self.out_height * self.channels)
-        input_process.wait()
-        output_process.stdin.close()
-        output_process.wait()
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        frame_count = 0
+        
+        try:
+            # Process frames in chunks
+            for chunk_start in range(self.begin_frame, self.end_frame, CHUNK_SIZE):
+                chunk_end = min(chunk_start + CHUNK_SIZE, self.end_frame)
+                print(f"Processing chunk {chunk_start}-{chunk_end} ({100.0*chunk_start/self.end_frame:.1f}%)")
+                self.cleanup_resources([], [])  # Just run GC
+                
+                while frame < chunk_end:
+                    # Progress reporting
+                    if frame % 100 == 0:
+                        print(f"Processing frame {frame}/{self.end_frame} ({frame*100.0/self.end_frame:.1f}%)")
+                    
+                    # Read and process frame
+                    in_frame = decoder.read_frame()
+                    if in_frame is None:
+                        print("Failed to read - End of video reached")
+                        break
+                        
+                    # Add frame to sample
+                    sample_frames.append(in_frame.to(device=device, dtype=torch.float))
+                    
+                    # Process when we have enough frames
+                    if len(sample_frames) == self.frames_per_sample:
+                        # Run neural network
+                        out, mask, net_input = self.run_neural_network(sample_frames, frame)
+                        
+                        # Process mask and create heatmap
+                        display_frame = sample_frames[-1][0]
+                        cur_image, mask_total = self.process_mask(mask, frame, in_width, in_height, display_frame)
+                        
+                        # Create info panel
+                        true_label = self.video_labels.getLabel(frame)
+                        info_panel, pred_class, confidence = self.create_info_panel(frame, in_width, in_height, out, true_label)
+                        
+                        # Combine image with info panel
+                        if cur_image.mode != 'RGB':
+                            cur_image = cur_image.convert('RGB')
+                        
+                        # Create padded image with info panel
+                        info_width = in_width // 3
+                        padded_image = ImageOps.pad(cur_image, (in_width + info_width, in_height), centering=(0,0))
+                        
+                        # Add info to padded image
+                        draw = ImageDraw.Draw(padded_image)
+                        # Save frame
+                        frame_filename = os.path.join(temp_dir, f"frame_{frame_count:06d}.png")
+                        padded_image.save(frame_filename)
+                        frame_count += 1
+                        
+                        # Debug first frame
+                        if frame == self.begin_frame:
+                            debug_filename = os.path.join(temp_dir, "debug_first_frame.png")
+                            padded_image.save(debug_filename)
+                            print(f"Saved debug frame to {debug_filename}")
+                        
+                        # Cleanup
+                        tensors_to_delete = [net_input, out, mask, mask_total, display_frame]
+                        sample_frames = self.cleanup_resources(tensors_to_delete, sample_frames)
+                    
+                    # Update frame counter
+                    frame += 1
+                
+                # Force garbage collection after each chunk
+                self.cleanup_resources([], [])
+                    
+            # Create output video
+            self.create_output_video(temp_dir, frame_count)
+                    
+        finally:
+            # Clean up
+            decoder.release()
+            print(f"[DEBUG] Video processing complete")
 
 
 image_size = (args.dnn_channels * args.frames_per_sample, args.height, args.width)
@@ -502,6 +693,7 @@ elif 'convnexts' == args.modeltype:
     net = ConvNextSmall(in_dimensions=image_size, out_classes=args.label_classes)
 elif 'convnextb' == args.modeltype:
     net = ConvNextBase(in_dimensions=image_size, out_classes=args.label_classes)
+
 net = net.to(device)
 print(f"Model is {net}")
 

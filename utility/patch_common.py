@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import cv2
+
+
 
 """
 Copyright © 2025 Bernhard Firner
