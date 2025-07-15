@@ -171,7 +171,7 @@ def plot_gradcam_for_multichannel_input(
         try:
             plot_saliency_map(
                 model=model,
-                input_tensor=input_tensor,
+                input_tensor=input_tensor,cd be
                 target_class=true_class,
                 batch_num=batch_num,
                 model_name=model_name,
