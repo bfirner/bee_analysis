@@ -509,29 +509,29 @@ class VideoAnnotator:
         
         return []  # Return empty list for sample_frames
 
-def create_output_video(self, temp_dir, frame_count):
-    """Create the output video from saved frames."""
-    if frame_count > 0:
-        print(f"[DEBUG] Creating video from {frame_count} saved frames")
-        frame_pattern = os.path.join(temp_dir, "frame_%06d.png")
-        
-        # Sanitize output filename and enclose in quotes
-        safe_output = f'"{self.output_name.replace(" ", "_")}"'
-        
-        ffmpeg_cmd = f"ffmpeg -y -framerate 30 -i {frame_pattern} -c:v libx264 -pix_fmt yuv420p -preset ultrafast -crf 23 {safe_output}"
-        print(f"[DEBUG] Running command: {ffmpeg_cmd}")
-        
-        # Run command and check for errors
-        exit_code = os.system(ffmpeg_cmd)
-        if exit_code != 0:
-            print(f"[ERROR] FFmpeg failed with exit code {exit_code}")
-            return False
+    def create_output_video(self, temp_dir, frame_count):
+        """Create the output video from saved frames."""
+        if frame_count > 0:
+            print(f"[DEBUG] Creating video from {frame_count} saved frames")
+            frame_pattern = os.path.join(temp_dir, "frame_%06d.png")
             
-        print(f"[DEBUG] Video saved to {self.output_name}")
-        return True
-    else:
-        print("[ERROR] No frames were processed!")
-        return False
+            # Sanitize output filename and enclose in quotes
+            safe_output = f'"{self.output_name.replace(" ", "_")}"'
+            
+            ffmpeg_cmd = f"ffmpeg -y -framerate 30 -i {frame_pattern} -c:v libx264 -pix_fmt yuv420p -preset ultrafast -crf 23 {safe_output}"
+            print(f"[DEBUG] Running command: {ffmpeg_cmd}")
+            
+            # Run command and check for errors
+            exit_code = os.system(ffmpeg_cmd)
+            if exit_code != 0:
+                print(f"[ERROR] FFmpeg failed with exit code {exit_code}")
+                return False
+                
+            print(f"[DEBUG] Video saved to {self.output_name}")
+            return True
+        else:
+            print("[ERROR] No frames were processed!")
+            return False
     
     def run_neural_network(self, sample_frames, frame):
         """Process frames through the neural network to get predictions and masks."""
