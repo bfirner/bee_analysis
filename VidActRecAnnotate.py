@@ -168,22 +168,6 @@ parser.add_argument(
     default='none',
     help='Background subtraction algorithm to apply to the input video, or none.')
 
-parser.add_argument(
-    '--planes',
-    type=int,
-    required=False,
-    default=1,
-    help='Number of color planes for processing (1 for grayscale, 3 for RGB).'
-)
-
-parser.add_argument(
-    '--src',
-    type=str,
-    choices=['RGB', 'GBR'],
-    default='RGB',
-    help='Source color format of the input frames.'
-)
-
 args = parser.parse_args()
 
 # Network outputs may need to be postprocessed for evaluation if some postprocessing is being done
@@ -294,8 +278,8 @@ class EfficientVideoDecoder:
             self.scale_w, 
             self.scale_h, 
             self.crop_coords,
-            planes=self.planes,  # Set to 1 for grayscale (model expects 5 channels total)
-            src=self.src  # VideoReader returns RGB format
+            planes=planes,  # Set to 1 for grayscale (model expects 5 channels total)
+            src=src  # VideoReader returns RGB format
         )
         
         # Convert to tensor with proper dimensions for the network
@@ -591,7 +575,9 @@ class VideoAnnotator:
             crop_y=self.crop_y,
             begin_frame=self.begin_frame,
             end_frame=self.end_frame,
-            frames_per_sample=self.frames_per_sample
+            frames_per_sample=self.frames_per_sample,
+            planes = 1,
+            src = 'RGB'
         )
         
         in_width, in_height = decoder.in_width, decoder.in_height
