@@ -206,7 +206,7 @@ class EfficientVideoDecoder:
             self.reader.container.close()
     
     def __init__(self, video_path, width, height, scale=1.0, crop_x=0, crop_y=0, 
-                begin_frame=1, end_frame=None, frames_per_sample=5):
+                begin_frame=1, end_frame=None, frames_per_sample=5, planes=1, src='RGB'):
         # Store all parameters as instance attributes
         self.video_path = video_path
         self.width = width
@@ -216,8 +216,8 @@ class EfficientVideoDecoder:
         self.crop_y = crop_y
         self.begin_frame = begin_frame 
         self.frames_per_sample = frames_per_sample
-        self.planes = args.planes  #Added planes and src as arguements
-        self.src = args.src
+        self.planes = planes  #Added planes and src as arguements
+        self.src = src
         
         # Initialize the video reader
         self.reader = VideoReader(video_path)
@@ -278,8 +278,8 @@ class EfficientVideoDecoder:
             self.scale_w, 
             self.scale_h, 
             self.crop_coords,
-            planes=planes,  # Set to 1 for grayscale (model expects 5 channels total)
-            src=src  # VideoReader returns RGB format
+            planes=self.planes,  # Set to 1 for grayscale (model expects 5 channels total)
+            src=self.src  # VideoReader returns RGB format
         )
         
         # Convert to tensor with proper dimensions for the network
