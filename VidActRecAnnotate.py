@@ -248,9 +248,6 @@ class EfficientVideoDecoder:
         self.in_width = self.width
         self.in_height = self.height
         
-        # REMOVE this line (VideoReader doesn't have seek)
-        # self.reader.seek(self.begin_frame)
-        
         # Just set the current frame counter
         self.current_frame = self.begin_frame
         
@@ -512,19 +509,29 @@ class VideoAnnotator:
         
         return []  # Return empty list for sample_frames
 
-    def create_output_video(self, temp_dir, frame_count):
-        """Create the output video from saved frames."""
-        if frame_count > 0:
-            print(f"[DEBUG] Creating video from {frame_count} saved frames")
-            frame_pattern = os.path.join(temp_dir, "frame_%06d.png")
-            ffmpeg_cmd = f"ffmpeg -y -framerate 30 -i {frame_pattern} -c:v libx264 -pix_fmt yuv420p -preset ultrafast -crf 23 {self.output_name}"
-            print(f"[DEBUG] Running command: {ffmpeg_cmd}")
-            os.system(ffmpeg_cmd)
-            print(f"[DEBUG] Video saved to {self.output_name}")
-            return True
-        else:
-            print("[ERROR] No frames were processed!")
+def create_output_video(self, temp_dir, frame_count):
+    """Create the output video from saved frames."""
+    if frame_count > 0:
+        print(f"[DEBUG] Creating video from {frame_count} saved frames")
+        frame_pattern = os.path.join(temp_dir, "frame_%06d.png")
+        
+        # Sanitize output filename and enclose in quotes
+        safe_output = f'"{self.output_name.replace(" ", "_")}"'
+        
+        ffmpeg_cmd = f"ffmpeg -y -framerate 30 -i {frame_pattern} -c:v libx264 -pix_fmt yuv420p -preset ultrafast -crf 23 {safe_output}"
+        print(f"[DEBUG] Running command: {ffmpeg_cmd}")
+        
+        # Run command and check for errors
+        exit_code = os.system(ffmpeg_cmd)
+        if exit_code != 0:
+            print(f"[ERROR] FFmpeg failed with exit code {exit_code}")
             return False
+            
+        print(f"[DEBUG] Video saved to {self.output_name}")
+        return True
+    else:
+        print("[ERROR] No frames were processed!")
+        return False
     
     def run_neural_network(self, sample_frames, frame):
         """Process frames through the neural network to get predictions and masks."""
@@ -619,11 +626,6 @@ class VideoAnnotator:
                         
                         # Add info to padded image
                         draw = ImageDraw.Draw(padded_image)
-                        draw.text((in_width + 10, 10), f"Frame: {frame}", fill=255)
-                        draw.text((in_width + 10, 40), f"Prediction: {args.class_names[pred_class]}", fill=255)
-                        draw.text((in_width + 10, 70), f"Confidence: {confidence:.2f}", fill=255)
-                        draw.text((in_width + 10, 100), f"True label: {true_label}", fill=255)
-                        
                         # Save frame
                         frame_filename = os.path.join(temp_dir, f"frame_{frame_count:06d}.png")
                         padded_image.save(frame_filename)
