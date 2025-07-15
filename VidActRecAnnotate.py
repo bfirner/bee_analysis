@@ -471,7 +471,7 @@ class VideoAnnotator:
             return cur_image, None
 
 
-    def create_info_panel(self, frame, in_width, network_output, true_label):
+    def create_info_panel(self, frame, in_width, in_height, network_output, true_label):
         """Create the information panel with predictions and labels."""
         with torch.no_grad():
             # Apply post-processing based on loss function
@@ -544,7 +544,7 @@ class VideoAnnotator:
             out, mask = self.net.vis_forward(net_input)
             print(f"[DEBUG] Frame {frame}: Network forward pass complete")
     
-        return out, mask, net_input, image_input
+        return out, mask, net_input
 
     def process_video(self):
         print(f"[DEBUG] Starting video processing for {self.path}")
@@ -553,6 +553,8 @@ class VideoAnnotator:
         # Create a directory for temporary frames
         temp_dir = "temp_frames"
         os.makedirs(temp_dir, exist_ok=True)
+
+        CHUNK_SIZE = 500
         
         # Create the video decoder and initialize variables
         decoder = EfficientVideoDecoder(
@@ -605,7 +607,7 @@ class VideoAnnotator:
                         
                         # Create info panel
                         true_label = self.video_labels.getLabel(frame)
-                        info_panel, pred_class, confidence = self.create_info_panel(frame, in_width, out, true_label)
+                        info_panel, pred_class, confidence = self.create_info_panel(frame, in_width, in_height, out, true_label)
                         
                         # Combine image with info panel
                         if cur_image.mode != 'RGB':
