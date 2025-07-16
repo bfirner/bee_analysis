@@ -350,7 +350,7 @@ training_batch_file.write("#!/usr/bin/bash \n")
 out_file_list = os.listdir(args.out_path)
 if "venv" not in out_file_list:
     training_batch_file.write("python3 -m venv venv\n")
-training_batch_file.write(f"pip install -r {os.path.join(program_dir, 'requirements.txt')}\n")
+training_batch_file.write(f"pip install --no-compile -r {os.path.join(program_dir, 'requirements.txt')}\n")
 
 training_batch_file.write("source venv/bin/activate \n")
 training_batch_file.write("# batch file for getting the training results \n \n")
