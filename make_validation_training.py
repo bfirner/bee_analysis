@@ -332,7 +332,7 @@ setNum = 0
 if not args.remove_dataset_sub:
     for dataset_num in range(numOfSets):
         dataset_filename = baseName + "_" + str(dataset_num) + ".csv"
-        with open(dataset_filename, "w") as dsetFile:
+        with open(os.path.join(args.out_file, dataset_filename), "w") as dsetFile:
             # write out the header row at the top of the set
             dsetFile.write("file, class, begin frame, end frame\n")
             # write out all the rows for this set from the corresponding fold
@@ -345,7 +345,7 @@ if args.only_split:
     sys.exit(0)
 
 
-training_batch_file = open(training_filename, "w")
+training_batch_file = open(os.path.join(args.out_file, training_filename), "w")
 training_batch_file.write("#!/usr/bin/bash \n")
 training_batch_file.write("source venv/bin/activate \n")
 training_batch_file.write("# batch file for getting the training results \n \n")
@@ -357,7 +357,7 @@ for dataset_num in range(numOfSets):
     train_job_filename = "train" + "_" + str(dataset_num) + ".sh"
 
     # open the batch file that runs the testing and training commands
-    with open(train_job_filename, "w") as trainFile:
+    with open(os.path.join(args.out_path, train_job_filename), "w") as trainFile:
         trainFile.write("#!/usr/bin/bash \n")
         
         out_file_list = os.listdir(args.out_path)
@@ -410,4 +410,4 @@ training_batch_file.close()
 
 logging.info("Done writing dataset and job files")
 # change the permissions of the shell scripts to be executable.
-os.system("chmod 777 *.log *.sh")
+os.system(f"chmod 777 {os.path.join(args.out_path, '*.log')} {os.path.join(args.out_path, '*.sh')}")
