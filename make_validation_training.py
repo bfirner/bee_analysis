@@ -255,7 +255,7 @@ datacsvname = args.datacsv
 numOfSets = args.k
 batchdir = os.path.join(args.out_path, args.batchdir)
 seed = args.seed
-training_filename = os.path.join(args.out_path,args.training + ".sh")
+training_filename = args.training + ".sh"
 model_name = args.model
 width = args.width
 height = args.height
@@ -332,7 +332,7 @@ setNum = 0
 if not args.remove_dataset_sub:
     for dataset_num in range(numOfSets):
         dataset_filename = baseName + "_" + str(dataset_num) + ".csv"
-        with open(os.path.join(args.out_file, dataset_filename), "w") as dsetFile:
+        with open(os.path.join(args.out_path, dataset_filename), "w") as dsetFile:
             # write out the header row at the top of the set
             dsetFile.write("file, class, begin frame, end frame\n")
             # write out all the rows for this set from the corresponding fold
@@ -345,7 +345,7 @@ if args.only_split:
     sys.exit(0)
 
 
-training_batch_file = open(os.path.join(args.out_file, training_filename), "w")
+training_batch_file = open(os.path.join(args.out_path, training_filename), "w")
 training_batch_file.write("#!/usr/bin/bash \n")
 training_batch_file.write("source venv/bin/activate \n")
 training_batch_file.write("# batch file for getting the training results \n \n")
