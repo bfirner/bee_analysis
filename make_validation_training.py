@@ -195,7 +195,13 @@ parser.add_argument(
     default=3,
     type=int,
 )
-
+parser.add_argument(
+    "--path_to_file",
+    type=str,
+    required=False,
+    default="bee_analysis",
+    help="path to bee analysis files, default: bee_analysis",
+)
 # flatbin stuff
 parser.add_argument(
     "--binary-training-optimization",
