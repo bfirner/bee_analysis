@@ -347,6 +347,10 @@ if args.only_split:
 
 training_batch_file = open(os.path.join(args.out_path, training_filename), "w")
 training_batch_file.write("#!/usr/bin/bash \n")
+out_file_list = os.listdir(args.out_path)
+if "venv" not in out_file_list:
+    training_batch_file.write("python3 -m venv venv\n")
+
 training_batch_file.write("source venv/bin/activate \n")
 training_batch_file.write("# batch file for getting the training results \n \n")
 training_batch_file.write(
@@ -360,9 +364,6 @@ for dataset_num in range(numOfSets):
     with open(os.path.join(args.out_path, train_job_filename), "w") as trainFile:
         trainFile.write("#!/usr/bin/bash \n")
         
-        out_file_list = os.listdir(args.out_path)
-        if "venv" not in out_file_list:
-            trainFile.write("python3 -m venv venv")
         
         trainFile.write("source venv/bin/activate \n")
         trainFile.write("# command to run \n \n")
