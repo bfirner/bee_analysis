@@ -135,6 +135,12 @@ parser.add_argument(
     help="working directory for the sbatch run jobs, default: .",
 )
 parser.add_argument(
+    "--venv-path",
+    type=str,
+    default=".",
+    help="the path to the virtual environment that you want to use (absolute probably); default: '.'"
+)
+parser.add_argument(
     "--seed",
     type=int,
     required=False,
@@ -417,12 +423,9 @@ if args.only_split:
 
 training_batch_file = open(os.path.join(args.out_path, training_filename), "w")
 training_batch_file.write("#!/usr/bin/bash \n")
-out_file_list = os.listdir(args.out_path)
-if "venv" not in out_file_list:
-    training_batch_file.write("python3 -m venv venv\n")
 training_batch_file.write(f"pip install --no-compile -r {os.path.join(program_dir, 'requirements.txt')}\n")
 
-training_batch_file.write("source venv/bin/activate \n")
+training_batch_file.write(f"source {os.path.join(args.venv_path, 'venv/bin/activate')} \n")
 training_batch_file.write("# batch file for getting the training results \n \n")
 training_batch_file.write(
     "echo start-is: `date` \n \n"
@@ -436,7 +439,7 @@ for dataset_num in range(numOfSets):
         trainFile.write("#!/usr/bin/bash \n")
         
         
-        trainFile.write("source venv/bin/activate \n")
+        trainFile.write(f"source {os.path.join(args.venv_path, 'venv/bin/activate')} \n")
         trainFile.write("# command to run \n \n")
         trainFile.write("export TRAINPROGRAM=" + trainProgram + "\n")
         trainFile.write("echo start-is: `date` \n \n")  # add start timestamp
