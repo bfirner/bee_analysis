@@ -1,12 +1,10 @@
 #! /usr/bin/python3
-
 """
 This program will prepare video data for DNN training ("dataprep").
 A csv will provide a video list to load and metainformation and/or labels used for training.
 This program will perform frame extraction, augmentations, and other specified processed and then
 save the video data and labels for training or validation.
 """
-
 # Not using video reading library from torchvision.
 # It only works with old versions of ffmpeg.
 import argparse
@@ -23,10 +21,8 @@ import torch
 import webdataset as wds
 # Helper function to convert to images
 from torchvision import transforms
-
 from utility.video_utility import (getVideoInfo, VideoSampler, vidSamplingCommonCrop)
-
-
+from utility.patch_common import imagePreprocessFromCoords
 parser = argparse.ArgumentParser(
     description="Perform data preparation for DNN training on a video set.")
 parser.add_argument(
@@ -123,12 +119,9 @@ parser.add_argument(
     choices=['none', 'mog2', 'knn'],
     default='none',
     help='Background subtraction algorithm to apply to the input video, or none.')
-
 args = parser.parse_args()
-
 # Create a writer for the WebDataset
 datawriter = wds.TarWriter(args.outpath, encoder=False)
-
 with open(args.datalist, newline='') as datacsv:
     conf_reader = csv.reader(datacsv)
     header = next(conf_reader)
@@ -145,7 +138,7 @@ with open(args.datalist, newline='') as datacsv:
             print(f"Row '{row}' does not have the correct number of columns (4).")
         else:
             path = row[file_col]
-            try: 
+            try:
                 sampler = VideoSampler(
                     video_path=path, num_samples=args.samples, frames_per_sample=args.frames_per_sample,
                     frame_interval=args.interval, out_width=args.width, out_height=args.height,
@@ -157,7 +150,6 @@ with open(args.datalist, newline='') as datacsv:
                 print('stdout:', e.stdout.decode('utf8'))
                 print('stderr:', e.stderr.decode('utf8'))
                 os.exit(-1)
-                
             for sample_num, frame_data in enumerate(sampler):
                 frame, video_path, frame_num = frame_data
                 base_name = os.path.basename(video_path).replace(' ', '_').replace('.', '_')
@@ -169,20 +161,28 @@ with open(args.datalist, newline='') as datacsv:
                 curtime = time.strftime("%Y-%m-%d %H:%M:%S", time_struct)
                 metadata = f"{video_path},{frame_num[0]},{curtime}"
                 height, width = frame.size(2), frame.size(3)
+                #defined img processing params
+                improc = {
+                    'scale': args.scale,
+                    'width': args.width,
+                    'height': args.height,
+                    'crop_x_offset': args.crop_x_offset,
+                    'crop_y_offset': args.crop_y_offset
+                }
                 # Now crop to args.width by args.height.
                 #ybegin = (height - args.height)//2
                 #xbegin = (width - args.width)//2
                 #cropped = frame[:,:,ybegin:ybegin+args.height,xbegin:xbegin+args.width]
                 # If you would like to debug (and you would like to!) check your images.
                 if 1 == args.frames_per_sample:
+                    processed = imagePreprocessFromCoords(frame[0], improc)
                     if 3 == args.out_channels:
-                        img = transforms.ToPILImage()(frame[0]/255.0).convert('RGB')
+                        img = transforms.ToPILImage()(processed/255.0).convert('RGB')
                     else:
-                        img = transforms.ToPILImage()(frame[0]/255.0).convert('L')
+                        img = transforms.ToPILImage()(processed/255.0).convert('L')
                     # Now save the image as a png into a buffer in memory
                     buf = io.BytesIO()
                     img.save(fp=buf, format="png")
-
                     sample = {
                         "__key__": '_'.join((base_name, '_'.join(frame_num))),
                         "0.png": buf.getbuffer(),
@@ -199,16 +199,16 @@ with open(args.datalist, newline='') as datacsv:
                 else:
                     # Save multiple pngs
                     buffers = []
-
                     for i in range(args.frames_per_sample):
+                        #add preprocessing here
+                        processed = imagePreprocessFromCoords(frame[i], improc)
                         if 3 == args.out_channels:
-                            img = transforms.ToPILImage()(frame[i]/255.0).convert('RGB')
+                            img = transforms.ToPILImage()(processed/255.0).convert('RGB')
                         else:
-                            img = transforms.ToPILImage()(frame[i]/255.0).convert('L')
+                            img = transforms.ToPILImage()(processed/255.0).convert('L')
                         # Now save the image as a png into a buffer in memory
                         buffers.append(io.BytesIO())
                         img.save(fp=buffers[-1], format="png")
-
                     sample = {
                         "__key__": '_'.join((base_name, '_'.join(frame_num))),
                         "cls": row[class_col].encode('utf-8'),
@@ -223,7 +223,5 @@ with open(args.datalist, newline='') as datacsv:
                     }
                     for i in range(args.frames_per_sample):
                         sample[f"{i}.png"] = buffers[i].getbuffer()
-
                 datawriter.write(sample)
-
 datawriter.close()
