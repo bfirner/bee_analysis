@@ -424,6 +424,8 @@ if args.only_split:
 training_batch_file = open(os.path.join(args.out_path, training_filename), "w")
 training_batch_file.write("#!/usr/bin/bash \n")
 training_batch_file.write(f"source {os.path.join(args.venv_path, 'venv/bin/activate')} \n")
+training_batch_file.write(f"python -m ensurepip --upgrade >> /deb/null 2>&1 \n")
+training_batch_file.write(f"pip install -r {os.path.join(program_dir, 'requirements.txt')} >> /dev/null 2>&1\n")
 training_batch_file.write("# batch file for getting the training results \n \n")
 training_batch_file.write(
     "echo start-is: `date` \n \n"
@@ -438,6 +440,8 @@ for dataset_num in range(numOfSets):
         
         
         trainFile.write(f"source {os.path.join(args.venv_path, 'venv/bin/activate')} \n")
+        trainFile.write(f"python -m ensurepip --upgrade >> /deb/null 2>&1 \n")
+        trainFile.write(f"pip install -r {os.path.join(program_dir, 'requirements.txt')} >> /dev/null 2>&1\n")
         trainFile.write("# command to run \n \n")
         trainFile.write("export TRAINPROGRAM=" + trainProgram + "\n")
         trainFile.write("echo start-is: `date` \n \n")  # add start timestamp
