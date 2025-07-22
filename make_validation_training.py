@@ -438,8 +438,8 @@ for dataset_num in range(numOfSets):
     with open(os.path.join(args.out_path, train_job_filename), "w") as trainFile:
         trainFile.write("#!/usr/bin/bash \n")
         
-        
-        trainFile.write(f"source {os.path.join(args.venv_path, 'venv/bin/activate')} \n")
+        # source might cause some concurrency issues with multiple jobs running off the same venv
+        # trainFile.write(f"source {os.path.join(args.venv_path, 'venv/bin/activate')} \n")
         trainFile.write(f"python -m ensurepip --upgrade >> /dev/null 2>&1 \n")
         trainFile.write(f"pip install -r {os.path.join(program_dir, 'requirements.txt')} >> /dev/null 2>&1\n")
         trainFile.write("# command to run \n \n")
