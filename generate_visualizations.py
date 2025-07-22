@@ -185,7 +185,10 @@ def process_batch(model, input_tensor, labels, batch_idx, args, metadata, datase
     # Adjust labels by offset
     adjusted_labels = labels - args.label_offset
     
-    save_folder = f"{args.output_dir}/{dataset_name}"
+    # Create save folder 2 levels above current working directory
+    current_dir = Path.cwd()  # Current working directory (bee_analysis)
+    parent_dir = current_dir.parent.parent  # 2 levels up
+    save_folder = os.path.join(parent_dir, args.output_dir.lstrip('./'), dataset_name)
     
     # Generate GradCAM for each specified layer
     if args.generate_gradcam:
