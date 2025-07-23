@@ -22,8 +22,8 @@ import glob
 
 # Add the bee_analysis directory to the path for imports
 script_dir = Path(__file__).parent.absolute()
-bee_analysis_dir = script_dir / "bee_analysis"
-sys.path.insert(0, str(bee_analysis_dir))
+# Since we're already in bee_analysis, just add current directory
+sys.path.insert(0, str(script_dir))
 
 try:
     from models.alexnet import AlexLikeNet
