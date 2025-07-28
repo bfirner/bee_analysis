@@ -1,5 +1,5 @@
 import os
-
+import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -20,6 +20,21 @@ def get_layer_by_name(model, layer_name):
         layer = getattr(layer, part)
     return layer
 
+# Configure logging to use saliency.log
+def setup_saliency_logging():
+    """Ensure saliency operations log to saliency.log"""
+    logger = logging.getLogger(__name__)
+    if not logger.handlers:
+        handler = logging.FileHandler('saliency.log', mode='a')
+        formatter = logging.Formatter(
+            "%(asctime)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S"
+        )
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+    return logger
+
 
 def plot_saliency_map(
     model,
@@ -28,54 +43,120 @@ def plot_saliency_map(
     target_class=None,
     batch_num=None,
     model_name="model",
+    process_all_samples=True,
+    sample_idx=0,
 ):
     """
-    Generates a saliency map for the given input tensor and model,
-    annotating both the expected (target) and predicted classes.
+    Generates saliency maps for multi-channel (5-frame) input tensor,
+    creating separate saliency maps for each frame/channel.
+    
+    Args:
+        process_all_samples: If True, process all samples in batch. If False, process only sample_idx.
+        sample_idx: Which sample to process when process_all_samples=False (default: 0)
     """
     model.eval()
     device = next(model.parameters()).device
     input_tensor = input_tensor.to(device)
-    input_tensor.requires_grad_()
-
-    # Forward pass to get predictions
-    outputs = model(input_tensor)
-    pred_class = outputs.argmax(dim=1).item()
-
-    # Determine the target class for saliency (expected)
-    if target_class is None:
-        target_class = pred_class
-
-    # Zero gradients and backward for target class
-    model.zero_grad()
-    target = outputs[0, target_class]
-    target.backward()
-
-    # Extract and process saliency
-    saliency = input_tensor.grad.data.abs().squeeze().cpu().numpy()
-    if saliency.ndim == 1:
-        saliency = saliency.reshape(
-            (input_tensor.shape[2], input_tensor.shape[3]))
-    if saliency.ndim > 2:
-        saliency = saliency.mean(axis=tuple(range(saliency.ndim - 2)))
-
+    
+    batch_size = input_tensor.shape[0]
+    
+    if not process_all_samples:
+        # Process only one sample
+        if sample_idx >= batch_size:
+            sample_idx = 0  # Fallback to first sample
+        input_tensor = input_tensor[sample_idx:sample_idx+1]
+        batch_size = 1
+        start_idx = sample_idx
+    else:
+        start_idx = 0
+    
     # Prepare directory
     directory = f"saliency_maps/{save_folder}/"
     os.makedirs(directory, exist_ok=True)
+    
+    # Process each sample in the (possibly reduced) batch
+    for sample_idx_in_batch in range(batch_size):
+        # Get single sample for processing
+        single_sample = input_tensor[sample_idx_in_batch:sample_idx_in_batch+1]
+        single_sample.requires_grad_()
+        
+        # Forward pass to get predictions
+        outputs = model(single_sample)
+        pred_class = outputs.argmax(dim=1).item()
 
-    # Plot and save
-    plt.figure(figsize=(10, 10))
-    plt.imshow(saliency, cmap="hot")
-    plt.title(
-        f"Saliency Map - {model_name} (True: {target_class}, Pred: {pred_class})"
-    )
-    plt.axis("off")
-    filename = os.path.join(
-        directory,
-        f"saliency_map_{model_name}_batch{batch_num}_true{target_class}_pred{pred_class}.png",
-    )
-    plt.savefig(filename)
-    plt.close()
+        # Determine the target class for saliency
+        if target_class is None:
+            current_target_class = pred_class
+        elif isinstance(target_class, (list, tuple)):
+            current_target_class = target_class[start_idx + sample_idx_in_batch]
+        else:
+            current_target_class = target_class
+
+        # Zero gradients and backward for target class
+        model.zero_grad()
+        target = outputs[0, current_target_class]
+        target.backward()
+
+        # Extract saliency - keep all channels/frames separate
+        saliency = single_sample.grad.data.abs().squeeze(0).cpu().numpy()  # Remove batch dimension
+        
+        # Handle different input shapes
+        if saliency.ndim == 2:  # Single channel case (H, W)
+            saliency = saliency[np.newaxis, ...]  # Add channel dimension -> (1, H, W)
+        elif saliency.ndim == 3:  # Multi-channel case (C, H, W)
+            pass  # Already correct shape
+        else:
+            raise ValueError(f"Unexpected saliency shape: {saliency.shape}")
+
+        # Get number of channels/frames
+        num_channels = saliency.shape[0]
+        
+        # Create subplot for each frame/channel
+        fig, axes = plt.subplots(1, num_channels, figsize=(4 * num_channels, 4))
+        
+        # Handle single channel case
+        if num_channels == 1:
+            axes = [axes]
+
+        for i in range(num_channels):
+            im = axes[i].imshow(saliency[i], cmap="hot")
+            axes[i].set_title(f"Frame {i+1}")
+            axes[i].axis("off")
+            plt.colorbar(im, ax=axes[i], fraction=0.046, pad=0.04)
+
+        # Overall title
+        actual_sample_idx = start_idx + sample_idx_in_batch
+        fig.suptitle(
+            f"Saliency Maps - {model_name} Sample {actual_sample_idx} (True: {current_target_class}, Pred: {pred_class})",
+            fontsize=14
+        )
+        
+        # Save combined plot
+        filename = os.path.join(
+            directory,
+            f"saliency_map_{model_name}_batch{batch_num}_sample{actual_sample_idx}_true{current_target_class}_pred{pred_class}.png",
+        )
+        plt.tight_layout()
+        plt.savefig(filename, dpi=150, bbox_inches='tight')
+        plt.close()
+
+        # Also save individual frame saliency maps
+        for i in range(num_channels):
+            plt.figure(figsize=(6, 6))
+            plt.imshow(saliency[i], cmap="hot")
+            plt.title(f"Frame {i+1} Saliency - {model_name} Sample {actual_sample_idx} (True: {current_target_class}, Pred: {pred_class})")
+            plt.axis("off")
+            plt.colorbar(fraction=0.046, pad=0.04)
+            
+            frame_filename = os.path.join(
+                directory,
+                f"saliency_frame{i+1}_{model_name}_batch{batch_num}_sample{actual_sample_idx}_true{current_target_class}_pred{pred_class}.png",
+            )
+            plt.savefig(frame_filename, dpi=150, bbox_inches='tight')
+            plt.close()
+            
+        # Clear gradients to avoid memory issues
+        single_sample.grad = None
 
 
 def plot_gradcam_for_multichannel_input(
