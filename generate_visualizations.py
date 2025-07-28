@@ -38,14 +38,37 @@ except ImportError as e:
     sys.exit(1)
 
 
-def setup_logging(debug=False):
-    """Setup logging configuration"""
+def setup_logging(debug=False, log_file="saliency.log"):
+    """Setup logging configuration with file output"""
     level = logging.DEBUG if debug else logging.INFO
-    logging.basicConfig(
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        level=level,
+    
+    # Create formatter
+    formatter = logging.Formatter(
+        "%(asctime)s - %(levelname)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S"
     )
+    
+    # Clear existing handlers
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+    
+    # Create file handler
+    file_handler = logging.FileHandler(log_file, mode='a')
+    file_handler.setLevel(level)
+    file_handler.setFormatter(formatter)
+    
+    # Create console handler for immediate feedback
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(level)
+    console_handler.setFormatter(formatter)
+    
+    # Configure root logger
+    logging.basicConfig(
+        level=level,
+        handlers=[file_handler, console_handler]
+    )
+    
+    logging.info(f"Logging to file: {log_file}")
 
 
 def find_dataset_files(dataset_dir=None, dataset_files=None):
@@ -138,19 +161,22 @@ def create_dataset(dataset_path, sample_frames, batch_size=32, num_workers=4):
         logging.debug(f"Decode strings: {decode_strs}")
         
         dataset = (
-            wds.WebDataset(dataset_path, shardshuffle=20000 // sample_frames)
+            wds.WebDataset(dataset_path, shardshuffle=20000 // sample_frames, empty_check=False)  # Add empty_check=False
             .decode("l")  # decode as grayscale images
             .to_tuple(*decode_strs)
         )
         
+        # Reduce num_workers for small datasets
+        effective_workers = min(num_workers, 1) if "dataset_0" in dataset_path else num_workers
+        
         dataloader = torch.utils.data.DataLoader(
             dataset,
             batch_size=batch_size,
-            num_workers=num_workers,
+            num_workers=effective_workers,  # Use reduced workers
             drop_last=False
         )
         
-        logging.info(f"Created dataset with batch_size={batch_size}, num_workers={num_workers}")
+        logging.info(f"Created dataset with batch_size={batch_size}, num_workers={effective_workers}")
         return dataset, dataloader
         
     except Exception as e:
@@ -185,10 +211,8 @@ def process_batch(model, input_tensor, labels, batch_idx, args, metadata, datase
     # Adjust labels by offset
     adjusted_labels = labels - args.label_offset
     
-    # Create save folder 2 levels above current working directory
-    current_dir = Path.cwd()  # Current working directory (bee_analysis)
-    parent_dir = current_dir.parent.parent  # 2 levels up
-    save_folder = os.path.join(parent_dir, args.output_dir.lstrip('./'), dataset_name)
+    # Create save folder directly in the saliency_maps directory
+    save_folder = os.path.join("saliency_maps", dataset_name)
     
     # Generate GradCAM for each specified layer
     if args.generate_gradcam:

@@ -1,5 +1,5 @@
 import os
-
+import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -19,6 +19,21 @@ def get_layer_by_name(model, layer_name):
     for part in parts:
         layer = getattr(layer, part)
     return layer
+
+# Configure logging to use saliency.log
+def setup_saliency_logging():
+    """Ensure saliency operations log to saliency.log"""
+    logger = logging.getLogger(__name__)
+    if not logger.handlers:
+        handler = logging.FileHandler('saliency.log', mode='a')
+        formatter = logging.Formatter(
+            "%(asctime)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S"
+        )
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+    return logger
 
 
 def plot_saliency_map(
