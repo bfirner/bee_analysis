@@ -15,8 +15,8 @@ else
 fi
 
 echo "video_timestamp_relative_ns, odd" > "$outpath/labels.csv"
-for num in $(seq $1); do
-    convert -background white -fill black -gravity center -size $size -pointsize 24 label:$num "$outpath/synthetic_test_$num.png"
+for num in $(seq "$1"); do
+    convert -background white -fill black -gravity center -size $size -pointsize 24 label:"$num" "$outpath/synthetic_test_$num.png"
     # Label 0 for even and 1 for odd
     oddness=$(($num % 2))
     echo "$((num * 33000)), $oddness" >> "$outpath/labels.csv"

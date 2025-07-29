@@ -43,43 +43,43 @@ emit_sbatch_script () {
     local jid_depends="$6"
 
     # Create the script
-    echo -e "#!/usr/bin/bash -l\n\n" > $sname
-    echo -e "# automatically created by create_slurm_workflow.sh\n\n" >> $sname
-    echo -e "#SBATCH --job-name=${wfname}-$sname" >> $sname
-    echo -e "#SBATCH --output=${wfname}-$sname.log" >> $sname
+    echo -e "#!/usr/bin/bash -l\n\n" > "$sname"
+    echo -e "# automatically created by create_slurm_workflow.sh\n\n" >> "$sname"
+    echo -e "#SBATCH --job-name=${wfname}-$sname" >> "$sname"
+    echo -e "#SBATCH --output=${wfname}-$sname.log" >> "$sname"
     # Put a check for an expected file in the script
     if [[ $# -ge 5 ]]; then
         # Check for the given file before executing the script
-        echo "if [[ ! -e $file_depends ]]; then" >> $sname
-        echo "    echo \"Missing expected input $file_depends\"" >> $sname
-        echo "    touch \"${sname}.failure\"" >> $sname
-        echo '    exit 2' >> $sname
-        echo -e 'fi\n' >> $sname
+        echo "if [[ ! -e $file_depends ]]; then" >> "$sname"
+        echo "    echo \"Missing expected input $file_depends\"" >> "$sname"
+        echo "    touch \"${sname}.failure\"" >> "$sname"
+        echo '    exit 2' >> "$sname"
+        echo -e 'fi\n' >> "$sname"
     fi
 
     # Go to the output directory
-    echo "cd \"$wfpath\"" >> $sname
+    echo "cd \"$wfpath\"" >> "$sname"
 
     # Run the command
-    echo -e "succ=\$($command)\n" >> $sname
+    echo -e "succ=\$($command)\n" >> "$sname"
 
     # Test the command success within the script and create a fail or succ file.
-    echo "if [[ \$? -eq 0 ]]; then" >> $sname
-    echo "    touch \"${sname}.success\"" >> $sname
-    echo "    exit 0" >> $sname
-    echo "else" >> $sname
-    echo "    touch \"${sname}.failure\"" >> $sname
-    echo "    exit 1" >> $sname
-    echo "fi" >> $sname
+    echo "if [[ \$? -eq 0 ]]; then" >> "$sname"
+    echo "    touch \"${sname}.success\"" >> "$sname"
+    echo "    exit 0" >> "$sname"
+    echo "else" >> "$sname"
+    echo "    touch \"${sname}.failure\"" >> "$sname"
+    echo "    exit 1" >> "$sname"
+    echo "fi" >> "$sname"
 
     # Print the command, with job dependencies if there are any, into the slurmfile
     if [[ $# -ge 6 ]]; then
-        echo -e "$jid=\$($sb --dependency=afterany:\$$jid_depends $sb_args $sname)\n" >> $slurmfile
+        echo -e "$jid=\$($sb --dependency=afterany:\$$jid_depends $sb_args $sname)\n" >> "$slurmfile"
     else
-        echo -e "$jid=\$($sb $sb_args $sname)\n" >> $slurmfile
+        echo -e "$jid=\$($sb $sb_args $sname)\n" >> "$slurmfile"
     fi
-    echo -e "echo Launched job \$$jid\n" >> $slurmfile
-    chmod 755 $sname
+    echo -e "echo Launched job \$$jid\n" >> "$slurmfile"
+    chmod 755 "$sname"
 }
 
 # Copies the template script ($3) into the given file name ($1) and adds that command to the end of
@@ -102,9 +102,9 @@ emit_sbatch_from_sh () {
 
     # Print the command, with job dependencies if there are any, into the slurmfile
     if [[ $# -ge 5 ]] && [[ ! -z $jid_depends ]]; then
-        echo -e "$jid=\$($sb --dependency=afterany:\$$jid_depends $sb_args $sname)\n" >> $slurmfile
+        echo -e "$jid=\$($sb --dependency=afterany:\$$jid_depends $sb_args $sname)\n" >> "$slurmfile"
     else
-        echo -e "$jid=\$($sb $sb_args $sname)\n" >> $slurmfile
+        echo -e "$jid=\$($sb $sb_args $sname)\n" >> "$slurmfile"
     fi
 
     # We could use an array expansion instead of shifts, but shifts are easy to understand and bash
@@ -119,10 +119,10 @@ emit_sbatch_from_sh () {
         local value="$(printf "%q" "$value")"
         sed -i "s:$key:$value:g" "$sname"
     done
-    echo -e "echo Launched job \$$jid\n" >> $slurmfile
+    echo -e "echo Launched job \$$jid\n" >> "$slurmfile"
 
     # Make the script executable
-    chmod 755 $sname
+    chmod 755 "$sname"
 }
 
 
@@ -164,7 +164,7 @@ sb="${codepath}/sbatch_wrapper.sh"
 # Create an output directory and change into it
 mkdir -p "${wfname}"
 wfpath=$(realpath "${wfname}")
-cd "${wfpath}"
+cd "${wfpath}" || exit
 # Remove anything in the directory that could disturb the workflow
 # TODO Nothing is using these files yet, but they could be useful in the future.
 statfiles=(/*.success)
@@ -177,10 +177,10 @@ if [[ -f ${statfiles[0]} ]]; then
 fi
 
 slurmfile="${wfpath}/run_workflow.sh"
-echo -e "#!/usr/bin/bash\n" > $slurmfile
-echo "# Run this command as a regular bash shell" >> $slurmfile
-echo -e "\n# automatically created by create_slurm_workflow.sh\n\n" >> $slurmfile
-chmod 755 $slurmfile
+echo -e "#!/usr/bin/bash\n" > "$slurmfile"
+echo "# Run this command as a regular bash shell" >> "$slurmfile"
+echo -e "\n# automatically created by create_slurm_workflow.sh\n\n" >> "$slurmfile"
+chmod 755 "$slurmfile"
 
 # Check if the data path exists
 if [[ ! -e ${datapath} ]]; then

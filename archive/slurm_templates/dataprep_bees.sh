@@ -19,9 +19,9 @@
 
 # This installation has ffmpeg-python installed
 export PATH=/koko/system/anaconda/envs/python38/bin:$PATH
-echo start-is: `date`
+echo start-is: $(date)
 
-cd OUT_PATH
+cd OUT_PATH || exit
 
 in_csv="CSV_BASE_${SLURM_ARRAY_TASK_ID}.csv"
 out_tar="TAR_BASE_${SLURM_ARRAY_TASK_ID}.tar"
@@ -31,7 +31,7 @@ out_tar="TAR_BASE_${SLURM_ARRAY_TASK_ID}.tar"
 python3 BIN_PATH/VidActRecDataprep.py --width 400 --height 400 --samples 500 --crop_noise 20 --out_channels 1 --frames_per_sample 1 "${in_csv}" "${out_tar}"
 succ=$?
 
-echo end-is: `date`
+echo end-is: $(date)
 
 # Success?
 exit $succ

@@ -36,23 +36,23 @@ fi
 #     date -d "2021-07-28 14:02:06" +%Y%M%d_%H%M%S
 
 # Using 'grep .' to get all nonblank lines
-readarray -t all_state_switches < <( grep --no-filename . $target/*.txt |sed "s/[^0-9_]//g" | sort -n )
+readarray -t all_state_switches < <( grep --no-filename . "$target"/*.txt |sed "s/[^0-9_]//g" | sort -n )
 
 # Print out the csv header
 echo "file, class, begin frame, end frame"
 
 # A function to parse the time string from the log files.
 function switch_string_to_time () {
-    local swstr=$(echo $1 | sed 's/\(....\)\(..\)\(..\)_\(..\)\(..\)\(..\)/\1-\2-\3 \4:\5:\6/g')
+    local swstr=$(echo "$1" | sed 's/\(....\)\(..\)\(..\)_\(..\)\(..\)\(..\)/\1-\2-\3 \4:\5:\6/g')
     local swseconds=$(date -d "$swstr" +%s)
-    echo $swseconds
+    echo "$swseconds"
 }
 
 # A function to check the log files to determine the label associate with a timestamp
 # Arguments are the timestamp string and the target directory with the logs
 function switch_label () {
-    local state_file=$(grep $1 $2/*.txt -H)
-    state_file=${state_file##$2/}
+    local state_file=$(grep "$1" "$2"/*.txt -H)
+    state_file=${state_file##"$2"/}
     state_file=${state_file%%.txt*}
     local label=""
     if [[ $state_file == "logNeg" ]]; then
@@ -67,7 +67,7 @@ function switch_label () {
 
 for video in $target/*.h264; do
     # Reformat the video date to the same date format as in the magnetic switching logs
-    v=${video##$target/}
+    v=${video##"$target"/}
     # Get the times in seconds from 1970-01-01 00:00:00 UTC
     v=${v%%.*.h264}
     vdate=$(date -d "$v" +%Y%m%d_%H%M%S)
@@ -93,9 +93,9 @@ for video in $target/*.h264; do
     cur_switch_index=0
     while [[ $cur_switch_index -lt ${#all_state_switches[@]} ]] && [[ $prev_sw_frame -lt $vframes ]]; do
         switch=${all_state_switches[$cur_switch_index]}
-        swseconds=$(switch_string_to_time $switch)
+        swseconds=$(switch_string_to_time "$switch")
         swframe=$(echo "($swseconds - $vseconds) * $fps" | bc)
-        label=$(switch_label $switch $target)
+        label=$(switch_label "$switch" "$target")
         # Do we have a label for this time segment?
         if [[ $prev_sw_frame -le $next_frame ]] && [[ $swframe -ge $next_frame ]]; then
             # Print out a row as long as there was a previous transition label
