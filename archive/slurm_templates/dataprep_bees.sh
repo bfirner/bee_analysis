@@ -35,4 +35,3 @@ echo end-is: "$(date)"
 
 # Success?
 exit "$succ"
-

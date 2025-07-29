@@ -30,24 +30,23 @@ evaldata="BASE_DATA_$SLURM_ARRAY_TASK_ID.tar"
 
 # The training data is everything except for the
 traindata=""
-for I in "$(seq 1 $((${SLURM_ARRAY_TASK_ID}-1)))"; do
-    traindata+=" BASE_DATA_$I.tar"
+for I in "$(seq 1 $((${SLURM_ARRAY_TASK_ID} - 1)))"; do
+  traindata+=" BASE_DATA_$I.tar"
 done
 
-for I in "$(seq $((${SLURM_ARRAY_TASK_ID}+1)) MAX_FOLD)"; do
-    traindata+=" BASE_DATA_$I.tar"
+for I in "$(seq $((${SLURM_ARRAY_TASK_ID} + 1)) MAX_FOLD)"; do
+  traindata+=" BASE_DATA_$I.tar"
 done
 
 # Train
 python3 VidActRecTrain.py --epochs 10 --template bees \
-    --outname CHECKPOINT."$SLURM_ARRAY_TASK_ID" \
-    --not_deterministic \
-    --save_worst_n 100 \
-    --evaluate "$evaldata" "$traindata"
+  --outname CHECKPOINT."$SLURM_ARRAY_TASK_ID" \
+  --not_deterministic \
+  --save_worst_n 100 \
+  --evaluate "$evaldata" "$traindata"
 succ=$?
 
 echo end-is: "$(date)"
 
 # Success?
 exit "$succ"
-
