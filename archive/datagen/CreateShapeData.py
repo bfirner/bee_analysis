@@ -71,8 +71,7 @@ all_shapes = {
 }
 
 parser = argparse.ArgumentParser(
-    description=
-    "Perform data preparation to create synthetic images for DNN training on a video set."
+    description="Perform data preparation to create synthetic images for DNN training on a video set."
 )
 parser.add_argument("outpath",
                     type=str,

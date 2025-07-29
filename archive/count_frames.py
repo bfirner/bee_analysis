@@ -73,8 +73,7 @@ def main():
     which = "count"
 
     parser = argparse.ArgumentParser(
-        description=
-        "This program processes video files to either count frames or remove the background. Assumes video files end in .h254 extension"
+        description="This program processes video files to either count frames or remove the background. Assumes video files end in .h254 extension"
     )
     parser.add_argument("--dir",
                         type=str,

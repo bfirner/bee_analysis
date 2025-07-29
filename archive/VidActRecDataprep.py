@@ -47,16 +47,14 @@ parser.add_argument(
     type=int,
     required=False,
     default=224,
-    help=
-    "Width of output images (obtained via cropping, after applying scale).",
+    help="Width of output images (obtained via cropping, after applying scale).",
 )
 parser.add_argument(
     "--height",
     type=int,
     required=False,
     default=224,
-    help=
-    "Height of output images (obtained via cropping, after applying scale).",
+    help="Height of output images (obtained via cropping, after applying scale).",
 )
 parser.add_argument(
     "--resize-strategy",
@@ -64,8 +62,7 @@ parser.add_argument(
     required=False,
     default="crop",
     choices=["crop", "scale"],
-    help=
-    "This deprecated option is ignored. Use --scale to scale, and crop with --width and "
+    help="This deprecated option is ignored. Use --scale to scale, and crop with --width and "
     "--height, with --crop_noise and --crop_x_offset and --crop_y_offset for more options.",
 )
 parser.add_argument(
@@ -73,32 +70,28 @@ parser.add_argument(
     type=float,
     required=False,
     default=1.0,
-    help=
-    "Scaling to apply to each dimension (before cropping). A value of 0.5 will yield 0.25 resolution.",
+    help="Scaling to apply to each dimension (before cropping). A value of 0.5 will yield 0.25 resolution.",
 )
 parser.add_argument(
     "--crop_noise",
     type=int,
     required=False,
     default=0,
-    help=
-    "The noise (in pixels) to randomly add to the crop location in both the x and y axis.",
+    help="The noise (in pixels) to randomly add to the crop location in both the x and y axis.",
 )
 parser.add_argument(
     "--crop_x_offset",
     type=int,
     required=False,
     default=0,
-    help=
-    "The offset (in pixels) of the crop location on the scaled image in the x dimension.",
+    help="The offset (in pixels) of the crop location on the scaled image in the x dimension.",
 )
 parser.add_argument(
     "--crop_y_offset",
     type=int,
     required=False,
     default=0,
-    help=
-    "The offset (in pixels) of the crop location on the scaled image in the y dimension.",
+    help="The offset (in pixels) of the crop location on the scaled image in the y dimension.",
 )
 parser.add_argument(
     "--interval",
@@ -140,8 +133,7 @@ parser.add_argument(
     required=False,
     choices=["none", "mog2", "knn"],
     default="none",
-    help=
-    "Background subtraction algorithm to apply to the input video, or none.",
+    help="Background subtraction algorithm to apply to the input video, or none.",
 )
 args = parser.parse_args()
 # Create a writer for the WebDataset
