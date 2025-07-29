@@ -32,10 +32,7 @@ def make_frame(row):
     return img_back
 
 
-def add_transparent_image(background,
-                          foreground,
-                          x_offset=None,
-                          y_offset=None):
+def add_transparent_image(background, foreground, x_offset=None, y_offset=None):
     bg_h, bg_w, bg_channels = background.shape
     fg_h, fg_w, fg_channels = foreground.shape
 
@@ -63,8 +60,8 @@ def add_transparent_image(background,
     bg_y = max(0, y_offset)
     fg_x = max(0, x_offset * -1)
     fg_y = max(0, y_offset * -1)
-    foreground = foreground[fg_y:fg_y + h, fg_x:fg_x + w]
-    background_subsection = background[bg_y:bg_y + h, bg_x:bg_x + w]
+    foreground = foreground[fg_y : fg_y + h, fg_x : fg_x + w]
+    background_subsection = background[bg_y : bg_y + h, bg_x : bg_x + w]
 
     # separate alpha and color channels from the foreground image
     foreground_colors = foreground[:, :, :3]
@@ -74,22 +71,21 @@ def add_transparent_image(background,
     alpha_mask = np.dstack((alpha_channel, alpha_channel, alpha_channel))
 
     # combine the background with the overlay image weighted by alpha
-    composite = (background_subsection * (1 - alpha_mask) +
-                 foreground_colors * alpha_mask)
+    composite = (
+        background_subsection * (1 - alpha_mask) + foreground_colors * alpha_mask
+    )
 
     # overwrite the section of the background image that has been updated
-    background[bg_y:bg_y + h, bg_x:bg_x + w] = composite
+    background[bg_y : bg_y + h, bg_x : bg_x + w] = composite
 
 
 def generate_video(data):
-    df = pd.read_csv(data,
-                     sep="(\s{3,})",
-                     skiprows=SKIP_N_ROWS,
-                     engine="python")
+    df = pd.read_csv(data, sep="(\s{3,})", skiprows=SKIP_N_ROWS, engine="python")
     df.drop(index=df.index[:REMOVE_N_ROWS], inplace=True)
     vid_filename = data.replace(".txt", ".avi")
-    out_vid = cv2.VideoWriter(vid_filename, cv2.VideoWriter_fourcc(*"DIVX"),
-                              VID_FPS, (VID_WIDTH, VID_HEIGHT))
+    out_vid = cv2.VideoWriter(
+        vid_filename, cv2.VideoWriter_fourcc(*"DIVX"), VID_FPS, (VID_WIDTH, VID_HEIGHT)
+    )
     # pull the first timestamps's angle as the prev_angle
     prev_angle = df["Angle (deg)"].iloc[0]
     flipped_180 = False
@@ -97,7 +93,7 @@ def generate_video(data):
         curr_angle = row["Angle (deg)"]
         delta_angle = curr_angle - prev_angle
         if (
-                abs(delta_angle) > 45
+            abs(delta_angle) > 45
         ):  # this can be any number probably greater than 1 degree and less than 180 since each normal frame should only have tenths of angle difference
             # if a flip happens, then flipped_180 will be true until it flips back to the correct value
             flipped_180 = not flipped_180

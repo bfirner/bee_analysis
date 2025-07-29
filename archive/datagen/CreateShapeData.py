@@ -10,6 +10,7 @@ import random
 import torch
 import webdataset as wds
 from torchvision import transforms
+
 # import math
 # import numpy
 # import sys
@@ -18,74 +19,70 @@ from torchvision import transforms
 # A collection of shapes that have some similarities to one another, but should still be simple
 # enough to disambiguate.
 all_shapes = {
-    "square4x4":
-    torch.ones(4, 4),
-    "square5x5":
-    torch.ones(5, 5),
-    "square9x9":
-    torch.ones(9, 9),
-    "triangle3up":
-    torch.tensor([[0, 0, 1, 0, 0], [0, 1, 1, 1, 0], [1, 1, 1, 1, 1]]),
-    "triangle3down":
-    torch.tensor([[1, 1, 1, 1, 1], [0, 1, 1, 1, 0], [0, 0, 1, 0, 0]]),
-    "triangle5right":
-    torch.tensor([
-        [0, 0, 0, 0, 1],
-        [0, 0, 0, 1, 1],
-        [0, 0, 1, 1, 1],
-        [0, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1],
-    ]),
-    "triangle5left":
-    torch.tensor([
-        [1, 0, 0, 0, 0],
-        [1, 1, 0, 0, 0],
-        [1, 1, 1, 0, 0],
-        [1, 1, 1, 1, 0],
-        [1, 1, 1, 1, 1],
-    ]),
-    "chevron5":
-    torch.tensor([
-        [0, 0, 1, 0, 0],
-        [0, 1, 1, 1, 0],
-        [1, 1, 1, 1, 1],
-        [1, 1, 0, 1, 1],
-        [1, 0, 0, 0, 1],
-    ]),
-    "chevron5inverted":
-    torch.tensor([
-        [1, 0, 0, 0, 1],
-        [1, 1, 0, 1, 1],
-        [1, 1, 1, 1, 1],
-        [0, 1, 1, 1, 0],
-        [0, 0, 1, 0, 0],
-    ]),
-    "diamond5":
-    torch.tensor([
-        [0, 0, 1, 0, 0],
-        [0, 1, 1, 1, 0],
-        [1, 1, 1, 1, 1],
-        [0, 1, 1, 1, 0],
-        [0, 0, 1, 0, 0],
-    ]),
+    "square4x4": torch.ones(4, 4),
+    "square5x5": torch.ones(5, 5),
+    "square9x9": torch.ones(9, 9),
+    "triangle3up": torch.tensor([[0, 0, 1, 0, 0], [0, 1, 1, 1, 0], [1, 1, 1, 1, 1]]),
+    "triangle3down": torch.tensor([[1, 1, 1, 1, 1], [0, 1, 1, 1, 0], [0, 0, 1, 0, 0]]),
+    "triangle5right": torch.tensor(
+        [
+            [0, 0, 0, 0, 1],
+            [0, 0, 0, 1, 1],
+            [0, 0, 1, 1, 1],
+            [0, 1, 1, 1, 1],
+            [1, 1, 1, 1, 1],
+        ]
+    ),
+    "triangle5left": torch.tensor(
+        [
+            [1, 0, 0, 0, 0],
+            [1, 1, 0, 0, 0],
+            [1, 1, 1, 0, 0],
+            [1, 1, 1, 1, 0],
+            [1, 1, 1, 1, 1],
+        ]
+    ),
+    "chevron5": torch.tensor(
+        [
+            [0, 0, 1, 0, 0],
+            [0, 1, 1, 1, 0],
+            [1, 1, 1, 1, 1],
+            [1, 1, 0, 1, 1],
+            [1, 0, 0, 0, 1],
+        ]
+    ),
+    "chevron5inverted": torch.tensor(
+        [
+            [1, 0, 0, 0, 1],
+            [1, 1, 0, 1, 1],
+            [1, 1, 1, 1, 1],
+            [0, 1, 1, 1, 0],
+            [0, 0, 1, 0, 0],
+        ]
+    ),
+    "diamond5": torch.tensor(
+        [
+            [0, 0, 1, 0, 0],
+            [0, 1, 1, 1, 0],
+            [1, 1, 1, 1, 1],
+            [0, 1, 1, 1, 0],
+            [0, 0, 1, 0, 0],
+        ]
+    ),
 }
 
 parser = argparse.ArgumentParser(
     description="Perform data preparation to create synthetic images for DNN training on a video set."
 )
-parser.add_argument("outpath",
-                    type=str,
-                    help="Output directory for the prepared WebDataset.")
-parser.add_argument("--width",
-                    type=int,
-                    required=False,
-                    default=224,
-                    help="Width of output images.")
-parser.add_argument("--height",
-                    type=int,
-                    required=False,
-                    default=224,
-                    help="Height of output images.")
+parser.add_argument(
+    "outpath", type=str, help="Output directory for the prepared WebDataset."
+)
+parser.add_argument(
+    "--width", type=int, required=False, default=224, help="Width of output images."
+)
+parser.add_argument(
+    "--height", type=int, required=False, default=224, help="Height of output images."
+)
 parser.add_argument(
     "--motion",
     type=int,
@@ -122,8 +119,9 @@ args = parser.parse_args()
 
 class DataCreator:
 
-    def __init__(self, num_samples, frames_per_sample, shapes_per_sample,
-                 width, height, speed):
+    def __init__(
+        self, num_samples, frames_per_sample, shapes_per_sample, width, height, speed
+    ):
         """
         Samples have no overlaps. For example, a 10 second video at 30fps has 300 samples of 1
         frame, 150 samples of 2 frames with a frame interval of 0, or 100 samples of 2 frames with a
@@ -164,8 +162,7 @@ class DataCreator:
             # The ground truth are the coordinates of all placed shapes, with another output
             # indicating if the shape is present.
             shape_list = list(all_shapes.values())
-            selections = random.sample(range(len(all_shapes)),
-                                       k=self.shapes_per_sample)
+            selections = random.sample(range(len(all_shapes)), k=self.shapes_per_sample)
             # Create the ground truth. First make some zero tensors then fill in locations and
             # class detection information.
             gt_detection = torch.zeros(len(all_shapes))
@@ -173,9 +170,11 @@ class DataCreator:
             for idx in selections:
                 gt_detection[idx] = 1
                 gt_location[idx * 2] = random.randint(
-                    0, self.height - shape_list[idx].size(0))
+                    0, self.height - shape_list[idx].size(0)
+                )
                 gt_location[idx * 2 + 1] = random.randint(
-                    0, self.width - shape_list[idx].size(1))
+                    0, self.width - shape_list[idx].size(1)
+                )
             groundtruth = (gt_detection, gt_location)
             # TODO Also generate a direction and speed.
             # TODO On subsequent frames move the image.
@@ -187,7 +186,7 @@ class DataCreator:
                     shape = shape_list[idx]
                     y = int(gt_location[idx * 2].item())
                     x = int(gt_location[idx * 2 + 1].item())
-                    buffer[:, y:y + shape.size(0), x:x + shape.size(1)] = shape
+                    buffer[:, y : y + shape.size(0), x : x + shape.size(1)] = shape
             # Yield the sample
             yield buffer, groundtruth
 

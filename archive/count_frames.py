@@ -75,14 +75,10 @@ def main():
     parser = argparse.ArgumentParser(
         description="This program processes video files to either count frames or remove the background. Assumes video files end in .h254 extension"
     )
-    parser.add_argument("--dir",
-                        type=str,
-                        help="Directory of videos.",
-                        default=".")
-    parser.add_argument("--which",
-                        type=str,
-                        help="which operation: <count|noBg>",
-                        default="count")
+    parser.add_argument("--dir", type=str, help="Directory of videos.", default=".")
+    parser.add_argument(
+        "--which", type=str, help="which operation: <count|noBg>", default="count"
+    )
     parser.add_argument(
         "--bgalg",
         type=str,
@@ -128,9 +124,9 @@ def main():
 
     print("about to run ffprobe in parallel: ", parallel_command)
     # run the parallel command
-    process = subprocess.Popen(parallel_command,
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
+    process = subprocess.Popen(
+        parallel_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
     stdout, stderr = process.communicate()
 
     # Decode the output and split it into lines

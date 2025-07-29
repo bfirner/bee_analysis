@@ -14,8 +14,10 @@ def testVideoReading(tmp_path):
     # Create the video in the tmp path
     desired_frames = 60
     subprocess.run(
-        shlex.split("bash generate_test_video.sh {} {}".format(
-            desired_frames, tmp_path)))
+        shlex.split(
+            "bash generate_test_video.sh {} {}".format(desired_frames, tmp_path)
+        )
+    )
 
     video_path = os.path.join(tmp_path, "synthetic_test_video.mp4")
     provider = ip.getImageProvider(video_path)
@@ -40,13 +42,13 @@ def testImageReading(tmp_path):
     # Create the video in the tmp path
     desired_frames = 60
     subprocess.run(
-        shlex.split("bash generate_test_video.sh {} {}".format(
-            desired_frames, tmp_path)))
+        shlex.split(
+            "bash generate_test_video.sh {} {}".format(desired_frames, tmp_path)
+        )
+    )
 
     video_path = os.path.join(tmp_path, "synthetic_test_{}.png")
-    provider = ip.getImageProvider(video_path,
-                                   first_frame=1,
-                                   target_format="gray")
+    provider = ip.getImageProvider(video_path, first_frame=1, target_format="gray")
 
     # Test number of frames
     assert provider.totalFrames() == desired_frames
@@ -68,8 +70,10 @@ def testVideoSeeking(tmp_path):
     # Create the video in the tmp path
     desired_frames = 300
     subprocess.run(
-        shlex.split("bash generate_test_video.sh {} {}".format(
-            desired_frames, tmp_path)))
+        shlex.split(
+            "bash generate_test_video.sh {} {}".format(desired_frames, tmp_path)
+        )
+    )
 
     video_path = os.path.join(tmp_path, "synthetic_test_video.mp4")
     provider = ip.getImageProvider(video_path)
@@ -80,5 +84,4 @@ def testVideoSeeking(tmp_path):
         frames.append(frame)
 
     for test_idx in [0, 1, 0, 23, 1, 280, 180, 250]:
-        numpy.testing.assert_array_equal(frames[test_idx],
-                                         provider.getFrame(test_idx))
+        numpy.testing.assert_array_equal(frames[test_idx], provider.getFrame(test_idx))

@@ -26,22 +26,26 @@ from utility.patch_common import imagePreprocessFromCoords
 from utility.video_utility import getVideoInfo
 from utility.video_utility import VideoSampler
 from utility.video_utility import vidSamplingCommonCrop
+
 # Helper function to convert to images
 
 parser = argparse.ArgumentParser(
-    description="Perform data preparation for DNN training on a video set.")
+    description="Perform data preparation for DNN training on a video set."
+)
 parser.add_argument(
     "datalist",
     type=str,
-    help=("A csv file with video files and labels."
-          ' Columns should be "file," "label," "begin," and "end".'
-          ' The "begin" and "end" columns are in frames.'
-          ' If the "begin" and "end" columns are not present,'
-          " then the label will be applied to the entire video."),
+    help=(
+        "A csv file with video files and labels."
+        ' Columns should be "file," "label," "begin," and "end".'
+        ' The "begin" and "end" columns are in frames.'
+        ' If the "begin" and "end" columns are not present,'
+        " then the label will be applied to the entire video."
+    ),
 )
-parser.add_argument("outpath",
-                    type=str,
-                    help="Output directory for the prepared WebDataset.")
+parser.add_argument(
+    "outpath", type=str, help="Output directory for the prepared WebDataset."
+)
 parser.add_argument(
     "--width",
     type=int,
@@ -122,11 +126,9 @@ parser.add_argument(
     default=3,
     help="Channels of output images.",
 )
-parser.add_argument("--threads",
-                    type=int,
-                    required=False,
-                    default=1,
-                    help="Number of thread workers")
+parser.add_argument(
+    "--threads", type=int, required=False, default=1, help="Number of thread workers"
+)
 parser.add_argument(
     "--background_subtraction",
     type=str,
@@ -151,9 +153,7 @@ with open(args.datalist, newline="") as datacsv:
         # Read the next video
         # Make sure that this line is sane
         if 4 != len(row):
-            print(
-                f"Row '{row}' does not have the correct number of columns (4)."
-            )
+            print(f"Row '{row}' does not have the correct number of columns (4).")
         else:
             path = row[file_col]
             try:
@@ -179,13 +179,13 @@ with open(args.datalist, newline="") as datacsv:
                 os.exit(-1)
             for sample_num, frame_data in enumerate(sampler):
                 frame, video_path, frame_num = frame_data
-                base_name = (os.path.basename(video_path).replace(
-                    " ", "_").replace(".", "_"))
+                base_name = (
+                    os.path.basename(video_path).replace(" ", "_").replace(".", "_")
+                )
                 video_time = os.path.basename(video_path).split(".")[0]
                 # TODO FIXME Convert the time from the video to the current frame time.
                 # TODO Assuming 3fps bee videos
-                time_sec = time.mktime(
-                    time.strptime(video_time, "%Y-%m-%d %H:%M:%S"))
+                time_sec = time.mktime(time.strptime(video_time, "%Y-%m-%d %H:%M:%S"))
                 time_struct = time.localtime(time_sec + int(frame_num[0]) // 3)
                 curtime = time.strftime("%Y-%m-%d %H:%M:%S", time_struct)
                 metadata = f"{video_path},{frame_num[0]},{curtime}"
@@ -206,11 +206,9 @@ with open(args.datalist, newline="") as datacsv:
                 if 1 == args.frames_per_sample:
                     processed = imagePreprocessFromCoords(frame[0], improc)
                     if 3 == args.out_channels:
-                        img = transforms.ToPILImage()(processed /
-                                                      255.0).convert("RGB")
+                        img = transforms.ToPILImage()(processed / 255.0).convert("RGB")
                     else:
-                        img = transforms.ToPILImage()(processed /
-                                                      255.0).convert("L")
+                        img = transforms.ToPILImage()(processed / 255.0).convert("L")
                     # Now save the image as a png into a buffer in memory
                     buf = io.BytesIO()
                     img.save(fp=buf, format="png")
@@ -222,10 +220,8 @@ with open(args.datalist, newline="") as datacsv:
                         "image_scale": str(args.scale).encode("utf-8"),
                         "patch_width": str(args.width).encode("utf-8"),
                         "patch_height": str(args.height).encode("utf-8"),
-                        "crop_x_offset":
-                        str(args.crop_x_offset).encode("utf-8"),
-                        "crop_y_offset":
-                        str(args.crop_y_offset).encode("utf-8"),
+                        "crop_x_offset": str(args.crop_x_offset).encode("utf-8"),
+                        "crop_y_offset": str(args.crop_y_offset).encode("utf-8"),
                         "original_width": str(sampler.width).encode("utf-8"),
                         "original_height": str(sampler.height).encode("utf-8"),
                     }
@@ -236,11 +232,13 @@ with open(args.datalist, newline="") as datacsv:
                         # add preprocessing here
                         processed = imagePreprocessFromCoords(frame[i], improc)
                         if 3 == args.out_channels:
-                            img = transforms.ToPILImage()(processed /
-                                                          255.0).convert("RGB")
+                            img = transforms.ToPILImage()(processed / 255.0).convert(
+                                "RGB"
+                            )
                         else:
-                            img = transforms.ToPILImage()(processed /
-                                                          255.0).convert("L")
+                            img = transforms.ToPILImage()(processed / 255.0).convert(
+                                "L"
+                            )
                         # Now save the image as a png into a buffer in memory
                         buffers.append(io.BytesIO())
                         img.save(fp=buffers[-1], format="png")
@@ -251,10 +249,8 @@ with open(args.datalist, newline="") as datacsv:
                         "image_scale": str(args.scale).encode("utf-8"),
                         "patch_width": str(args.width).encode("utf-8"),
                         "patch_height": str(args.height).encode("utf-8"),
-                        "crop_x_offset":
-                        str(args.crop_x_offset).encode("utf-8"),
-                        "crop_y_offset":
-                        str(args.crop_y_offset).encode("utf-8"),
+                        "crop_x_offset": str(args.crop_x_offset).encode("utf-8"),
+                        "crop_y_offset": str(args.crop_y_offset).encode("utf-8"),
                         "original_width": str(sampler.width).encode("utf-8"),
                         "original_height": str(sampler.height).encode("utf-8"),
                     }
