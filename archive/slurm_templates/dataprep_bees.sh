@@ -18,21 +18,20 @@
 #SBATCH --output=LOG_FILE.%A_%a
 
 # This installation has ffmpeg-python installed
-export PATH=/koko/system/anaconda/envs/python38/bin:$PATH
-echo start-is: `date`
+export PATH=/koko/system/anaconda/envs/python38/bin:"$PATH"
+echo start-is: "$(date)"
 
-cd OUT_PATH
+cd OUT_PATH || exit
 
-in_csv="CSV_BASE_${SLURM_ARRAY_TASK_ID}.csv"
-out_tar="TAR_BASE_${SLURM_ARRAY_TASK_ID}.tar"
+in_csv="CSV_BASE_$SLURM_ARRAY_TASK_ID.csv"
+out_tar="TAR_BASE_$SLURM_ARRAY_TASK_ID.tar"
 
 # Crop 400x400 patches with 20 pixels of crop noise to resist "tells" from
 # motion caused by changes in object positions.
-python3 BIN_PATH/VidActRecDataprep.py --width 400 --height 400 --samples 500 --crop_noise 20 --out_channels 1 --frames_per_sample 1 "${in_csv}" "${out_tar}"
+python3 BIN_PATH/VidActRecDataprep.py --width 400 --height 400 --samples 500 --crop_noise 20 --out_channels 1 --frames_per_sample 1 "$in_csv" "$out_tar"
 succ=$?
 
-echo end-is: `date`
+echo end-is: "$(date)"
 
 # Success?
-exit $succ
-
+exit "$succ"
