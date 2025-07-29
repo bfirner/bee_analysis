@@ -14,9 +14,9 @@
 # Author: R. P. Marin
 
 import argparse
-import sys
 import os
 import subprocess
+import sys
 
 parallel_command_count = [
     "/research/projects/grail/rmartin/bin/parallel",

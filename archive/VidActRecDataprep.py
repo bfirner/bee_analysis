@@ -9,21 +9,23 @@ save the video data and labels for training or validation.
 # It only works with old versions of ffmpeg.
 import argparse
 import csv
-import ffmpeg
 import io
 import math
-import numpy
 import os
 import random
 import sys
 import time
+
+import ffmpeg
+import numpy
 import torch
 import webdataset as wds
-
 # Helper function to convert to images
 from torchvision import transforms
-from utility.video_utility import getVideoInfo, VideoSampler, vidSamplingCommonCrop
+
 from utility.patch_common import imagePreprocessFromCoords
+from utility.video_utility import (VideoSampler, getVideoInfo,
+                                   vidSamplingCommonCrop)
 
 parser = argparse.ArgumentParser(
     description="Perform data preparation for DNN training on a video set."

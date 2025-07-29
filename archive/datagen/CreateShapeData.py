@@ -6,7 +6,6 @@ Create datasets with basic shapes (square, triangle, chevron, etc).
 
 import argparse
 import io
-
 # import math
 # import numpy
 import os
@@ -15,7 +14,6 @@ import random
 # import sys
 import torch
 import webdataset as wds
-
 # Helper function to convert to images
 from torchvision import transforms
 

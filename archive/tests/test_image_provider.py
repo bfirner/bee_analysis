@@ -1,8 +1,9 @@
-import numpy
 import os
-import pytest
 import shlex
 import subprocess
+
+import numpy
+import pytest
 
 import utility.image_provider as ip
 

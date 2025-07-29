@@ -5,9 +5,10 @@
 
 # For the algorithm, see: https://docs.opencv.org/3.4/d1/dc5/tutorial_background_subtraction.html
 
-import cv2
 import argparse
 import datetime
+
+import cv2
 
 parser = argparse.ArgumentParser(
     description="This program removes the background from a video"
