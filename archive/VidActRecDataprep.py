@@ -23,8 +23,9 @@ import webdataset as wds
 from torchvision import transforms
 
 from utility.patch_common import imagePreprocessFromCoords
-from utility.video_utility import (VideoSampler, getVideoInfo,
-                                   vidSamplingCommonCrop)
+from utility.video_utility import getVideoInfo
+from utility.video_utility import VideoSampler
+from utility.video_utility import vidSamplingCommonCrop
 
 # Helper function to convert to images
 
