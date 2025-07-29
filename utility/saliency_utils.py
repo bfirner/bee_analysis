@@ -22,10 +22,15 @@ def get_layer_by_name(model, layer_name):
 
 # Configure logging to use saliency.log
 def setup_saliency_logging():
-    """Ensure saliency operations log to saliency.log"""
+    """Ensure saliency operations log to saliency.log 2 levels up"""
     logger = logging.getLogger(__name__)
     if not logger.handlers:
-        handler = logging.FileHandler('saliency.log', mode='a')
+        # Get path 2 levels above bee_analysis
+        script_dir = Path(__file__).parent.parent.absolute()  # bee_analysis
+        parent_dir = script_dir.parent.parent  # 2 levels up
+        log_file = parent_dir / "saliency.log"
+        
+        handler = logging.FileHandler(log_file, mode='a')
         formatter = logging.Formatter(
             "%(asctime)s - %(levelname)s - %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S"
