@@ -1,21 +1,19 @@
 #! /usr/bin/python3
-
 """
 Create datasets with basic shapes (square, triangle, chevron, etc).
 """
-
 import argparse
 import io
-# import math
-# import numpy
 import os
 import random
 
-# import sys
 import torch
 import webdataset as wds
-# Helper function to convert to images
 from torchvision import transforms
+# import math
+# import numpy
+# import sys
+# Helper function to convert to images
 
 # A collection of shapes that have some similarities to one another, but should still be simple
 # enough to disambiguate.

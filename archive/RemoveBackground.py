@@ -1,10 +1,7 @@
 #!/usr/bin/python3
-
 # take a file as input, and output a new file with the background subtracted
 # R. P. Martin, (c) 2023, GPL 2
-
 # For the algorithm, see: https://docs.opencv.org/3.4/d1/dc5/tutorial_background_subtraction.html
-
 import argparse
 import datetime
 

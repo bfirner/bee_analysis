@@ -1,5 +1,4 @@
 #!/usr/bin/python3
-
 # This Python peforms two functions (1)creates the counts.csv needed by the make_csv.py script.
 # and (2) create background subtracted videos ( noBackground - noBg )
 # Both functions use GNU parallel to utilize multiple cores
@@ -10,9 +9,7 @@
 # to get a counts.csv file
 #
 #
-
 # Author: R. P. Marin
-
 import argparse
 import os
 import subprocess
