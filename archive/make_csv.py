@@ -10,9 +10,9 @@ DEFAULT_VIDEO_LENGTH = 1201  # number of seconds
 
 app = typer.Typer()
 
-pd.set_option('display.max_columns', None)  # or 1000
-pd.set_option('display.max_rows', None)  # or 1000
-pd.set_option('display.max_colwidth', None)
+pd.set_option("display.max_columns", None)  # or 1000
+pd.set_option("display.max_rows", None)  # or 1000
+pd.set_option("display.max_colwidth", None)
 
 
 def _assert_logs(files_dir: pathlib.Path):
@@ -27,8 +27,7 @@ def parse_frame_counts(files_dir: pathlib.Path):
     """
     assert (files_dir / "counts.csv").is_file()
     counts_df = pd.read_csv(files_dir / "counts.csv")
-    counts_df["filename"] = counts_df["filename"].apply(
-        lambda x: files_dir / x)
+    counts_df["filename"] = counts_df["filename"].apply(lambda x: files_dir / x)
     return counts_df.sort_values(by="filename")
 
 
@@ -45,20 +44,16 @@ def parse_logs(files_dir: pathlib.Path) -> pd.DataFrame:
     events_list = []
     for file_path in files_dir.glob("*.txt"):
         event_type = file_path.stem
-        with open(file_path, 'r') as file:
+        with open(file_path, "r") as file:
             for line in file:
                 timestamp = line.strip()
-                event = {
-                    "event_type": event_type,
-                    "ts": timestamp
-                }
+                event = {"event_type": event_type, "ts": timestamp}
                 events_list.append(event)
     return pd.DataFrame(events_list).sort_values(by="ts").reset_index(drop=True)
 
 
 def _find_latest_video(
-    logged_timestamp: str,
-    file_epoch_map_df: pd.DataFrame
+    logged_timestamp: str, file_epoch_map_df: pd.DataFrame
 ) -> pathlib.Path:
     """Finds video file containing the given logged timestamp.
 
@@ -71,10 +66,19 @@ def _find_latest_video(
     Returns:
         pathlib.Path: said video file name.
     """
-    epoch_timestamp = datetime.strptime(
-        logged_timestamp, LOG_TIME_FORMAT).timestamp()
-    latest_filename = file_epoch_map_df.loc[file_epoch_map_df['epoch_ts'] <= epoch_timestamp, 'filename'].iloc[np.argmin(
-        np.abs(file_epoch_map_df.loc[file_epoch_map_df['epoch_ts'] <= epoch_timestamp, 'epoch_ts'] - epoch_timestamp))]
+    epoch_timestamp = datetime.strptime(logged_timestamp, LOG_TIME_FORMAT).timestamp()
+    latest_filename = file_epoch_map_df.loc[
+        file_epoch_map_df["epoch_ts"] <= epoch_timestamp, "filename"
+    ].iloc[
+        np.argmin(
+            np.abs(
+                file_epoch_map_df.loc[
+                    file_epoch_map_df["epoch_ts"] <= epoch_timestamp, "epoch_ts"
+                ]
+                - epoch_timestamp
+            )
+        )
+    ]
     return latest_filename
 
 
@@ -92,18 +96,18 @@ def map_file_names_to_epoch(counts_df: pd.DataFrame) -> pd.DataFrame:
         filename = row["filename"].stem
         filename_remove_micro = filename.split(".")[0]
         epoch_timestamp = datetime.strptime(
-            filename_remove_micro, FILE_TIME_FORMAT).timestamp()
-        epoch_names = {
-            "filename": row["filename"],
-            "epoch_ts": int(epoch_timestamp)
-        }
+            filename_remove_micro, FILE_TIME_FORMAT
+        ).timestamp()
+        epoch_names = {"filename": row["filename"], "epoch_ts": int(epoch_timestamp)}
         epoch_list.append(epoch_names)
     file_epoch_map_df = pd.DataFrame(epoch_list)
 
     return file_epoch_map_df
 
 
-def _add_event_end_info(events_df: pd.DataFrame, counts_df: pd.DataFrame, fps: int) -> pd.DataFrame:
+def _add_event_end_info(
+    events_df: pd.DataFrame, counts_df: pd.DataFrame, fps: int
+) -> pd.DataFrame:
     """Add extra column to events_df with the ending timestamp of each event.
 
     Just copy the next row's start timestamp and for the last row calculate using frame count.
@@ -119,17 +123,19 @@ def _add_event_end_info(events_df: pd.DataFrame, counts_df: pd.DataFrame, fps: i
     events_df["end_ts"] = events_df["ts"].shift(-1)
     last_video_name = str(counts_df.iloc[-1]["filename"])
     last_video_name = last_video_name.split("/")[-1].replace(".h264", "")[:-7]
-    last_video_datetime_obj = datetime.strptime(
-        last_video_name, FILE_TIME_FORMAT)
-    new_last_video_datetime = last_video_datetime_obj + \
-        timedelta(seconds=int(counts_df.iloc[-1]["frames"]/fps))
+    last_video_datetime_obj = datetime.strptime(last_video_name, FILE_TIME_FORMAT)
+    new_last_video_datetime = last_video_datetime_obj + timedelta(
+        seconds=int(counts_df.iloc[-1]["frames"] / fps)
+    )
     new_timestamp = new_last_video_datetime.strftime(LOG_TIME_FORMAT)
     events_df.iloc[-1, events_df.columns.get_loc("end_ts")] = new_timestamp
 
     return events_df
 
 
-def _add_video_end_info(file_epoch_map_df: pd.DataFrame, counts_df: pd.DataFrame, fps: int) -> pd.DataFrame:
+def _add_video_end_info(
+    file_epoch_map_df: pd.DataFrame, counts_df: pd.DataFrame, fps: int
+) -> pd.DataFrame:
     """Add extra column to file_epoch_map_df with the ending timestamp of each video.
 
     Calculate the video end info from framecount.
@@ -143,20 +149,23 @@ def _add_video_end_info(file_epoch_map_df: pd.DataFrame, counts_df: pd.DataFrame
         file_epoch_map_df: updated dataframe
     """
 
-    file_epoch_map_df["length"] = file_epoch_map_df["epoch_ts"].shift(
-        -1) - file_epoch_map_df["epoch_ts"]
-    file_epoch_map_df.iloc[-1, file_epoch_map_df.columns.get_loc(
-        "length")] = counts_df.iloc[-1]["frames"] / fps
+    file_epoch_map_df["length"] = (
+        file_epoch_map_df["epoch_ts"].shift(-1) - file_epoch_map_df["epoch_ts"]
+    )
+    file_epoch_map_df.iloc[-1, file_epoch_map_df.columns.get_loc("length")] = (
+        counts_df.iloc[-1]["frames"] / fps
+    )
     file_epoch_map_df["end_epoch_ts"] = file_epoch_map_df["epoch_ts"].shift(-1)
     last_video_name = str(counts_df.iloc[-1]["filename"])
     last_video_name = last_video_name.split("/")[-1].replace(".h264", "")[:-7]
-    last_video_datetime_obj = datetime.strptime(
-        last_video_name, FILE_TIME_FORMAT)
-    new_last_video_datetime = last_video_datetime_obj + \
-        timedelta(seconds=int(counts_df.iloc[-1]["frames"]/fps))
+    last_video_datetime_obj = datetime.strptime(last_video_name, FILE_TIME_FORMAT)
+    new_last_video_datetime = last_video_datetime_obj + timedelta(
+        seconds=int(counts_df.iloc[-1]["frames"] / fps)
+    )
 
-    file_epoch_map_df.iloc[-1, file_epoch_map_df.columns.get_loc(
-        "end_epoch_ts")] = new_last_video_datetime.timestamp()
+    file_epoch_map_df.iloc[-1, file_epoch_map_df.columns.get_loc("end_epoch_ts")] = (
+        new_last_video_datetime.timestamp()
+    )
     return file_epoch_map_df
 
 
@@ -173,31 +182,36 @@ def _filter_events(labels_list, fps):
 
 
 def event_type_to_class_num(event_type):
-    """ convert a string event type to a class number
+    """convert a string event type to a class number
         the event type is gotten from the name of the file
         e.g. logPos.txt is type logPos, and has class number 0    retval = -1
 
-    Args: 
-       event_type: the string type of the event 
+    Args:
+       event_type: the string type of the event
 
     Returns:
-       an integer event type 
+       an integer event type
     """
     retval = -1
-    if (event_type == 'logPos'):
+    if event_type == "logPos":
         retval = 0
-    elif (event_type == 'logNo'):
+    elif event_type == "logNo":
         retval = 1
-    elif (event_type == 'logNeg'):
+    elif event_type == "logNeg":
         retval = 2
 
-    if (retval == -1):
+    if retval == -1:
         print("Warning, no class for event type: %s found" % (event_type))
 
     return retval
 
 
-def run_thru_events(events_df: pd.DataFrame, counts_df: pd.DataFrame, file_epoch_map_df: pd.DataFrame, fps: int) -> pd.DataFrame:
+def run_thru_events(
+    events_df: pd.DataFrame,
+    counts_df: pd.DataFrame,
+    file_epoch_map_df: pd.DataFrame,
+    fps: int,
+) -> pd.DataFrame:
     """Iterate through the logged events and generate labels for various classes / video files.
 
     Args:
@@ -213,22 +227,18 @@ def run_thru_events(events_df: pd.DataFrame, counts_df: pd.DataFrame, file_epoch
     events_df = _add_event_end_info(events_df, counts_df, fps)
     labels_list = []
     for index, row in events_df.iterrows():
-        label = {
-            "filename": None,
-            "class": None,
-            "beginframe": None,
-            "endframe": None
-        }
+        label = {"filename": None, "class": None, "beginframe": None, "endframe": None}
         starting_video = _find_latest_video(row["ts"], file_epoch_map_df)
-        starting_video_info = file_epoch_map_df[file_epoch_map_df["filename"]
-                                                == starting_video]
+        starting_video_info = file_epoch_map_df[
+            file_epoch_map_df["filename"] == starting_video
+        ]
         starting_video_ts = int(starting_video_info["epoch_ts"])
         starting_video_length = int(starting_video_info["length"])
         starting_video_end_ts = int(starting_video_info["end_epoch_ts"])
-        event_ts = int(datetime.strptime(
-            row["ts"], LOG_TIME_FORMAT).timestamp())
-        event_end_ts = int(datetime.strptime(
-            row["end_ts"], LOG_TIME_FORMAT).timestamp())
+        event_ts = int(datetime.strptime(row["ts"], LOG_TIME_FORMAT).timestamp())
+        event_end_ts = int(
+            datetime.strptime(row["end_ts"], LOG_TIME_FORMAT).timestamp()
+        )
 
         label["filename"] = starting_video
         label["class"] = event_type_to_class_num(row["event_type"])
@@ -237,13 +247,15 @@ def run_thru_events(events_df: pd.DataFrame, counts_df: pd.DataFrame, file_epoch
         # means that there are logged events where there are no videos recorded
         if starting_video_end_ts - event_ts < 0:
             print(
-                f"Missing videos after {starting_video}, {event_ts}, {starting_video_end_ts}, {starting_video_end_ts - event_ts}")
+                f"Missing videos after {starting_video}, {event_ts}, {starting_video_end_ts}, {starting_video_end_ts - event_ts}"
+            )
             continue
 
-        if (event_end_ts > starting_video_end_ts):
+        if event_end_ts > starting_video_end_ts:
             # to buffer for rounding errors (make sure no frame out of bounds)
             label["endframe"] = int(
-                counts_df[counts_df["filename"] == starting_video]["frames"].item())
+                counts_df[counts_df["filename"] == starting_video]["frames"].item()
+            )
             leftover_seconds = event_end_ts - starting_video_end_ts
             video_index = starting_video_info.index[0] + 1
 
@@ -252,26 +264,35 @@ def run_thru_events(events_df: pd.DataFrame, counts_df: pd.DataFrame, file_epoch
                     "filename": None,
                     "class": None,
                     "beginframe": None,
-                    "endframe": None
+                    "endframe": None,
                 }
                 if video_index >= len(file_epoch_map_df):
                     break
 
-                overflowing_label["filename"] = file_epoch_map_df.iloc[video_index]["filename"]
+                overflowing_label["filename"] = file_epoch_map_df.iloc[video_index][
+                    "filename"
+                ]
 
-                overflowing_label["class"] = event_type_to_class_num(
-                    row["event_type"])
+                overflowing_label["class"] = event_type_to_class_num(row["event_type"])
                 # incase leftover is less than the 4 frame buffer
-                overflowing_label["beginframe"] = min(
-                    4, int(leftover_seconds * fps))
+                overflowing_label["beginframe"] = min(4, int(leftover_seconds * fps))
                 # if leftover event spans many videos
                 if leftover_seconds < file_epoch_map_df.iloc[video_index]["length"]:
-                    overflowing_label["endframe"] = min(int(leftover_seconds * fps), int(
-                        counts_df[counts_df["filename"] == overflowing_label["filename"]]["frames"].item()))
+                    overflowing_label["endframe"] = min(
+                        int(leftover_seconds * fps),
+                        int(
+                            counts_df[
+                                counts_df["filename"] == overflowing_label["filename"]
+                            ]["frames"].item()
+                        ),
+                    )
                     leftover_seconds = 0
                 else:
                     overflowing_label["endframe"] = int(
-                        counts_df[counts_df["filename"] == overflowing_label["filename"]]["frames"].item())
+                        counts_df[
+                            counts_df["filename"] == overflowing_label["filename"]
+                        ]["frames"].item()
+                    )
                     leftover_seconds -= file_epoch_map_df.iloc[video_index]["length"]
 
                 labels_list.append(overflowing_label)
@@ -292,9 +313,7 @@ def run(
     files_dir: pathlib.Path = typer.Argument(
         ..., help="Must contain videos, logNeg.txt, logPos.txt, logNo.txt"
     ),
-    output_dir: pathlib.Path = typer.Argument(
-        ..., help="Path to output dataset.csv"
-    )
+    output_dir: pathlib.Path = typer.Argument(..., help="Path to output dataset.csv"),
 ):
     events_df = parse_logs(files_dir)
     counts_df = parse_frame_counts(files_dir)

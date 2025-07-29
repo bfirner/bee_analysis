@@ -77,8 +77,7 @@ class Animal(pygame.sprite.Sprite):
             x = magnitude * math.cos(rad_angle)
             y = -1 * magnitude * math.sin(rad_angle)
             if getting_food:
-                distance_x = (
-                    self.target_food_source.rect.centerx - self.rect.centerx)
+                distance_x = self.target_food_source.rect.centerx - self.rect.centerx
                 distance_y = self.target_food_source.rect.centery - self.rect.centery
             else:
                 distance_x = self.home_position[0] - self.rect.centerx
@@ -102,8 +101,7 @@ class Animal(pygame.sprite.Sprite):
             self.rect.y = max(0, min(self.rect.y, HEIGHT - self.rect.height))
 
             # rotates animal to face correct orientation
-            self.image = pygame.transform.rotate(
-                self.original_image, -self.orientation)
+            self.image = pygame.transform.rotate(self.original_image, -self.orientation)
 
         def moveToHome():
 
@@ -120,17 +118,16 @@ class Animal(pygame.sprite.Sprite):
             self.rect.y = max(0, min(self.rect.y, HEIGHT - self.rect.height))
 
             # rotates animal to face correct orientation
-            self.image = pygame.transform.rotate(
-                self.original_image, -self.orientation)
+            self.image = pygame.transform.rotate(self.original_image, -self.orientation)
 
             if pygame.sprite.collide_rect(self, home):
                 if food_sources:
                     self.mode_go_home = False
                     # Set the next target_food_source (if available)
-                    next_source_index = (food_sources.sprites().index(
-                        self.target_food_source) + 1) % len(food_sources.sprites())
-                    self.target_food_source = food_sources.sprites()[
-                        next_source_index]
+                    next_source_index = (
+                        food_sources.sprites().index(self.target_food_source) + 1
+                    ) % len(food_sources.sprites())
+                    self.target_food_source = food_sources.sprites()[next_source_index]
                 else:
                     # All food sources visited, return home
                     self.target_food_source = None

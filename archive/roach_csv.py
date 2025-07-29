@@ -16,7 +16,7 @@ def write_to_lists(lists, directory, stimulus_class):
         if pathlib.Path(f).suffix == ".avi":
             video = cv2.VideoCapture(f)
             # subtract 1 from total count in case of corruption
-            num_frames = str(int(video.get(cv2.CAP_PROP_FRAME_COUNT))-1)
+            num_frames = str(int(video.get(cv2.CAP_PROP_FRAME_COUNT)) - 1)
             row = [f, stimulus_class, "4", num_frames]
             lists.append(row)
     return lists
@@ -39,7 +39,7 @@ if __name__ == "__main__":
     lists = write_to_lists(lists, test_5g, "3")
     lists = write_to_lists(lists, control, "1")
     random.shuffle(lists)
-    split = int(len(lists)*SPLIT_RATIO)
+    split = int(len(lists) * SPLIT_RATIO)
     train_list = lists[:split]
     eval_list = lists[split:]
     train_list.insert(0, header_row)

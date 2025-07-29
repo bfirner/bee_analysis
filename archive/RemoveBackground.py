@@ -10,46 +10,55 @@ import argparse
 import datetime
 
 parser = argparse.ArgumentParser(
-    description='This program removes the background from a video')
-parser.add_argument('--input', type=str,
-                    help='Path to a video or a sequence of image.', default='input.avi')
-parser.add_argument('--output', type=str,
-                    help='output file name', default='output.avi')
-parser.add_argument('--lognum', type=int, help='log frame number', default=0)
+    description="This program removes the background from a video"
+)
 parser.add_argument(
-    '--alg', type=str, help='Background subtraction algorithm, KNN or MOG2.', default='MOG2')
+    "--input",
+    type=str,
+    help="Path to a video or a sequence of image.",
+    default="input.avi",
+)
+parser.add_argument("--output", type=str, help="output file name", default="output.avi")
+parser.add_argument("--lognum", type=int, help="log frame number", default=0)
+parser.add_argument(
+    "--alg",
+    type=str,
+    help="Background subtraction algorithm, KNN or MOG2.",
+    default="MOG2",
+)
 
 args = parser.parse_args()
 
 outputFileName = args.output
 frameLogNumber = args.lognum
 
-if args.alg == 'MOG2':
+if args.alg == "MOG2":
     backSubAlg = cv2.createBackgroundSubtractorMOG2()
 else:
     backSubAlg = cv2.createBackgroundSubtractorKNN()
 
 capture = cv2.VideoCapture(cv2.samples.findFileOrKeep(args.input))
 if not capture.isOpened():
-    print('Unable to open file: ' + args.input)
+    print("Unable to open file: " + args.input)
     exit(0)
 
 
 frame_num = 0
 ret, frame = capture.read()
 if frame is None:
-    print('Warning! No initial frame!')
+    print("Warning! No initial frame!")
 height, width, channels = frame.shape
 
 size = (width, height)
 fps = int(capture.get(cv2.CAP_PROP_FPS))
 dateNow = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-print('Log: Processing video \"%s\" size %d:%d fps %d at %s' %
-      (args.input, size[0], size[1], fps, dateNow))
+print(
+    'Log: Processing video "%s" size %d:%d fps %d at %s'
+    % (args.input, size[0], size[1], fps, dateNow)
+)
 
 # file to write out
-out = cv2.VideoWriter(
-    outputFileName, cv2.VideoWriter_fourcc(*'DIVX'), fps, size)
+out = cv2.VideoWriter(outputFileName, cv2.VideoWriter_fourcc(*"DIVX"), fps, size)
 # out = cv2.VideoWriter(outputFileName,cv2.VideoWriter_fourcc(*'MJPG'), fps, size)
 
 while True:
@@ -73,7 +82,7 @@ while True:
     # if keyboard == 'q' or keyboard == 27:
     # break
 
-    if (frameLogNumber > 0):
+    if frameLogNumber > 0:
         dateNow = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
         if (frame_num % frameLogNumber) == 1:
             print("Log: converted frame %d at: %s " % (frame_num, dateNow))
