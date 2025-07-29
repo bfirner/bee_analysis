@@ -38,9 +38,15 @@ except ImportError as e:
     sys.exit(1)
 
 
-def setup_logging(debug=False, log_file="saliency.log"):
+def setup_logging(debug=False, log_file=None):
     """Setup logging configuration with file output"""
     level = logging.DEBUG if debug else logging.INFO
+    
+    # Set log file path - 2 levels above bee_analysis directory
+    if log_file is None:
+        script_dir = Path(__file__).parent.absolute()  # bee_analysis
+        parent_dir = script_dir.parent.parent  # 2 levels up
+        log_file = parent_dir / "saliency.log"
     
     # Create formatter
     formatter = logging.Formatter(
@@ -57,9 +63,9 @@ def setup_logging(debug=False, log_file="saliency.log"):
     file_handler.setLevel(level)
     file_handler.setFormatter(formatter)
     
-    # Create console handler for immediate feedback
+    # Create console handler for immediate feedback (less verbose)
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(level)
+    console_handler.setLevel(logging.INFO)  # Always INFO for console
     console_handler.setFormatter(formatter)
     
     # Configure root logger
@@ -67,6 +73,12 @@ def setup_logging(debug=False, log_file="saliency.log"):
         level=level,
         handlers=[file_handler, console_handler]
     )
+    
+    # Suppress noisy third-party loggers
+    logging.getLogger('matplotlib').setLevel(logging.WARNING)
+    logging.getLogger('PIL').setLevel(logging.WARNING)
+    logging.getLogger('pytorch_grad_cam').setLevel(logging.WARNING)
+    logging.getLogger('torchvision').setLevel(logging.WARNING)
     
     logging.info(f"Logging to file: {log_file}")
 
