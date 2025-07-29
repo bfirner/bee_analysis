@@ -7,7 +7,7 @@
   # https://hpc.nih.gov/docs/job_dependencies.html
 
 sb_cmd=$(which sbatch)
-sbresult="$($sb_cmd "$@")"
+sbresult="$("$sb_cmd" "$@")"
 
 if [[ "$sbresult" =~ Submitted\ batch\ job\ ([0-9]+) ]]; then
     echo "${BASH_REMATCH[1]}"

@@ -35,8 +35,8 @@
 # If given job dependencies ($6), will add those strings as an "afterany" dependency in the slurm
 # command in $slurmfile.
 emit_sbatch_script () {
-    local sname=$1
-    local jid=$2
+    local sname="$1"
+    local jid="$2"
     local command="$3"
     local sb_args="$4"
     local file_depends="$5"
@@ -45,14 +45,14 @@ emit_sbatch_script () {
     # Create the script
     echo -e "#!/usr/bin/bash -l\n\n" > "$sname"
     echo -e "# automatically created by create_slurm_workflow.sh\n\n" >> "$sname"
-    echo -e "#SBATCH --job-name=${wfname}-$sname" >> "$sname"
-    echo -e "#SBATCH --output=${wfname}-$sname.log" >> "$sname"
+    echo -e "#SBATCH --job-name=$wfname-$sname" >> "$sname"
+    echo -e "#SBATCH --output=$wfname-$sname.log" >> "$sname"
     # Put a check for an expected file in the script
     if [[ $# -ge 5 ]]; then
         # Check for the given file before executing the script
         echo "if [[ ! -e $file_depends ]]; then" >> "$sname"
         echo "    echo \"Missing expected input $file_depends\"" >> "$sname"
-        echo "    touch \"${sname}.failure\"" >> "$sname"
+        echo "    touch \"$sname.failure\"" >> "$sname"
         echo '    exit 2' >> "$sname"
         echo -e 'fi\n' >> "$sname"
     fi
@@ -65,10 +65,10 @@ emit_sbatch_script () {
 
     # Test the command success within the script and create a fail or succ file.
     echo "if [[ \$? -eq 0 ]]; then" >> "$sname"
-    echo "    touch \"${sname}.success\"" >> "$sname"
+    echo "    touch \"$sname.success\"" >> "$sname"
     echo "    exit 0" >> "$sname"
     echo "else" >> "$sname"
-    echo "    touch \"${sname}.failure\"" >> "$sname"
+    echo "    touch \"$sname.failure\"" >> "$sname"
     echo "    exit 1" >> "$sname"
     echo "fi" >> "$sname"
 
@@ -91,8 +91,8 @@ emit_sbatch_script () {
 # All other arguments will be treated as string key, value pairs that will be replaced in the
 # template file. E.g. "BIN_PATH /path/to/a/directory" would replace BIN_PATH with the given string.
 emit_sbatch_from_sh () {
-    local sname=$1
-    local jid=$2
+    local sname="$1"
+    local jid="$2"
     local template="$3"
     local sb_args="$4"
     local jid_depends="$5"
@@ -111,8 +111,8 @@ emit_sbatch_from_sh () {
     # array are prone to errors with string expansions when there are spaces.
     shift 5
     while [[ $# -gt 0 ]]; do
-        local key=$1
-        local value=$2
+        local key="$1"
+        local value="$2"
         shift 2
         # Escape the value strings, who knows what is inside.
         # Note that this sed expression will not work with strings containing ":" characters
@@ -134,14 +134,14 @@ usage() {
 
 # Defaults
 # If no code path was provided then assume the current directory
-codepath=$(realpath "$(pwd)")
+codepath=$(realpath "$PWD")
 # Default to 10 folds
 folds=10
 while getopts "n:d:p:f:?h" opt; do
     case $opt in
         n) wfname="$OPTARG" ;;
-        d) datapath=$(realpath "${OPTARG}") ;;
-        p) codepath=$(realpath "${OPTARG}") ;;
+        d) datapath=$(realpath "$OPTARG") ;;
+        p) codepath=$(realpath "$OPTARG") ;;
         f) folds=$OPTARG ;;
         h|?) usage ;;
     esac
@@ -154,17 +154,17 @@ fi
 
 # Check the code path
 if [[ ! -d ${codepath} ]]; then
-    echo "Code path ${codepath} is not an existing directory."
+    echo "Code path $codepath is not an existing directory."
     exit 2
 fi
 
 # Wrapped sbatch command
-sb="${codepath}/sbatch_wrapper.sh"
+sb="$codepath/sbatch_wrapper.sh"
 
 # Create an output directory and change into it
-mkdir -p "${wfname}"
-wfpath=$(realpath "${wfname}")
-cd "${wfpath}" || exit
+mkdir -p "$wfname"
+wfpath=$(realpath "$wfname")
+cd "$wfpath" || exit
 # Remove anything in the directory that could disturb the workflow
 # TODO Nothing is using these files yet, but they could be useful in the future.
 statfiles=(/*.success)
@@ -176,7 +176,7 @@ if [[ -f ${statfiles[0]} ]]; then
     rm *.failure
 fi
 
-slurmfile="${wfpath}/run_workflow.sh"
+slurmfile="$wfpath/run_workflow.sh"
 echo -e "#!/usr/bin/bash\n" > "$slurmfile"
 echo "# Run this command as a regular bash shell" >> "$slurmfile"
 echo -e "\n# automatically created by create_slurm_workflow.sh\n\n" >> "$slurmfile"
@@ -184,45 +184,45 @@ chmod 755 "$slurmfile"
 
 # Check if the data path exists
 if [[ ! -e ${datapath} ]]; then
-    echo "Data path ${datapath} does not exist."
+    echo "Data path $datapath does not exist."
     exit 2
 fi
 
 # If this is a directory then run `make_train_csv.sh` to make datacsv. Otherwise just copy it.
-datacsv="${wfpath}/all_data.csv"
+datacsv="$wfpath/all_data.csv"
 if [[ -d ${datapath} ]]; then
-    echo "Will run make_train_csv.sh on path ${datapath}"
+    echo "Will run make_train_csv.sh on path $datapath"
     # Create a script that runs make_train_csv.sh on ${datapath}
     # Append that script to ${slurmfile}
     emit_sbatch_script \
         "create_initial_csv.sh" \
         "create_csv_jid" \
-        "bash \"${codepath}/make_train_csv.sh\" \"${datapath}\" >> \"${datacsv}\""
+        "bash \"$codepath/make_train_csv.sh\" \"$datapath\" >> \"$datacsv\""
     csv_jid="create_csv_jid"
 elif [[ -f ${datapath} ]]; then
-    echo "Using ${datapath} as data csv file."
-    cp "${datapath}" "${datacsv}"
+    echo "Using $datapath as data csv file."
+    cp "$datapath" "$datacsv"
     csv_jid=""
 fi
 
 # Now run the make_validation_training.py script
-mvtcmd="python3 \"${codepath}/make_validation_training.py\" "
-mvtcmd+="--datacsv \"${datacsv}\" --k ${folds} --only_split"
+mvtcmd="python3 \"$codepath/make_validation_training.py\" "
+mvtcmd+="--datacsv \"$datacsv\" --k $folds --only_split"
 
 if [[ -z $csv_jid ]]; then
     emit_sbatch_script \
         "mvt_scripts.sh" \
         "mvt_scripts_jid" \
-        "${mvtcmd}" \
+        "$mvtcmd" \
         "" \
-        "${datacsv}"
+        "$datacsv"
 else
     emit_sbatch_script \
         "mvt_scripts.sh" \
         "mvt_scripts_jid" \
-        "${mvtcmd}" \
+        "$mvtcmd" \
         "" \
-        "${datacsv}" \
+        "$datacsv" \
         "$csv_jid"
 fi
 
@@ -230,30 +230,30 @@ fi
 emit_sbatch_from_sh \
     "dataprep.sh" \
     "dataprep_jid" \
-    "${codepath}/slurm_templates/dataprep_roaches.sh" \
+    "$codepath/slurm_templates/dataprep_roaches.sh" \
     "" \
     "mvt_scripts_jid" \
-    "BIN_PATH" "${codepath}" \
+    "BIN_PATH" "$codepath" \
     "CSV_BASE" "${datacsv%%.csv}" \
     "TAR_BASE" "${datacsv%%.csv}" \
-    "MAX_FOLD" "${folds}" \
-    "LOG_FILE" "${wfpath}/dataprep.log" \
-    "OUT_PATH" "${wfpath}" \
-    "WF_NAME" "${wfname}"
+    "MAX_FOLD" "$folds" \
+    "LOG_FILE" "$wfpath/dataprep.log" \
+    "OUT_PATH" "$wfpath" \
+    "WF_NAME" "$wfname"
 
 # Create the training task
 emit_sbatch_from_sh \
     "train.sh" \
     "train_jid" \
-    "${codepath}/slurm_templates/train.sh" \
+    "$codepath/slurm_templates/train.sh" \
     "-G 1" \
     "dataprep_jid" \
-    "BIN_PATH" "${codepath}" \
-    "CHECKPOINT" "${wfname}.ckpt" \
+    "BIN_PATH" "$codepath" \
+    "CHECKPOINT" "$wfname.ckpt" \
     "BASE_DATA" "${datacsv%%.csv}" \
-    "MAX_FOLD" "${folds}" \
-    "LOG_FILE" "${wfpath}/training.log" \
-    "WF_NAME" "${wfname}"
+    "MAX_FOLD" "$folds" \
+    "LOG_FILE" "$wfpath/training.log" \
+    "WF_NAME" "$wfname"
 
 # TODO
 # Create the annotation task

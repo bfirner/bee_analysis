@@ -43,15 +43,15 @@ echo "file, class, begin frame, end frame"
 
 # A function to parse the time string from the log files.
 function switch_string_to_time () {
-    local swstr=$(echo "$1" | sed 's/\(....\)\(..\)\(..\)_\(..\)\(..\)\(..\)/\1-\2-\3 \4:\5:\6/g')
-    local swseconds=$(date -d "$swstr" +%s)
+    local swstr="$(echo "$1" | sed 's/\(....\)\(..\)\(..\)_\(..\)\(..\)\(..\)/\1-\2-\3 \4:\5:\6/g')"
+    local swseconds="$(date -d "$swstr" +%s)"
     echo "$swseconds"
 }
 
 # A function to check the log files to determine the label associate with a timestamp
 # Arguments are the timestamp string and the target directory with the logs
 function switch_label () {
-    local state_file=$(grep "$1" "$2"/*.txt -H)
+    local state_file="$(grep "$1" "$2"/*.txt -H)"
     state_file=${state_file##"$2"/}
     state_file=${state_file%%.txt*}
     local label=""
@@ -62,10 +62,10 @@ function switch_label () {
     elif [[ $state_file == "logPos" ]]; then
         label=3
     fi
-    echo $label
+    echo "$label"
 }
 
-for video in $target/*.h264; do
+for video in "$target"/*.h264; do
     # Reformat the video date to the same date format as in the magnetic switching logs
     v=${video##"$target"/}
     # Get the times in seconds from 1970-01-01 00:00:00 UTC

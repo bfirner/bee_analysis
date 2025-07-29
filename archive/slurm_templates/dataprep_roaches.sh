@@ -17,22 +17,22 @@
 #SBATCH --output=LOG_FILE.%A_%a
 
 # This installation has ffmpeg-python installed
-export PATH=/koko/system/anaconda/envs/python38/bin:$PATH
-echo start-is: $(date)
+export PATH=/koko/system/anaconda/envs/python38/bin:"$PATH"
+echo start-is: "$(date)"
 
 cd OUT_PATH || exit
 
-in_csv="CSV_BASE_${SLURM_ARRAY_TASK_ID}.csv"
-out_tar="TAR_BASE_${SLURM_ARRAY_TASK_ID}.tar"
+in_csv="CSV_BASE_$SLURM_ARRAY_TASK_ID.csv"
+out_tar="TAR_BASE_$SLURM_ARRAY_TASK_ID.tar"
 
 # There are 503 roach videos with resolutions of 1440x1080
 # Quarter scale them to 360x270 and crop to a final size of 300x250 with 10 pixels of crop noise.
 # Sampling 500 images from each will give about 250 thousand images.
-python3 BIN_PATH/VidActRecDataprep.py --width 300 --height 250 --scale 0.25 --samples 500 --crop_noise 10 --out_channels 1 --frames_per_sample 1 --background_subtraction mog2 "${in_csv}" "${out_tar}"
+python3 BIN_PATH/VidActRecDataprep.py --width 300 --height 250 --scale 0.25 --samples 500 --crop_noise 10 --out_channels 1 --frames_per_sample 1 --background_subtraction mog2 "$in_csv" "$out_tar"
 succ=$?
 
-echo end-is: $(date)
+echo end-is: "$(date)"
 
 # Success?
-exit $succ
+exit "$succ"
 
