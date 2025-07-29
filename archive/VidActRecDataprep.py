@@ -21,7 +21,8 @@ import torch
 import webdataset as wds
 # Helper function to convert to images
 from torchvision import transforms
-from utility.video_utility import (getVideoInfo, VideoSampler, vidSamplingCommonCrop)
+from utility.video_utility import (
+    getVideoInfo, VideoSampler, vidSamplingCommonCrop)
 from utility.patch_common import imagePreprocessFromCoords
 parser = argparse.ArgumentParser(
     description="Perform data preparation for DNN training on a video set.")
@@ -135,7 +136,8 @@ with open(args.datalist, newline='') as datacsv:
         # Read the next video
         # Make sure that this line is sane
         if 4 != len(row):
-            print(f"Row '{row}' does not have the correct number of columns (4).")
+            print(
+                f"Row '{row}' does not have the correct number of columns (4).")
         else:
             path = row[file_col]
             try:
@@ -152,16 +154,18 @@ with open(args.datalist, newline='') as datacsv:
                 os.exit(-1)
             for sample_num, frame_data in enumerate(sampler):
                 frame, video_path, frame_num = frame_data
-                base_name = os.path.basename(video_path).replace(' ', '_').replace('.', '_')
+                base_name = os.path.basename(video_path).replace(
+                    ' ', '_').replace('.', '_')
                 video_time = os.path.basename(video_path).split('.')[0]
                 # TODO FIXME Convert the time from the video to the current frame time.
                 # TODO Assuming 3fps bee videos
-                time_sec = time.mktime(time.strptime(video_time, "%Y-%m-%d %H:%M:%S"))
+                time_sec = time.mktime(time.strptime(
+                    video_time, "%Y-%m-%d %H:%M:%S"))
                 time_struct = time.localtime(time_sec + int(frame_num[0]) // 3)
                 curtime = time.strftime("%Y-%m-%d %H:%M:%S", time_struct)
                 metadata = f"{video_path},{frame_num[0]},{curtime}"
                 height, width = frame.size(2), frame.size(3)
-                #defined img processing params
+                # defined img processing params
                 improc = {
                     'scale': args.scale,
                     'width': args.width,
@@ -170,9 +174,9 @@ with open(args.datalist, newline='') as datacsv:
                     'crop_y_offset': args.crop_y_offset
                 }
                 # Now crop to args.width by args.height.
-                #ybegin = (height - args.height)//2
-                #xbegin = (width - args.width)//2
-                #cropped = frame[:,:,ybegin:ybegin+args.height,xbegin:xbegin+args.width]
+                # ybegin = (height - args.height)//2
+                # xbegin = (width - args.width)//2
+                # cropped = frame[:,:,ybegin:ybegin+args.height,xbegin:xbegin+args.width]
                 # If you would like to debug (and you would like to!) check your images.
                 if 1 == args.frames_per_sample:
                     processed = imagePreprocessFromCoords(frame[0], improc)
@@ -200,7 +204,7 @@ with open(args.datalist, newline='') as datacsv:
                     # Save multiple pngs
                     buffers = []
                     for i in range(args.frames_per_sample):
-                        #add preprocessing here
+                        # add preprocessing here
                         processed = imagePreprocessFromCoords(frame[i], improc)
                         if 3 == args.out_channels:
                             img = transforms.ToPILImage()(processed/255.0).convert('RGB')

@@ -6,11 +6,11 @@ Create datasets with basic shapes (square, triangle, chevron, etc).
 
 import argparse
 import io
-#import math
-#import numpy
+# import math
+# import numpy
 import os
 import random
-#import sys
+# import sys
 import torch
 import webdataset as wds
 # Helper function to convert to images
@@ -19,40 +19,40 @@ from torchvision import transforms
 # A collection of shapes that have some similarities to one another, but should still be simple
 # enough to disambiguate.
 all_shapes = {
-    'square4x4': torch.ones(4,4),
-    'square5x5': torch.ones(5,5),
-    'square9x9': torch.ones(9,9),
+    'square4x4': torch.ones(4, 4),
+    'square5x5': torch.ones(5, 5),
+    'square9x9': torch.ones(9, 9),
     'triangle3up': torch.tensor([[0, 0, 1, 0, 0],
-                               [0, 1, 1, 1, 0],
-                               [1, 1, 1, 1, 1]]),
-    'triangle3down': torch.tensor([[1, 1, 1, 1, 1],
                                  [0, 1, 1, 1, 0],
-                                 [0, 0, 1, 0, 0]]),
-    'triangle5right': torch.tensor([[0, 0, 0, 0, 1],
-                                  [0, 0, 0, 1, 1],
-                                  [0, 0, 1, 1, 1],
-                                  [0, 1, 1, 1, 1],
-                                  [1, 1, 1, 1, 1]]),
-    'triangle5left': torch.tensor([[1, 0, 0, 0, 0],
-                                 [1, 1, 0, 0, 0],
-                                 [1, 1, 1, 0, 0],
-                                 [1, 1, 1, 1, 0],
                                  [1, 1, 1, 1, 1]]),
+    'triangle3down': torch.tensor([[1, 1, 1, 1, 1],
+                                   [0, 1, 1, 1, 0],
+                                   [0, 0, 1, 0, 0]]),
+    'triangle5right': torch.tensor([[0, 0, 0, 0, 1],
+                                    [0, 0, 0, 1, 1],
+                                    [0, 0, 1, 1, 1],
+                                    [0, 1, 1, 1, 1],
+                                    [1, 1, 1, 1, 1]]),
+    'triangle5left': torch.tensor([[1, 0, 0, 0, 0],
+                                   [1, 1, 0, 0, 0],
+                                   [1, 1, 1, 0, 0],
+                                   [1, 1, 1, 1, 0],
+                                   [1, 1, 1, 1, 1]]),
     'chevron5': torch.tensor([[0, 0, 1, 0, 0],
-                            [0, 1, 1, 1, 0],
-                            [1, 1, 1, 1, 1],
-                            [1, 1, 0, 1, 1],
-                            [1, 0, 0, 0, 1]]),
+                              [0, 1, 1, 1, 0],
+                              [1, 1, 1, 1, 1],
+                              [1, 1, 0, 1, 1],
+                              [1, 0, 0, 0, 1]]),
     'chevron5inverted': torch.tensor([[1, 0, 0, 0, 1],
-                                    [1, 1, 0, 1, 1],
-                                    [1, 1, 1, 1, 1],
-                                    [0, 1, 1, 1, 0],
-                                    [0, 0, 1, 0, 0]]),
+                                      [1, 1, 0, 1, 1],
+                                      [1, 1, 1, 1, 1],
+                                      [0, 1, 1, 1, 0],
+                                      [0, 0, 1, 0, 0]]),
     'diamond5': torch.tensor([[0, 0, 1, 0, 0],
-                            [0, 1, 1, 1, 0],
-                            [1, 1, 1, 1, 1],
-                            [0, 1, 1, 1, 0],
-                            [0, 0, 1, 0, 0]]),
+                              [0, 1, 1, 1, 0],
+                              [1, 1, 1, 1, 1],
+                              [0, 1, 1, 1, 0],
+                              [0, 0, 1, 0, 0]]),
 }
 
 parser = argparse.ArgumentParser(
@@ -106,7 +106,7 @@ args = parser.parse_args()
 class DataCreator:
 
     def __init__(self, num_samples, frames_per_sample, shapes_per_sample,
-            width, height, speed):
+                 width, height, speed):
         """
         Samples have no overlaps. For example, a 10 second video at 30fps has 300 samples of 1
         frame, 150 samples of 2 frames with a frame interval of 0, or 100 samples of 2 frames with a
@@ -126,11 +126,9 @@ class DataCreator:
         self.height = height
         self.speed = speed
 
-
     def setSeed(self, seed):
         """Set the seed used for sample generation in the iterator."""
         self.seed = seed
-
 
     def __iter__(self):
         """An iterator that yields frames.
@@ -149,15 +147,18 @@ class DataCreator:
             # The ground truth are the coordinates of all placed shapes, with another output
             # indicating if the shape is present.
             shape_list = list(all_shapes.values())
-            selections = random.sample(range(len(all_shapes)), k=self.shapes_per_sample)
+            selections = random.sample(
+                range(len(all_shapes)), k=self.shapes_per_sample)
             # Create the ground truth. First make some zero tensors then fill in locations and
             # class detection information.
             gt_detection = torch.zeros(len(all_shapes))
             gt_location = torch.zeros(len(all_shapes) * 2)
             for idx in selections:
                 gt_detection[idx] = 1
-                gt_location[idx*2] = random.randint(0, self.height - shape_list[idx].size(0))
-                gt_location[idx*2 + 1] = random.randint(0, self.width - shape_list[idx].size(1))
+                gt_location[idx*2] = random.randint(0,
+                                                    self.height - shape_list[idx].size(0))
+                gt_location[idx*2 +
+                            1] = random.randint(0, self.width - shape_list[idx].size(1))
             groundtruth = (gt_detection, gt_location)
             # TODO Also generate a direction and speed.
             # TODO On subsequent frames move the image.
