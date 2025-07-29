@@ -8,15 +8,17 @@ import datetime
 import cv2
 
 parser = argparse.ArgumentParser(
-    description="This program removes the background from a video"
-)
+    description="This program removes the background from a video")
 parser.add_argument(
     "--input",
     type=str,
     help="Path to a video or a sequence of image.",
     default="input.avi",
 )
-parser.add_argument("--output", type=str, help="output file name", default="output.avi")
+parser.add_argument("--output",
+                    type=str,
+                    help="output file name",
+                    default="output.avi")
 parser.add_argument("--lognum", type=int, help="log frame number", default=0)
 parser.add_argument(
     "--alg",
@@ -49,13 +51,12 @@ height, width, channels = frame.shape
 size = (width, height)
 fps = int(capture.get(cv2.CAP_PROP_FPS))
 dateNow = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-print(
-    'Log: Processing video "%s" size %d:%d fps %d at %s'
-    % (args.input, size[0], size[1], fps, dateNow)
-)
+print('Log: Processing video "%s" size %d:%d fps %d at %s' %
+      (args.input, size[0], size[1], fps, dateNow))
 
 # file to write out
-out = cv2.VideoWriter(outputFileName, cv2.VideoWriter_fourcc(*"DIVX"), fps, size)
+out = cv2.VideoWriter(outputFileName, cv2.VideoWriter_fourcc(*"DIVX"), fps,
+                      size)
 # out = cv2.VideoWriter(outputFileName,cv2.VideoWriter_fourcc(*'MJPG'), fps, size)
 
 while True:
