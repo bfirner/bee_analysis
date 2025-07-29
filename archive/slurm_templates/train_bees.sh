@@ -16,21 +16,20 @@
 
 # This doesn't have webdataset installed
 #export PATH=/koko/system/anaconda/envs/python39/bin:$PATH
-export PATH=/koko/system/anaconda/envs/python38/bin:$PATH
-echo start-is: `date`
+export PATH=/koko/system/anaconda/envs/python38/bin:"$PATH"
+echo start-is: "$(date)"
 
-cd BIN_PATH
+cd BIN_PATH || exit
 
 # Train
 python3 VidActRecTrain.py --epochs 10 --template bees \
-    --outname CHECKPOINT \
-    --not_deterministic \
-    --save_worst_n 100 \
-    --evaluate EVAL_PATH TRAIN_PATH
+  --outname CHECKPOINT \
+  --not_deterministic \
+  --save_worst_n 100 \
+  --evaluate EVAL_PATH TRAIN_PATH
 succ=$?
 
-echo end-is: `date`
+echo end-is: "$(date)"
 
 # Success?
-exit $succ
-
+exit "$succ"
