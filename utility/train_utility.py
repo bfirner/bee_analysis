@@ -258,7 +258,7 @@ def trainEpoch(
     position_mask = None
     for batch_num, dl_tuple in enumerate(dataloader):
         dateNow = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-        if (batch_num % 1000) == 1:
+        if (batch_num % 1000) == 0:
             logging.info("Log: at batch %d at %s" % (batch_num, dateNow))
 
         # No gradients for setup stuff
