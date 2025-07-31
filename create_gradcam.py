@@ -38,7 +38,8 @@ def run_gradcam(
         num_outputs=3,
         height=720,
         width=960,
-        output_folder=None,  # New parameter to specify the output folder
+        output_folder=None,
+        map_percent=100.0, 
 ):
     """
     Runs GradCAM on a given model + dataset using minimal logic.
@@ -62,7 +63,7 @@ def run_gradcam(
     # --------------------------------------------------------------------------
     # 1. Prepare device
     # --------------------------------------------------------------------------
-    device = torch.device("cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # --------------------------------------------------------------------------
     # 2. Construct the model
@@ -183,26 +184,21 @@ def run_gradcam(
     # Use the output_folder if provided; otherwise, use the dataset's basename.
     save_folder = (os.path.join(output_folder, os.path.basename(dataset_path)) if output_folder is not None else
                    os.path.basename(dataset_path))
+    
     for batch in loader:
-        # If sample_frames == 1, batch[0] is your image tensor, batch[1] is the label
-        # If sample_frames > 1, batch[0..(sample_frames-1)] are images, batch[sample_frames] is label
-        if sample_frames == 1:
-            net_input = batch[0].unsqueeze(1).to(device)  # shape: [B, 1, H, W]
-            labels = batch[1].to(device)
-        else:
-            raw_input = []
-            for i in range(sample_frames):
-                raw_input.append(batch[i].unsqueeze(1).to(device))
-            # shape: [B, sample_frames, H, W]
-            net_input = torch.cat(raw_input, dim=1)
-            labels = batch[sample_frames].to(device)
-
-        # Adjust label offset if needed
-        labels -= label_offset
-
+        # Unpack the batch: frames + label
+        *frames, labels = batch
+        
+        # Stack frames into a tensor: (batch_size, num_frames, height, width)
+        net_input = torch.stack(frames, dim=1).float().to(device)
+        
+        # Process labels: convert to tensor and apply offset
+        labels = torch.tensor(labels).long().to(device) - label_offset
+        
+        logging.info(f"Processing batch with input shape: {net_input.shape}, labels: {labels}")
+        # END OF ADDITION
+        
         # For demonstration, you might run GradCAM on each layer in gradcam_cnn_model_layer.
-        # If you are using multi-model arrays (e.g., model_a, model_b) you’d adapt accordingly.
-        # The below code just demonstrates calling your GradCAM function for each listed layer:
         with torch.set_grad_enabled(True):
             for layer_name in gradcam_cnn_model_layer:
                 try:
@@ -214,10 +210,11 @@ def run_gradcam(
                         save_folder=save_folder,
                         dataset=dataset,
                         input_tensor=net_input,
-                        target_layer_name=[layer_name],
+                        target_layer_name=layer_name, 
                         model_name=modeltype,
                         target_classes=labels.tolist(),
                         number_of_classes=num_outputs,
+                        map_percent=map_percent,
                     )
                 except Exception as e:
                     logging.info(

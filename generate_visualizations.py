@@ -19,6 +19,7 @@ import torch
 import webdataset as wds
 from pathlib import Path
 import glob
+import random
 
 # Add the bee_analysis directory to the path for imports
 script_dir = Path(__file__).parent.absolute()
@@ -214,11 +215,21 @@ def get_gradcam_layers(modeltype):
     return layer_mapping.get(modeltype, ["layer4"])
 
 
+
 def process_batch(model, input_tensor, labels, batch_idx, args, metadata, dataset_name):
     """Process a single batch for GradCAM and saliency map generation"""
     device = next(model.parameters()).device
     input_tensor = input_tensor.to(device)
     labels = labels.to(device)
+    
+    # ADD THIS SECTION - Check if we should process this batch based on map_percent
+    batch_sample_id = hash(f"{dataset_name}_{batch_idx}")
+    if not should_process_sample(args.map_percent, batch_sample_id):
+        logging.debug(f"Skipping batch {batch_idx} from {dataset_name} due to map_percent={args.map_percent}")
+        return
+    
+    logging.info(f"Processing batch {batch_idx} from {dataset_name} (selected by map_percent={args.map_percent})")
+    # END OF ADDITION
     
     # Adjust labels by offset
     adjusted_labels = labels - args.label_offset
@@ -240,6 +251,7 @@ def process_batch(model, input_tensor, labels, batch_idx, args, metadata, datase
                     model_name=metadata['modeltype'],
                     target_classes=adjusted_labels.tolist(),
                     number_of_classes=metadata['label_size'],
+                    map_percent=args.map_percent,
                 )
                 logging.info(f"Successfully generated GradCAM for layer {layer_name}")
             except Exception as e:
@@ -247,7 +259,7 @@ def process_batch(model, input_tensor, labels, batch_idx, args, metadata, datase
                 if args.debug:
                     logging.exception("Full traceback:")
     
-    # Generate Saliency Maps
+    # Generate Saliency Maps - existing code unchanged
     if args.generate_saliency:
         try:
             logging.info(f"Generating saliency maps for dataset {dataset_name}, batch {batch_idx}")
@@ -260,13 +272,13 @@ def process_batch(model, input_tensor, labels, batch_idx, args, metadata, datase
                 model_name=metadata['modeltype'],
                 process_all_samples=args.process_all_samples,
                 sample_idx=args.sample_idx,
+                map_percent=args.map_percent,
             )
             logging.info(f"Successfully generated saliency maps for dataset {dataset_name}")
         except Exception as e:
             logging.error(f"Failed to generate saliency maps for dataset {dataset_name}: {e}")
             if args.debug:
                 logging.exception("Full traceback:")
-
 
 def process_dataset(model, dataset_path, args, metadata):
     """Process a single dataset tar file"""
@@ -328,6 +340,30 @@ def process_dataset(model, dataset_path, args, metadata):
         if args.debug:
             logging.exception("Full traceback:")
         return 0
+    
+
+def should_process_sample(map_percent, sample_id=None):
+    """
+    Randomly determine if a sample should be processed based on map_percent.
+    
+    Args:
+        map_percent: Percentage of samples to process (0-100)
+        sample_id: Optional unique identifier for deterministic selection
+    
+    Returns:
+        bool: True if sample should be processed
+    """
+    if map_percent >= 100.0:
+        return True
+    if map_percent <= 0.0:
+        return False
+    
+    # Use sample_id for deterministic selection if provided
+    if sample_id is not None:
+        # Use modulo approach for more predictable results with low percentages
+        return (sample_id % 100) < map_percent
+    
+    return random.random() * 100.0 < map_percent
 
 
 def main():
@@ -443,8 +479,21 @@ def main():
         action="store_true",
         help="Enable debug logging"
     )
+
+    parser.add_argument(
+    "--map_percent",
+    type=float,
+    required=False,
+    default=50.0,
+    help="Percentage of samples to use for saliency maps and GradCAM (0-100, default: 50.0)",
+)
     
     args = parser.parse_args()
+
+     # Validate map_percent
+    if args.map_percent < 0 or args.map_percent > 100:
+        logging.error(f"map_percent must be between 0 and 100, got {args.map_percent}")
+        sys.exit(1)
     
     # Handle negation flags
     if args.no_gradcam:

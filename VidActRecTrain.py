@@ -298,6 +298,14 @@ parser.add_argument(
 )
 
 parser.add_argument(
+    "--map_percent",
+    type=float,
+    required=False,
+    default=50.0,
+    help="Percentage of samples to use for saliency maps and GradCAM (0-100, default: 50.0)",
+)
+
+parser.add_argument(
     "--k",
     type=int,
     required=False,
@@ -305,6 +313,11 @@ parser.add_argument(
     help="Number of folds (gradcam folders to create).",
 )
 args = parser.parse_args()
+
+# Add validation for map_percent right after parsing args
+if args.map_percent < 0 or args.map_percent > 100:
+    logging.error(f"map_percent must be between 0 and 100, got {args.map_percent}")
+    sys.exit(1)
 
 # ---------------------- Setup Logging and Device ----------------------
 # Added: Configure logging and determine the device to use.
@@ -762,4 +775,5 @@ if args.evaluate:
                 label_offset=args.label_offset,
                 height=image_size[-2],
                 width=image_size[-1],
+                map_percent=args.map_percent,
         )

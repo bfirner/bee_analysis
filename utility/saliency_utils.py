@@ -6,6 +6,7 @@ import torch
 from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
 from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
+import random
 
 
 def get_layer_by_name(model, layer_name):
@@ -50,6 +51,7 @@ def plot_saliency_map(
     model_name="model",
     process_all_samples=True,
     sample_idx=0,
+    map_percent=100.0, 
 ):
     """
     Generates saliency maps for multi-channel (5-frame) input tensor,
@@ -81,6 +83,11 @@ def plot_saliency_map(
     
     # Process each sample in the (possibly reduced) batch
     for sample_idx_in_batch in range(batch_size):
+
+        sample_id = hash(f"{save_folder}_{batch_num}_{sample_idx_in_batch}")
+        if map_percent < 100.0:
+            if (sample_id % 100) >= map_percent:
+                continue
         # Get single sample for processing
         single_sample = input_tensor[sample_idx_in_batch:sample_idx_in_batch+1]
         single_sample.requires_grad_()
@@ -164,6 +171,7 @@ def plot_saliency_map(
         single_sample.grad = None
 
 
+
 def plot_gradcam_for_multichannel_input(
     model,
     save_folder,
@@ -173,6 +181,7 @@ def plot_gradcam_for_multichannel_input(
     model_name,
     target_classes=None,
     number_of_classes=3,
+    map_percent=100.0,
 ):
     """
     Generates and saves Grad-CAM overlays for each channel in a multi-channel input,
@@ -205,7 +214,15 @@ def plot_gradcam_for_multichannel_input(
 
     class_count = {}
     batch_num = 0
+    processed_samples = 0
+    
     for batch_idx in range(input_images.shape[0]):
+        # Check if we should process this sample based on map_percent
+        sample_id = hash(f"{save_folder}_{batch_idx}")
+        if map_percent < 100.0 and random.Random(sample_id).random() * 100.0 >= map_percent:
+            continue
+            
+        processed_samples += 1
         true_class = target_classes[batch_idx]
         pred_class = pred_classes[batch_idx]
 
@@ -216,7 +233,7 @@ def plot_gradcam_for_multichannel_input(
             continue
         if len(class_count) == number_of_classes and all(
                 count >= 100 for count in class_count.values()):
-            return
+            break
 
         class_directory = f"gradcam_plots/{save_folder}/class_{true_class}/"
         os.makedirs(class_directory, exist_ok=True)
@@ -253,17 +270,6 @@ def plot_gradcam_for_multichannel_input(
             plt.savefig(filename)
             plt.close(fig)
 
-        # Also generate a saliency map for the first sample of the batch
-        try:
-            plot_saliency_map(
-                model=model,
-                input_tensor=input_tensor,
-                target_class=true_class,
-                batch_num=batch_num,
-                model_name=model_name,
-                save_folder=save_folder,
-            )
-        except Exception as e:
-            print(f"Failed to plot saliency map: {e}")
-
         batch_num += 1
+    
+    logging.info(f"Processed {processed_samples} out of {input_images.shape[0]} samples ({map_percent}%)")
