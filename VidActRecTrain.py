@@ -301,8 +301,8 @@ parser.add_argument(
     "--map_percent",
     type=float,
     required=False,
-    default=50.0,
-    help="Percentage of samples to use for saliency maps and GradCAM (0-100, default: 50.0)",
+    default=10.0,
+    help="Percentage of samples to use for saliency maps and GradCAM (0-100, default: 10.0)",
 )
 
 parser.add_argument(
