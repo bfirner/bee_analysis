@@ -20,6 +20,7 @@ import webdataset as wds
 from pathlib import Path
 import glob
 import random
+import random
 
 # Add the bee_analysis directory to the path for imports
 script_dir = Path(__file__).parent.absolute()
@@ -40,8 +41,15 @@ except ImportError as e:
 
 
 def setup_logging(debug=False, log_file=None):
+def setup_logging(debug=False, log_file=None):
     """Setup logging configuration with file output"""
     level = logging.DEBUG if debug else logging.INFO
+    
+    # Set log file path - 2 levels above bee_analysis directory
+    if log_file is None:
+        script_dir = Path(__file__).parent.absolute()  # bee_analysis
+        parent_dir = script_dir.parent.parent  # 2 levels up
+        log_file = parent_dir / "saliency.log"
     
     # Set log file path - 2 levels above bee_analysis directory
     if log_file is None:
@@ -65,7 +73,9 @@ def setup_logging(debug=False, log_file=None):
     file_handler.setFormatter(formatter)
     
     # Create console handler for immediate feedback (less verbose)
+    # Create console handler for immediate feedback (less verbose)
     console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)  # Always INFO for console
     console_handler.setLevel(logging.INFO)  # Always INFO for console
     console_handler.setFormatter(formatter)
     
@@ -74,6 +84,12 @@ def setup_logging(debug=False, log_file=None):
         level=level,
         handlers=[file_handler, console_handler]
     )
+    
+    # Suppress noisy third-party loggers
+    logging.getLogger('matplotlib').setLevel(logging.WARNING)
+    logging.getLogger('PIL').setLevel(logging.WARNING)
+    logging.getLogger('pytorch_grad_cam').setLevel(logging.WARNING)
+    logging.getLogger('torchvision').setLevel(logging.WARNING)
     
     # Suppress noisy third-party loggers
     logging.getLogger('matplotlib').setLevel(logging.WARNING)
@@ -216,6 +232,7 @@ def get_gradcam_layers(modeltype):
 
 
 
+
 def process_batch(model, input_tensor, labels, batch_idx, args, metadata, dataset_name):
     """Process a single batch for GradCAM and saliency map generation"""
     device = next(model.parameters()).device
@@ -251,6 +268,7 @@ def process_batch(model, input_tensor, labels, batch_idx, args, metadata, datase
                     target_classes=adjusted_labels.tolist(),
                     number_of_classes=metadata['label_size'],
                     map_percent=args.map_percent,
+                    map_percent=args.map_percent,
                 )
                 logging.info(f"Successfully generated GradCAM for layer {layer_name}")
             except Exception as e:
@@ -258,6 +276,7 @@ def process_batch(model, input_tensor, labels, batch_idx, args, metadata, datase
                 if args.debug:
                     logging.exception("Full traceback:")
     
+    # Generate Saliency Maps - existing code unchanged
     # Generate Saliency Maps - existing code unchanged
     if args.generate_saliency:
         try:
@@ -271,6 +290,7 @@ def process_batch(model, input_tensor, labels, batch_idx, args, metadata, datase
                 model_name=metadata['modeltype'],
                 process_all_samples=args.process_all_samples,
                 sample_idx=args.sample_idx,
+                map_percent=args.map_percent,
                 map_percent=args.map_percent,
             )
             logging.info(f"Successfully generated saliency maps for dataset {dataset_name}")
@@ -339,6 +359,30 @@ def process_dataset(model, dataset_path, args, metadata):
         if args.debug:
             logging.exception("Full traceback:")
         return 0
+    
+
+def should_process_sample(map_percent, sample_id=None):
+    """
+    Randomly determine if a sample should be processed based on map_percent.
+    
+    Args:
+        map_percent: Percentage of samples to process (0-100)
+        sample_id: Optional unique identifier for deterministic selection
+    
+    Returns:
+        bool: True if sample should be processed
+    """
+    if map_percent >= 100.0:
+        return True
+    if map_percent <= 0.0:
+        return False
+    
+    # Use sample_id for deterministic selection if provided
+    if sample_id is not None:
+        # Use modulo approach for more predictable results with low percentages
+        return (sample_id % 100) < map_percent
+    
+    return random.random() * 100.0 < map_percent
     
 
 def should_process_sample(map_percent, sample_id=None):
@@ -488,6 +532,11 @@ def main():
 )
     
     args = parser.parse_args()
+
+     # Validate map_percent
+    if args.map_percent < 0 or args.map_percent > 100:
+        logging.error(f"map_percent must be between 0 and 100, got {args.map_percent}")
+        sys.exit(1)
 
      # Validate map_percent
     if args.map_percent < 0 or args.map_percent > 100:

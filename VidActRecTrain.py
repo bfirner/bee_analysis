@@ -654,27 +654,10 @@ if not args.no_train:
     try:
         worst_training = None
         for epoch in range(args.epochs):
-            if args.save_worst_n is not None:
-                worst_training = WorstExamples(
-                    args.outname.split(".")[0] + "-worstN-train-epoch{}",
-                    class_names,
-                    args.save_worst_n,
-                    epoch,
-                )
-                logging.info(
-                    f"Saving worst training examples to {worst_training.worstn_path}."
-                )
+            # something seems to be running asynchronously, hopefully placement can fix
+            # the problem
             logging.info(f"Starting epoch {epoch}")
-            if args.save_worst_n is not None:
-                worst_training = WorstExamples(
-                    args.outname.split(".")[0] + "-worstN-train-epoch{}",
-                    class_names,
-                    args.save_worst_n,
-                    epoch,
-                )
-                logging.info(
-                    f"Saving worst training examples to {worst_training.worstn_path}."
-                )
+            
             if args.loss_fun in regression_loss:
                 totals = RegressionResults(size=label_handler.size(),
                                            names=label_handler.names())
@@ -696,9 +679,11 @@ if not args.no_train:
                 worst_training=worst_training,
                 skip_metadata=args.skip_metadata,
             )
+            
             # Adjust learning rate according to the learning rate schedule
             if lr_scheduler is not None:
                 lr_scheduler.step()
+                
             # Save checkpoint
             torch.save(
                 {
@@ -734,7 +719,7 @@ if not args.no_train:
             # Evaluation step during training if requested
             # Validation step if requested
             if args.evaluate is not None:
-                print(f"Evaluating epoch {epoch}")
+                logging.info(f"Evaluating epoch {epoch}")
                 if args.loss_fun in regression_loss:
                     eval_totals = RegressionResults(
                         size=label_handler.size(), names=label_handler.names())
@@ -753,7 +738,18 @@ if not args.no_train:
                     write_to_description=epoch >= args.epochs - 1,
                     outname=args.evaluate,
                 )
-            # End training loop; final checkpoint saved above.
+                
+            if args.save_worst_n is not None:
+                worst_training = WorstExamples(
+                    args.outname.split(".")[0] + "-worstN-train-epoch{}",
+                    class_names,
+                    args.save_worst_n,
+                    epoch,
+                )
+                logging.info(
+                    f"Saving worst training examples to {worst_training.worstn_path}."
+                )
+                # End training loop; final checkpoint saved above.
     except Exception as e:
         logging.error(f"Exception during training: {e}")
         raise e
