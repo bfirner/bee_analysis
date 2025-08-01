@@ -222,7 +222,6 @@ def process_batch(model, input_tensor, labels, batch_idx, args, metadata, datase
     input_tensor = input_tensor.to(device)
     labels = labels.to(device)
     
-    # ADD THIS SECTION - Check if we should process this batch based on map_percent
     batch_sample_id = hash(f"{dataset_name}_{batch_idx}")
     if not should_process_sample(args.map_percent, batch_sample_id):
         logging.debug(f"Skipping batch {batch_idx} from {dataset_name} due to map_percent={args.map_percent}")
@@ -484,7 +483,7 @@ def main():
     "--map_percent",
     type=float,
     required=False,
-    default=50.0,
+    default=12.5,
     help="Percentage of samples to use for saliency maps and GradCAM (0-100, default: 50.0)",
 )
     
