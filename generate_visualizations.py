@@ -216,13 +216,13 @@ def get_gradcam_layers(modeltype):
 
 
 
+
 def process_batch(model, input_tensor, labels, batch_idx, args, metadata, dataset_name):
     """Process a single batch for GradCAM and saliency map generation"""
     device = next(model.parameters()).device
     input_tensor = input_tensor.to(device)
     labels = labels.to(device)
     
-    # ADD THIS SECTION - Check if we should process this batch based on map_percent
     batch_sample_id = hash(f"{dataset_name}_{batch_idx}")
     if not should_process_sample(args.map_percent, batch_sample_id):
         logging.debug(f"Skipping batch {batch_idx} from {dataset_name} due to map_percent={args.map_percent}")
@@ -365,7 +365,6 @@ def should_process_sample(map_percent, sample_id=None):
     
     return random.random() * 100.0 < map_percent
 
-
 def main():
     parser = argparse.ArgumentParser(
         description="Generate GradCAM and saliency maps from a trained model checkpoint"
@@ -484,8 +483,8 @@ def main():
     "--map_percent",
     type=float,
     required=False,
-    default=50.0,
-    help="Percentage of samples to use for saliency maps and GradCAM (0-100, default: 50.0)",
+    default=12.5,
+    help="Percentage of samples to use for saliency maps and GradCAM (0-100, default: 12.5)",
 )
     
     args = parser.parse_args()
@@ -494,6 +493,7 @@ def main():
     if args.map_percent < 0 or args.map_percent > 100:
         logging.error(f"map_percent must be between 0 and 100, got {args.map_percent}")
         sys.exit(1)
+
     
     # Handle negation flags
     if args.no_gradcam:
