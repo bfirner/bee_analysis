@@ -52,7 +52,10 @@ def plot_saliency_map(
     model_name="model",
     process_all_samples=True,
     sample_idx=0,
-    map_percent=100.0, 
+    # The `map_percent` parameter in the functions `plot_saliency_map` and
+    # `plot_gradcam_for_multichannel_input` is used to control the percentage of samples that will
+    # have their saliency maps or Grad-CAM overlays generated and saved.
+    map_percent=5.0, 
 ):
     """
     Generates saliency maps for multi-channel (5-frame) input tensor,
@@ -152,21 +155,22 @@ def plot_saliency_map(
         plt.tight_layout()
         plt.savefig(filename, dpi=150, bbox_inches='tight')
         plt.close()
-
+        
+        # why save individual frame saliency maps when we have batch saving?
         # Also save individual frame saliency maps
-        for i in range(num_channels):
-            plt.figure(figsize=(6, 6))
-            plt.imshow(saliency[i], cmap="hot")
-            plt.title(f"Frame {i+1} Saliency - {model_name} Sample {actual_sample_idx} (True: {current_target_class}, Pred: {pred_class})")
-            plt.axis("off")
-            plt.colorbar(fraction=0.046, pad=0.04)
+        # for i in range(num_channels):
+        #     plt.figure(figsize=(6, 6))
+        #     plt.imshow(saliency[i], cmap="hot")
+        #     plt.title(f"Frame {i+1} Saliency - {model_name} Sample {actual_sample_idx} (True: {current_target_class}, Pred: {pred_class})")
+        #     plt.axis("off")
+        #     plt.colorbar(fraction=0.046, pad=0.04)
             
-            frame_filename = os.path.join(
-                directory,
-                f"saliency_frame{i+1}_{model_name}_batch{batch_num}_sample{actual_sample_idx}_true{current_target_class}_pred{pred_class}.png",
-            )
-            plt.savefig(frame_filename, dpi=150, bbox_inches='tight')
-            plt.close()
+        #     frame_filename = os.path.join(
+        #         directory,
+        #         f"saliency_frame{i+1}_{model_name}_batch{batch_num}_sample{actual_sample_idx}_true{current_target_class}_pred{pred_class}.png",
+        #     )
+        #     plt.savefig(frame_filename, dpi=150, bbox_inches='tight')
+        #     plt.close()
             
         # Clear gradients to avoid memory issues
         single_sample.grad = None
@@ -182,7 +186,7 @@ def plot_gradcam_for_multichannel_input(
     model_name,
     target_classes=None,
     number_of_classes=3,
-    map_percent=100.0,
+    map_percent=5.0,
 ):
     """
     Generates and saves Grad-CAM overlays for each channel in a multi-channel input,

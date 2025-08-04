@@ -648,22 +648,23 @@ for i in range(label_size):
 
 # ---------------------- Training Loop ----------------------
 # Added: Wrap the training loop in a try/except to log and re-raise exceptions.
-if not args.no_train:
     # Gradient scaler for mixed precision training
-    scaler = torch.amp.GradScaler("cuda") if use_amp else None
-    try:
-        worst_training = None
-        for epoch in range(args.epochs):
-            # something seems to be running asynchronously, hopefully placement can fix
-            # the problem
-            logging.info(f"Starting epoch {epoch}")
-            
+scaler = torch.amp.GradScaler("cuda") if use_amp else None
+try:
+    worst_training = None
+    if args.no_train and args.evaluate:
+        logging.info("You passed the arguments --no_train and --evaluate, we'll be ignoring your --epochs command and evaluating one time")
+    for epoch in range(args.epochs if not args.no_train else 1):
+        # something seems to be running asynchronously, hopefully placement can fix
+        # the problem
+        logging.info(f"Starting epoch {epoch}")
+        if not args.no_train:
+            # if args.no_train is passed, don't train but you can evaluate
             if args.loss_fun in regression_loss:
                 totals = RegressionResults(size=label_handler.size(),
-                                           names=label_handler.names())
+                                            names=label_handler.names())
             else:
                 totals = ConfusionMatrix(size=label_handler.size())
-
             train_utility.trainEpoch(
                 net=net,
                 optimizer=optimizer,
@@ -699,10 +700,10 @@ if not args.no_train:
                     torch.get_rng_state(),
                     "denormalizer_state_dict":
                     (denormalizer.state_dict()
-                     if denormalizer is not None else None),
+                        if denormalizer is not None else None),
                     "normalizer_state_dict":
                     (normalizer.state_dict()
-                     if normalizer is not None else None),
+                        if normalizer is not None else None),
                     "metadata": {
                         "modeltype": args.modeltype,
                         "labels": args.labels,
@@ -716,43 +717,43 @@ if not args.no_train:
                 },
                 args.outname,
             )
-            # Evaluation step during training if requested
-            # Validation step if requested
-            if args.evaluate is not None:
-                logging.info(f"Evaluating epoch {epoch}")
-                if args.loss_fun in regression_loss:
-                    eval_totals = RegressionResults(
-                        size=label_handler.size(), names=label_handler.names())
-                else:
-                    eval_totals = ConfusionMatrix(size=label_handler.size())
-                train_utility.evalEpoch(
-                    net=net,
-                    label_handler=label_handler,
-                    eval_stats=eval_totals,
-                    eval_dataloader=eval_dataloader,
-                    vector_range=vector_range,
-                    train_frames=in_frames,
-                    normalize_images=args.normalize,
-                    loss_fn=loss_fn,
-                    nn_postprocess=nn_postprocess,
-                    write_to_description=epoch >= args.epochs - 1,
-                    outname=args.evaluate,
-                )
-                
-            if args.save_worst_n is not None:
-                worst_training = WorstExamples(
-                    args.outname.split(".")[0] + "-worstN-train-epoch{}",
-                    class_names,
-                    args.save_worst_n,
-                    epoch,
-                )
-                logging.info(
-                    f"Saving worst training examples to {worst_training.worstn_path}."
-                )
-                # End training loop; final checkpoint saved above.
-    except Exception as e:
-        logging.error(f"Exception during training: {e}")
-        raise e
+        # Evaluation step during training if requested
+        # Validation step if requested
+        if args.evaluate is not None:
+            logging.info(f"Evaluating epoch {epoch}")
+            if args.loss_fun in regression_loss:
+                eval_totals = RegressionResults(
+                    size=label_handler.size(), names=label_handler.names())
+            else:
+                eval_totals = ConfusionMatrix(size=label_handler.size())
+            train_utility.evalEpoch(
+                net=net,
+                label_handler=label_handler,
+                eval_stats=eval_totals,
+                eval_dataloader=eval_dataloader,
+                vector_range=vector_range,
+                train_frames=in_frames,
+                normalize_images=args.normalize,
+                loss_fn=loss_fn,
+                nn_postprocess=nn_postprocess,
+                write_to_description=epoch >= args.epochs - 1,
+                outname=args.evaluate,
+            )
+            
+        if args.save_worst_n is not None:
+            worst_training = WorstExamples(
+                args.outname.split(".")[0] + "-worstN-train-epoch{}",
+                class_names,
+                args.save_worst_n,
+                epoch,
+            )
+            logging.info(
+                f"Saving worst training examples to {worst_training.worstn_path}."
+            )
+            # End training loop; final checkpoint saved above.
+except Exception as e:
+    logging.error(f"Exception during training: {e}")
+    raise e
 
 # ---------------------- Post-Training Evaluation & GradCAM ----------------------
 # Added: If evaluation dataset was provided, perform post-training evaluation and optionally generate GradCAM plots.
