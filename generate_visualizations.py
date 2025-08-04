@@ -47,7 +47,7 @@ def setup_logging(debug=False, log_file=None):
     if log_file is None:
         script_dir = Path(__file__).parent.absolute()  # bee_analysis
         parent_dir = script_dir.parent.parent  # 2 levels up
-        log_file = parent_dir / "saliency.log"
+        log_file = parent_dir / "visualization.log"
     
     # Create formatter
     formatter = logging.Formatter(
@@ -216,13 +216,13 @@ def get_gradcam_layers(modeltype):
 
 
 
+
 def process_batch(model, input_tensor, labels, batch_idx, args, metadata, dataset_name):
     """Process a single batch for GradCAM and saliency map generation"""
     device = next(model.parameters()).device
     input_tensor = input_tensor.to(device)
     labels = labels.to(device)
     
-    # ADD THIS SECTION - Check if we should process this batch based on map_percent
     batch_sample_id = hash(f"{dataset_name}_{batch_idx}")
     if not should_process_sample(args.map_percent, batch_sample_id):
         logging.debug(f"Skipping batch {batch_idx} from {dataset_name} due to map_percent={args.map_percent}")
@@ -252,6 +252,7 @@ def process_batch(model, input_tensor, labels, batch_idx, args, metadata, datase
                     target_classes=adjusted_labels.tolist(),
                     number_of_classes=metadata['label_size'],
                     map_percent=args.map_percent,
+                    power_scale=args.power_scale
                 )
                 logging.info(f"Successfully generated GradCAM for layer {layer_name}")
             except Exception as e:
@@ -364,7 +365,6 @@ def should_process_sample(map_percent, sample_id=None):
         return (sample_id % 100) < map_percent
     
     return random.random() * 100.0 < map_percent
-
 
 def main():
     parser = argparse.ArgumentParser(
@@ -484,8 +484,15 @@ def main():
     "--map_percent",
     type=float,
     required=False,
-    default=50.0,
-    help="Percentage of samples to use for saliency maps and GradCAM (0-100, default: 50.0)",
+    default=12.5,
+    help="Percentage of samples to use for saliency maps and GradCAM (0-100, default: 12.5)",
+)
+    parser.add_argument(
+        "--power_scale",
+        type=float,
+        required=False,
+        default=0.8,
+        help="Power transformation value for enhancing saliency visibility (default: 0.8), lower means better visibility",
 )
     
     args = parser.parse_args()
@@ -494,6 +501,7 @@ def main():
     if args.map_percent < 0 or args.map_percent > 100:
         logging.error(f"map_percent must be between 0 and 100, got {args.map_percent}")
         sys.exit(1)
+
     
     # Handle negation flags
     if args.no_gradcam:

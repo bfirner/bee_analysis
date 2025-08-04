@@ -301,8 +301,8 @@ parser.add_argument(
     "--map_percent",
     type=float,
     required=False,
-    default=10.0,
-    help="Percentage of samples to use for saliency maps and GradCAM (0-100, default: 10.0)",
+    default=12.5,
+    help="Percentage of samples to use for saliency maps and GradCAM (0-100, default: 12.5)",
 )
 
 parser.add_argument(
@@ -312,6 +312,15 @@ parser.add_argument(
     default=3,
     help="Number of folds (gradcam folders to create).",
 )
+
+parser.add_argument(
+        "--power_scale",
+        type=float,
+        required=False,
+        default=0.8,
+        help="Power transformation value for enhancing saliency visibility (default: 0.8), lower means better visibility",
+)
+
 args = parser.parse_args()
 
 # Add validation for map_percent right after parsing args
