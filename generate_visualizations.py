@@ -47,7 +47,7 @@ def setup_logging(debug=False, log_file=None):
     if log_file is None:
         script_dir = Path(__file__).parent.absolute()  # bee_analysis
         parent_dir = script_dir.parent.parent  # 2 levels up
-        log_file = parent_dir / "saliency.log"
+        log_file = parent_dir / "visualization.log"
     
     # Create formatter
     formatter = logging.Formatter(

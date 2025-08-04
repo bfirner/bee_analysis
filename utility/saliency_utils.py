@@ -7,6 +7,7 @@ from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
 from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 import random
+from pathlib import Path
 
 
 def get_layer_by_name(model, layer_name):
@@ -29,7 +30,7 @@ def setup_saliency_logging():
         # Get path 2 levels above bee_analysis
         script_dir = Path(__file__).parent.parent.absolute()  # bee_analysis
         parent_dir = script_dir.parent.parent  # 2 levels up
-        log_file = parent_dir / "saliency.log"
+        log_file = parent_dir / "visualization.log"
         
         handler = logging.FileHandler(log_file, mode='a')
         formatter = logging.Formatter(
@@ -187,6 +188,7 @@ def plot_gradcam_for_multichannel_input(
     Generates and saves Grad-CAM overlays for each channel in a multi-channel input,
     including true and predicted class annotations.
     """
+
     model.eval()
     device = next(model.parameters()).device
     input_tensor = input_tensor.to(device)
@@ -212,6 +214,9 @@ def plot_gradcam_for_multichannel_input(
     # Convert input tensor to numpy for visualization
     input_images = input_tensor.detach().cpu().numpy()
 
+    #start log
+    logging.info(f"Starting GradCAM generation for {input_images.shape[0]} samples")
+
     class_count = {}
     batch_num = 0
     processed_samples = 0
@@ -225,6 +230,10 @@ def plot_gradcam_for_multichannel_input(
         processed_samples += 1
         true_class = target_classes[batch_idx]
         pred_class = pred_classes[batch_idx]
+
+        #Sample level logging
+        logging.debug(f"Processing GradCAM sample {batch_idx + 1}/{input_images.shape[0]}")
+        logging.debug(f"GradCAM for sample {batch_idx}: true_class={true_class}, pred_class={pred_class}")
 
         # Track count per true class
         class_count.setdefault(true_class, 0)
@@ -240,6 +249,8 @@ def plot_gradcam_for_multichannel_input(
 
         # Iterate channels
         for channel_idx in range(input_images.shape[1]):
+            logging.debug(f"  Processing channel {channel_idx + 1}/{input_images.shape[1]}")
+
             channel_image = input_images[batch_idx, channel_idx]
             channel_image = (channel_image - channel_image.min()) / (
                 channel_image.max() - channel_image.min())
@@ -269,6 +280,8 @@ def plot_gradcam_for_multichannel_input(
             )
             plt.savefig(filename)
             plt.close(fig)
+
+            logging.debug(f"  Saved: {filename}")
 
         batch_num += 1
     
