@@ -202,7 +202,8 @@ def plot_gradcam_for_multichannel_input(
     model_name,
     target_classes=None,
     number_of_classes=3,
-    map_percent=5.0,
+    map_percent=10.0,
+    power_scale=0.8,
 ):
     """
     Generates and saves Grad-CAM overlays for each channel in a multi-channel input,
