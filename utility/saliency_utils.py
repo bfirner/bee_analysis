@@ -52,10 +52,8 @@ def plot_saliency_map(
     model_name="model",
     process_all_samples=True,
     sample_idx=0,
-    # The `map_percent` parameter in the functions `plot_saliency_map` and
-    # `plot_gradcam_for_multichannel_input` is used to control the percentage of samples that will
-    # have their saliency maps or Grad-CAM overlays generated and saved.
-    map_percent=5.0, 
+    map_percent=10.0, 
+    power_scale=0.8
 ):
     """
     Generates saliency maps for multi-channel (5-frame) input tensor,
@@ -116,6 +114,24 @@ def plot_saliency_map(
         # Extract saliency - keep all channels/frames separate
         saliency = single_sample.grad.data.abs().squeeze(0).cpu().numpy()  # Remove batch dimension
         
+        #Percentile-based normalization
+        for i in range(saliency.shape[0]):
+            # Normalize each channel independently
+            channel = saliency[i]
+            
+            # Remove extreme outliers and enhance contrast
+            p2, p98 = np.percentile(channel, [2, 98])
+            channel = np.clip(channel, p2, p98)
+            
+            # Normalize to 0-1 range
+            if p98 > p2:  # Avoid division by zero
+                channel = (channel - p2) / (p98 - p2)
+            
+            # Apply power transformation to enhance visibility
+            channel = np.power(channel, power_scale)  # Values < 1 enhance low intensities
+            
+            saliency[i] = channel
+
         # Handle different input shapes
         if saliency.ndim == 2:  # Single channel case (H, W)
             saliency = saliency[np.newaxis, ...]  # Add channel dimension -> (1, H, W)
@@ -135,7 +151,7 @@ def plot_saliency_map(
             axes = [axes]
 
         for i in range(num_channels):
-            im = axes[i].imshow(saliency[i], cmap="hot")
+            im = axes[i].imshow(saliency[i], cmap="plasma")
             axes[i].set_title(f"Frame {i+1}")
             axes[i].axis("off")
             plt.colorbar(im, ax=axes[i], fraction=0.046, pad=0.04)

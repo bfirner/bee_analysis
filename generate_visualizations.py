@@ -252,6 +252,7 @@ def process_batch(model, input_tensor, labels, batch_idx, args, metadata, datase
                     target_classes=adjusted_labels.tolist(),
                     number_of_classes=metadata['label_size'],
                     map_percent=args.map_percent,
+                    power_scale=args.power_scale
                 )
                 logging.info(f"Successfully generated GradCAM for layer {layer_name}")
             except Exception as e:
@@ -485,6 +486,13 @@ def main():
     required=False,
     default=12.5,
     help="Percentage of samples to use for saliency maps and GradCAM (0-100, default: 12.5)",
+)
+    parser.add_argument(
+        "--power_scale",
+        type=float,
+        required=False,
+        default=0.8,
+        help="Power transformation value for enhancing saliency visibility (default: 0.8), lower means better visibility",
 )
     
     args = parser.parse_args()

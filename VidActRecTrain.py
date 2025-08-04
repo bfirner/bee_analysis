@@ -312,6 +312,15 @@ parser.add_argument(
     default=3,
     help="Number of folds (gradcam folders to create).",
 )
+
+parser.add_argument(
+        "--power_scale",
+        type=float,
+        required=False,
+        default=0.8,
+        help="Power transformation value for enhancing saliency visibility (default: 0.8), lower means better visibility",
+)
+
 args = parser.parse_args()
 
 # Add validation for map_percent right after parsing args
