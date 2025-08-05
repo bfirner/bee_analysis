@@ -1,13 +1,9 @@
 # https://github.com/benjaminyu14
 # This code simulates an animal moving between 2 food sources in the prescence of a distortion field.
-
 # To run the code:
 # python3 field_distrtion_simulation.py distortion_magnitude distortion_angle home_coord food1_coord food2_coord
-
 # Example with distortion-vector (3, 90), home (50,50), food1 (700,280), food2 (250,580):
 # python3 field_distortion_simulation.py 3 90 "(50,50)" "(700,280)" "(250,580)"
-
-
 import ast
 import math
 import sys
