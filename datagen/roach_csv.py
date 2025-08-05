@@ -1,10 +1,10 @@
 import argparse
+import csv
 import os
 import pathlib
-import cv2
 import random
-import csv
 
+import cv2
 
 SKIP_FIRST_N_FRAMES = "4"
 SPLIT_RATIO = 0.75

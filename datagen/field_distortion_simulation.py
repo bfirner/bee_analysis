@@ -8,10 +8,11 @@
 # python3 field_distortion_simulation.py 3 90 "(50,50)" "(700,280)" "(250,580)"
 
 
-import pygame
-import sys
-import math
 import ast
+import math
+import sys
+
+import pygame
 
 WIDTH, HEIGHT = 960, 720
 FPS = 30
