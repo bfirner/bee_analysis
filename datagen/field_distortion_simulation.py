@@ -27,6 +27,7 @@ food2 = ast.literal_eval(sys.argv[5])
 
 
 class Home(pygame.sprite.Sprite):
+
     def __init__(self, position):
         width = 30
         height = 30
@@ -41,6 +42,7 @@ class Home(pygame.sprite.Sprite):
 
 
 class Animal(pygame.sprite.Sprite):
+
     def __init__(self, home_position):
         super().__init__()
         self.original_image = pygame.Surface((30, 20), pygame.SRCALPHA)
@@ -98,7 +100,8 @@ class Animal(pygame.sprite.Sprite):
             self.rect.y = max(0, min(self.rect.y, HEIGHT - self.rect.height))
 
             # rotates animal to face correct orientation
-            self.image = pygame.transform.rotate(self.original_image, -self.orientation)
+            self.image = pygame.transform.rotate(self.original_image,
+                                                 -self.orientation)
 
         def moveToHome():
 
@@ -115,16 +118,18 @@ class Animal(pygame.sprite.Sprite):
             self.rect.y = max(0, min(self.rect.y, HEIGHT - self.rect.height))
 
             # rotates animal to face correct orientation
-            self.image = pygame.transform.rotate(self.original_image, -self.orientation)
+            self.image = pygame.transform.rotate(self.original_image,
+                                                 -self.orientation)
 
             if pygame.sprite.collide_rect(self, home):
                 if food_sources:
                     self.mode_go_home = False
                     # Set the next target_food_source (if available)
                     next_source_index = (
-                        food_sources.sprites().index(self.target_food_source) + 1
-                    ) % len(food_sources.sprites())
-                    self.target_food_source = food_sources.sprites()[next_source_index]
+                        food_sources.sprites().index(self.target_food_source) +
+                        1) % len(food_sources.sprites())
+                    self.target_food_source = food_sources.sprites(
+                    )[next_source_index]
                 else:
                     # All food sources visited, return home
                     self.target_food_source = None
@@ -151,6 +156,7 @@ class Animal(pygame.sprite.Sprite):
 
 
 class FoodSource(pygame.sprite.Sprite):
+
     def __init__(self, position):
         super().__init__()
         self.image = pygame.Surface((30, 30))
