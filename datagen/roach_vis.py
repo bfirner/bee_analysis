@@ -1,9 +1,9 @@
-import cvzone
-import pandas as pd
 import argparse
-import cv2
-import numpy as np
 
+import cv2
+import cvzone
+import numpy as np
+import pandas as pd
 
 SKIP_N_ROWS = 3  # to get headers from the txt file
 REMOVE_N_ROWS = 60  # discard 2 seconds of video
