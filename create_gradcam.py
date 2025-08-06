@@ -40,6 +40,7 @@ def run_gradcam(
         width=960,
         output_folder=None,
         map_percent=100.0, 
+        power_scale=0.8
 ):
     """
     Runs GradCAM on a given model + dataset using minimal logic.
