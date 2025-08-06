@@ -1,20 +1,17 @@
 # https://github.com/benjaminyu14
 # This code simulates an animal moving between 2 food sources in the prescence of a distortion field.
-
 # To run the code:
 # python3 field_distrtion_simulation.py distortion_magnitude distortion_angle home_coord food1_coord food2_coord
-
 # Example with distortion-vector (3, 90), home (50,50), food1 (700,280), food2 (250,580):
 # python3 field_distortion_simulation.py 3 90 "(50,50)" "(700,280)" "(250,580)"
-
+import ast
+import math
+import sys
 
 import pygame
-import sys
-import math
-import ast
 
 WIDTH, HEIGHT = 960, 720
-FPS = 30  
+FPS = 30
 WHITE = (255, 255, 255)
 
 pygame.init()
@@ -28,7 +25,9 @@ home1 = ast.literal_eval(sys.argv[3])
 food1 = ast.literal_eval(sys.argv[4])
 food2 = ast.literal_eval(sys.argv[5])
 
+
 class Home(pygame.sprite.Sprite):
+
     def __init__(self, position):
         width = 30
         height = 30
@@ -37,11 +36,13 @@ class Home(pygame.sprite.Sprite):
         self.image.fill((255, 0, 0))
         self.rect = self.image.get_rect()
         self.rect.center = position
-    
+
     def coords(self) -> tuple:
         return self.rect.center
 
+
 class Animal(pygame.sprite.Sprite):
+
     def __init__(self, home_position):
         super().__init__()
         self.original_image = pygame.Surface((30, 20), pygame.SRCALPHA)
@@ -50,17 +51,15 @@ class Animal(pygame.sprite.Sprite):
         self.image = self.original_image.copy()
         self.rect = self.image.get_rect()
         self.rect.center = home_position
-        self.speed = 0 # animal speed
-        self.orientation = 0  
-        self.target_food_source = None 
-        self.home_position = home_position 
-        self.is_at_home = True  
+        self.speed = 0  # animal speed
+        self.orientation = 0
+        self.target_food_source = None
+        self.home_position = home_position
+        self.is_at_home = True
         self.mode_go_home = False
-    
-      
 
     def update(self, food_sources, home):
-        
+
         def base_vector(magnitude, getting_food):
             self.speed = magnitude
             if getting_food:
@@ -77,12 +76,12 @@ class Animal(pygame.sprite.Sprite):
             x = magnitude * math.cos(rad_angle)
             y = -1 * magnitude * math.sin(rad_angle)
             if getting_food:
-                distance_x = (self.target_food_source.rect.centerx - self.rect.centerx)
-                distance_y = self.target_food_source.rect.centery - self.rect.centery 
+                distance_x = self.target_food_source.rect.centerx - self.rect.centerx
+                distance_y = self.target_food_source.rect.centery - self.rect.centery
             else:
                 distance_x = self.home_position[0] - self.rect.centerx
                 distance_y = self.home_position[1] - self.rect.centery
-            distance = math.sqrt(distance_x**2 + distance_y**2) 
+            distance = math.sqrt(distance_x**2 + distance_y**2)
 
             return x * min(1, distance / 450), y * min(1, distance / 450)
 
@@ -101,10 +100,11 @@ class Animal(pygame.sprite.Sprite):
             self.rect.y = max(0, min(self.rect.y, HEIGHT - self.rect.height))
 
             # rotates animal to face correct orientation
-            self.image = pygame.transform.rotate(self.original_image, -self.orientation)
+            self.image = pygame.transform.rotate(self.original_image,
+                                                 -self.orientation)
 
         def moveToHome():
-            
+
             base_vector(5, False)
             distort_x, distort_y = distortion_vector(magnitude, angle, False)
             rad_angle = math.radians(self.orientation)
@@ -118,18 +118,22 @@ class Animal(pygame.sprite.Sprite):
             self.rect.y = max(0, min(self.rect.y, HEIGHT - self.rect.height))
 
             # rotates animal to face correct orientation
-            self.image = pygame.transform.rotate(self.original_image, -self.orientation)
+            self.image = pygame.transform.rotate(self.original_image,
+                                                 -self.orientation)
 
             if pygame.sprite.collide_rect(self, home):
                 if food_sources:
                     self.mode_go_home = False
                     # Set the next target_food_source (if available)
-                    next_source_index = (food_sources.sprites().index(self.target_food_source) + 1) % len(food_sources.sprites())
-                    self.target_food_source = food_sources.sprites()[next_source_index]
+                    next_source_index = (
+                        food_sources.sprites().index(self.target_food_source) +
+                        1) % len(food_sources.sprites())
+                    self.target_food_source = food_sources.sprites(
+                    )[next_source_index]
                 else:
                     # All food sources visited, return home
                     self.target_food_source = None
-        
+
         if self.is_at_home:
             # If at home, choose the next food source as the target
             if self.target_food_source == None:
@@ -140,7 +144,7 @@ class Animal(pygame.sprite.Sprite):
         if self.target_food_source and not self.mode_go_home:
 
             moveToSource()
-           
+
             # Check if the animal has reached the target_food_source
             if pygame.sprite.collide_rect(self, self.target_food_source):
                 # Handle interaction with the food source (e.g., print a message)
@@ -150,7 +154,9 @@ class Animal(pygame.sprite.Sprite):
         else:
             moveToHome()
 
+
 class FoodSource(pygame.sprite.Sprite):
+
     def __init__(self, position):
         super().__init__()
         self.image = pygame.Surface((30, 30))
@@ -160,6 +166,7 @@ class FoodSource(pygame.sprite.Sprite):
 
     def handle_interaction(self):
         print("Animal interacts with food source at", self.rect.center)
+
 
 def main():
     home = Home(home1)
@@ -177,8 +184,8 @@ def main():
 
         # moves the animal between home and food sources
         animal.update(food_sources, home)
-        
-        screen.fill((0, 0, 0)) 
+
+        screen.fill((0, 0, 0))
 
         # draws everything
         for food in food_sources:
@@ -189,6 +196,7 @@ def main():
 
         pygame.display.flip()
         clock.tick(FPS)
+
 
 if __name__ == "__main__":
     main()
