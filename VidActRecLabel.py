@@ -1,5 +1,7 @@
 #! /usr/bin/python3
 
+# ! IMPORTANT FIXME: THIS CODE HAS BEEN EXPERIENCING PROBLEMS; CHECK https://github.com/bfirner/bee_analysis/issues/79 FOR MORE INFO
+
 """
 Copyright © 2024 Bernhard Firner
 

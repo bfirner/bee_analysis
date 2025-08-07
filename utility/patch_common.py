@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import cv2
 
-
+# ! TODO IMPORTANT: SYNC WITH PATCH COMMON IN VIDEOSAMPLERREWRITE
 
 """
 Copyright © 2025 Bernhard Firner
