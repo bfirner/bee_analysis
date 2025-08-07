@@ -67,7 +67,8 @@ with open('../../datasetcopy.csv', 'r') as f:
         --height 400 \
         --crop_x_offset -20 \
         --crop_y_offset 20 \
-        --debug
+        --debug \
+        --flip 1
     
     echo 'Job completed at:' \$(date)
     echo 'Checking for output files:'

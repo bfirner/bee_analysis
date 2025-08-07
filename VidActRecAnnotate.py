@@ -176,6 +176,14 @@ parser.add_argument(
     help='Enable debug logging'
 )
 
+parser.add_argument(
+    '--flip',
+    type=int,
+    required=False,
+    default=0,
+    choices=[0, 1],
+    help='Flip video vertically if it is upside down. 0 = no flip (default), 1 = flip vertically.')
+
 args = parser.parse_args()
 
 # Network outputs may need to be postprocessed for evaluation if some postprocessing is being done
@@ -268,24 +276,25 @@ class EfficientVideoDecoder:
             self.reader.container.close()
             logging.debug("Video container closed")
     
-    def __init__(self, video_path, width, height, scale=1.0, crop_x=0, crop_y=0, 
-                begin_frame=1, end_frame=None, frames_per_sample=5, planes=1, src='RGB'):
+    def __init__(self, video_path, width, height, scale=1.0, crop_x_offset=0, crop_y_offset=0, 
+                begin_frame=1, end_frame=None, frames_per_sample=5, planes=1, src='RGB', flip=0):
         
         logging.info(f"Initializing video decoder for: {video_path}")
         logging.debug(f"Video decoder params: width={width}, height={height}, scale={scale}")
-        logging.debug(f"Crop params: crop_x={crop_x}, crop_y={crop_y}")
+        logging.debug(f"Crop params: crop_x_offset={crop_x_offset}, crop_y_offset={crop_y_offset}")
         logging.debug(f"Frame params: begin={begin_frame}, end={end_frame}, frames_per_sample={frames_per_sample}")
         # Store all parameters as instance attributes
         self.video_path = video_path
         self.width = width
         self.height = height
         self.scale = scale
-        self.crop_x = crop_x
-        self.crop_y = crop_y
+        self.crop_x_offset = crop_x_offset
+        self.crop_y_offset = crop_y_offset
         self.begin_frame = begin_frame 
         self.frames_per_sample = frames_per_sample
-        self.planes = planes  #Added planes and src as arguements
+        self.planes = planes
         self.src = src
+        self.flip = flip
         
         # Initialize the video reader
         self.reader = VideoReader(video_path)
@@ -310,8 +319,8 @@ class EfficientVideoDecoder:
             'scale': self.scale,
             'width': self.width,
             'height': self.height,
-            'crop_x_offset': self.crop_x,
-            'crop_y_offset': self.crop_y,
+            'crop_x_offset': self.crop_x_offset,
+            'crop_y_offset': self.crop_y_offset,
             'frames_per_sample': self.frames_per_sample, 
             'format': 'rgb24' 
         }
@@ -354,6 +363,11 @@ class EfficientVideoDecoder:
         
     def preprocess_frame(self, frame):
         """Preprocess a frame using optimized OpenCV implementation."""
+
+        if self.flip == 1:
+            logging.debug("Applying vertical flip to frame")
+            frame = cv2.flip(frame, 0)  # 0 = flip vertically (upside down correction)
+
         processed_frame = imagePreprocessFromCoords(
             frame, 
             self.scale_w, 
@@ -376,12 +390,17 @@ class VideoAnnotator:
 
     def __init__(self, video_labels, net, frame_interval, frames_per_sample, out_width=None,
         out_height=None, scale=1.0, crop_x_offset=0, crop_y_offset=0, channels=3,
-         begin_frame=None, end_frame=None, output_name="annotated.mp4", bg_subtract="none"):
+         begin_frame=None, end_frame=None, output_name="annotated.mp4", bg_subtract="none", flip=0):
 
         logging.info("Initializing VideoAnnotator")
 
-        # Store the neural network
+        # Store the neural network and flip parameter
         self.net = net
+        self.flip = flip
+
+        # Store the offsets
+        self.crop_x_offset = crop_x_offset
+        self.crop_y_offset = crop_y_offset
         
         # Use the correct path from the video_labels object
         video_path = video_labels.videoname
@@ -412,7 +431,7 @@ class VideoAnnotator:
             output_name   (str): Name for the output annotated video.
             bg_subtract   (str): Type of background subtraction to use (mog2 or knn), or none.
         """
-        # TODO This should be reusing components of the VideoSampler class from VidActRecDataprep.py
+        # TODO This should be reusing components of the VideoSampler class from VideoSamplerRewrite
         self.path = video_path
         self.video_labels = video_labels
         self.frames_per_sample = frames_per_sample
@@ -421,6 +440,7 @@ class VideoAnnotator:
         self.scale = scale
         self.output_name = output_name
         self.normalize = False
+
         print(f"Processing {video_path}")
 
         # Probe the video to find out some metainformation
@@ -429,10 +449,10 @@ class VideoAnnotator:
         logging.info(f"Video info: {self.width}x{self.height}, {self.total_frames} total frames")
 
 
-        self.out_width, self.out_height, self.crop_x, self.crop_y = vidSamplingCommonCrop(
+        self.out_width, self.out_height,_,_ = vidSamplingCommonCrop(
             self.height, self.width, out_height, out_width, self.scale, crop_x_offset, crop_y_offset)
 
-        logging.debug(f"Computed crop parameters: out={self.out_width}x{self.out_height}, crop=({self.crop_x},{self.crop_y})")
+        logging.debug(f"Computed crop parameters: out={self.out_width}x{self.out_height}, crop=({self.crop_x_offset},{self.crop_y_offset})")
 
         # Background subtraction will require openCV if requested.
         self.bg_subtractor = None
@@ -699,13 +719,14 @@ class VideoAnnotator:
             width=self.out_width,   # Use processed width (740)
             height=self.out_height, # Use processed height (400) 
             scale=self.scale,
-            crop_x=self.crop_x,
-            crop_y=self.crop_y,
+            crop_x_offset=self.crop_x_offset,
+            crop_y_offset=self.crop_y_offset,
             begin_frame=self.begin_frame,
             end_frame=self.end_frame,
             frames_per_sample=self.frames_per_sample,
             planes=1,
-            src='RGB'
+            src='RGB',
+            flip=self.flip,
         )
         
         # Use the processed dimensions that match model training
@@ -778,101 +799,114 @@ class VideoAnnotator:
         logging.info("Video decoder resources released")
         print(f"[DEBUG] Video processing complete")
 
-def process_batch(self, sample_batches, frame, in_width, in_height, temp_dir, frame_count_start):
-    """Process multiple samples simultaneously to utilize more GPU resources"""
-    batch_size = len(sample_batches)
-    logging.debug(f"Processing batch of {batch_size} samples at frame {frame}")
-    print(f"[DEBUG] Processing batch of {batch_size} samples")
-    
-    # Prepare batch tensors
-    batch_inputs = []
-    batch_frames = []
-    
-    for sample_frames, sample_frame in sample_batches:
-        # Concatenate frames into input tensor for this sample
-        image_input = torch.cat(sample_frames, 1)
-        batch_inputs.append(image_input)
-        batch_frames.append((sample_frames, sample_frame))
-    
-    # Create batch: (BATCH_SIZE, channels, height, width)
-    batch_input = torch.cat(batch_inputs, 0)
-    
-    # Normalize the entire batch
-    m = torch.mean(batch_input)
-    v = torch.std(batch_input)
-    if v > 0:
-        net_input = (batch_input - m) / v
-    else:
-        net_input = batch_input - m
-    
-    logging.debug(f"Batch input shape: {batch_input.shape}")
-    
-    # Forward pass through the network for entire batch
-    with torch.no_grad():
-        out, mask = self.net.vis_forward(net_input)
-    
-    logging.debug(f"Batch output shape: {out.shape}")
-    
-    # Process each result in the batch
-    frames_processed = 0
-    for i in range(batch_size):
-        sample_frames, sample_frame = batch_frames[i]
+    def process_batch(self, sample_batches, frame, in_width, in_height, temp_dir, frame_count_start):
+        """Process multiple samples simultaneously to utilize more GPU resources"""
+        batch_size = len(sample_batches)
+        logging.debug(f"Processing batch of {batch_size} samples at frame {frame}")
+        print(f"[DEBUG] Processing batch of {batch_size} samples")
         
-        # Extract individual results from batch
-        individual_out = out[i:i+1]  # Keep batch dimension
-        individual_mask = None
-        if mask is not None:
-            if isinstance(mask, list):
-                individual_mask = [m[i:i+1] for m in mask] if len(mask) > 0 else None
-            elif isinstance(mask, torch.Tensor):
-                individual_mask = mask[i:i+1]
+        # Prepare batch tensors
+        batch_inputs = []
+        batch_frames = []
         
-        # Process mask and create heatmap
-        display_frame = sample_frames[-1][0]
-        cur_image, mask_total = self.process_mask(individual_mask, sample_frame, in_width, in_height, display_frame)
+        for sample_frames, sample_frame in sample_batches:
+            # Concatenate frames into input tensor for this sample
+            image_input = torch.cat(sample_frames, 1)
+            batch_inputs.append(image_input)
+            batch_frames.append((sample_frames, sample_frame))
         
-        # Create info panel
-        true_label = self.video_labels.getLabel(sample_frame)
-        info_panel, pred_class, confidence = self.create_info_panel(sample_frame, in_width, in_height, individual_out, true_label)
+        # Create batch: (BATCH_SIZE, channels, height, width)
+        batch_input = torch.cat(batch_inputs, 0)
         
-        logging.debug(f"Frame {sample_frame}: true_label={true_label}, pred_class={pred_class}, confidence={confidence:.3f}")
+        # Normalize the entire batch
+        m = torch.mean(batch_input)
+        v = torch.std(batch_input)
+        if v > 0:
+            net_input = (batch_input - m) / v
+        else:
+            net_input = batch_input - m
+        
+        logging.debug(f"Batch input shape: {batch_input.shape}")
+        
+        # Forward pass through the network for entire batch
+        with torch.no_grad():
+            out, mask = self.net.vis_forward(net_input)
+        
+        logging.debug(f"Batch output shape: {out.shape}")
+        
+        # Process each result in the batch
+        frames_processed = 0
+        for i in range(batch_size):
+            sample_frames, sample_frame = batch_frames[i]
+            
+            # Extract individual results from batch
+            individual_out = out[i:i+1]  # Keep batch dimension
+            individual_mask = None
+            if mask is not None:
+                if isinstance(mask, list):
+                    individual_mask = [m[i:i+1] for m in mask] if len(mask) > 0 else None
+                elif isinstance(mask, torch.Tensor):
+                    individual_mask = mask[i:i+1]
+            
+            # Process mask and create heatmap
+            display_frame = sample_frames[-1][0]
+            cur_image, mask_total = self.process_mask(individual_mask, sample_frame, in_width, in_height, display_frame)
+            
+            # Create info panel
+            true_label = self.video_labels.getLabel(sample_frame)
+            info_panel, pred_class, confidence = self.create_info_panel(sample_frame, in_width, in_height, individual_out, true_label)
+            
+            logging.debug(f"Frame {sample_frame}: true_label={true_label}, pred_class={pred_class}, confidence={confidence:.3f}")
 
-        # Combine image with info panel
-        if cur_image is not None:
-            if cur_image.mode != 'RGB':
-                cur_image = cur_image.convert('RGB')
-            
-            info_width = in_width // 3
-            padded_image = ImageOps.pad(cur_image, (in_width + info_width, in_height), centering=(0,0))
-            
-            # Save frame
-            frame_filename = os.path.join(temp_dir, f"frame_{frame_count_start + frames_processed:06d}.png")
-            padded_image.save(frame_filename)
-            frames_processed += 1
-            
-            # Debug first frame
-            if sample_frame == self.begin_frame:
-                debug_filename = os.path.join(temp_dir, "debug_first_frame.png")
-                padded_image.save(debug_filename)
-                print(f"Saved debug frame to {debug_filename}")
-                logging.info(f"Saved debug frame to {debug_filename}")
+            # Combine image with info panel
+            if cur_image is not None:
+                if cur_image.mode != 'RGB':
+                    cur_image = cur_image.convert('RGB')
+                
+                info_width = in_width // 3
+                
+                # Convert info panel to RGB to match cur_image
+                if info_panel.mode != 'RGB':
+                    info_panel = info_panel.convert('RGB')
+                
+                # Create a new image with combined width
+                combined_width = in_width + info_width
+                combined_image = Image.new('RGB', (combined_width, in_height), (0, 0, 0))
+                
+                # Paste the main image on the left
+                combined_image.paste(cur_image, (0, 0))
+                
+                # Paste the info panel on the right
+                combined_image.paste(info_panel, (in_width, 0))
+                
+                # Save the combined frame
+                frame_filename = os.path.join(temp_dir, f"frame_{frame_count_start + frames_processed:06d}.png")
+                combined_image.save(frame_filename)
+                frames_processed += 1
+                
+                # Debug first frame
+                if sample_frame == self.begin_frame:
+                    debug_filename = os.path.join(temp_dir, "debug_first_frame.png")
+                    combined_image.save(debug_filename)
+                    print(f"Saved debug frame to {debug_filename}")
+                    logging.info(f"Saved debug frame to {debug_filename}")
 
-        # Cleanup individual tensors
-        tensors_to_delete = [individual_out, individual_mask, mask_total, display_frame]
-        for tensor in tensors_to_delete:
-            if tensor is not None:
+            # Cleanup individual tensors
+            tensors_to_delete = [individual_out, individual_mask, mask_total, display_frame]
+            for tensor in tensors_to_delete:
+                if tensor is not None:
+                    del tensor
+            
+            # Clear sample frames
+            for tensor in sample_frames:
                 del tensor
         
-        # Clear sample frames
-        for tensor in sample_frames:
-            del tensor
-    
-    # Cleanup batch tensors
-    del batch_input, net_input, out
-    if mask is not None:
-        del mask
-    
-    return frames_processed
+        # Cleanup batch tensors
+        del batch_input, net_input, out
+        if mask is not None:
+            del mask
+        
+        return frames_processed
 
 image_size = (args.dnn_channels * args.frames_per_sample, args.height, args.width)
 
@@ -1015,7 +1049,7 @@ with open(args.datalist, newline='') as datacsv:
             frames_per_sample=args.frames_per_sample, out_width=args.width, out_height=args.height,
             scale=args.scale, crop_x_offset=args.crop_x_offset, crop_y_offset=args.crop_y_offset,
             channels=args.dnn_channels, begin_frame=begin_frame, end_frame=end_frame,
-            output_name=annotated_name)
+            output_name=annotated_name, flip=args.flip)
 
         sampler.process_video()
     
