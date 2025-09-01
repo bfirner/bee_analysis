@@ -1,4 +1,4 @@
-av~=15.0
+av~=15.1
 braceexpand~=0.1
 contourpy~=1.3
 cvzone~=1.6
